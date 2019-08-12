@@ -13,5 +13,6 @@ int main()
     FbxScene *scene = FbxScene::Create(manager, "scene");
     importer->Import(scene);
 
-    FbxNode *board = scene->GetRootNode()->FindChild("Board");
+    FbxNode *node = scene->GetRootNode()->FindChild("Board");
+    FbxMesh *mesh = (FbxMesh*) node->GetNodeAttribute();
 }
