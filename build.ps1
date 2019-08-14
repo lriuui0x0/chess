@@ -1,3 +1,6 @@
+C:\VulkanSDK\1.1.108.0\Bin\glslc.exe -fshader-stage=vert src/vert.glsl -g -o bin/vert.spv
+C:\VulkanSDK\1.1.108.0\Bin\glslc.exe -fshader-stage=frag src/frag.glsl -g -o bin/frag.spv
+
 clang-cl -I C:/VulkanSDK/1.1.108.0/Include /Zi -O0 -o bin/chess.exe -Wno-writable-strings -Wno-deprecated-declarations src/main.cpp `
     /link /LIBPATH:C:/VulkanSDK/1.1.108.0/Lib /NATVIS:misc/debug.natvis user32.lib vulkan-1.lib
 

@@ -39,7 +39,7 @@ Window create_window(Str title, Int client_width, Int client_height, Int window_
 {
     HINSTANCE module_handle = GetModuleHandleA(NULL);
 
-    WNDCLASSEXA window_class = {0};
+    WNDCLASSEXA window_class = {};
     window_class.cbSize = sizeof(WNDCLASSEX);
     window_class.style = CS_HREDRAW | CS_VREDRAW;
     window_class.lpfnWndProc = window_procedure;

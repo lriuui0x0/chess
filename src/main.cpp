@@ -10,6 +10,11 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanContext vulkan_context;
     assert(create_vulkan_context(&vulkan_context, window));
 
+    VulkanSwapchain vulkan_swapchain;
+    assert(create_vulkan_swapchain(&vulkan_context, &vulkan_swapchain, 800, 600));
+
+    assert(create_vulkan_pipeline(&vulkan_context, &vulkan_swapchain));
+    
     show_window(window);
 
     bool is_running = true;

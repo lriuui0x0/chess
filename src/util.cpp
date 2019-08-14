@@ -46,7 +46,7 @@ constexpr Str wrap_str(const char *raw_str)
 {
     if (raw_str != NULL)
     {
-        Str result = {0};
+        Str result = {};
 
         result.data = (Byte *)raw_str;
         while (*raw_str)
@@ -59,7 +59,7 @@ constexpr Str wrap_str(const char *raw_str)
     }
     else
     {
-        return {0};
+        return {};
     }
 }
 
