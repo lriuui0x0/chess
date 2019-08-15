@@ -19,6 +19,22 @@ struct VulkanContext
     VkCommandPool command_pool;
 };
 
+PFN_vkCreateDebugReportCallbackEXT create_debug_callback = VK_NULL_HANDLE;
+
+VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugReportFlagsEXT flags,
+                                              VkDebugReportObjectTypeEXT objectType,
+                                              uint64_t object,
+                                              size_t location,
+                                              int32_t messageCode,
+                                              const char *pLayerPrefix,
+                                              const char *pMessage,
+                                              void *pUserData)
+{
+    OutputDebugStringA(pMessage);
+    OutputDebugStringA("\n");
+    return VK_FALSE;
+}
+
 Bool create_vulkan_context(Window window, OUT VulkanContext *context)
 {
     VkResult result_code;
@@ -40,6 +56,21 @@ Bool create_vulkan_context(Window window, OUT VulkanContext *context)
     instance_create_info.ppEnabledExtensionNames = instance_extensions;
 
     result_code = vkCreateInstance(&instance_create_info, NULL, &context->instance_handle);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    create_debug_callback = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(context->instance_handle, "vkCreateDebugReportCallbackEXT");
+
+    VkDebugReportCallbackCreateInfoEXT callback_create_info = {VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT};
+    callback_create_info.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT |
+                                 VK_DEBUG_REPORT_WARNING_BIT_EXT |
+                                 VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT;
+    callback_create_info.pfnCallback = &debug_callback;
+
+    VkDebugReportCallbackEXT callback;
+    result_code = create_debug_callback(context->instance_handle, &callback_create_info, NULL, &callback);
     if (result_code != VK_SUCCESS)
     {
         return false;
@@ -163,8 +194,11 @@ struct VulkanSwapchain
     Array<VkImage> images;
 };
 
-Bool create_vulkan_swapchain(VulkanContext *context, Int width, Int height, OUT VulkanSwapchain *swapchain, VulkanSwapchain *old_swapchain = NULL)
+Bool create_vulkan_swapchain(VulkanContext *context, Int width, Int height, OUT VulkanSwapchain *swapchain)
 {
+    swapchain->width = width;
+    swapchain->height = height;
+
     VkSwapchainCreateInfoKHR swapchain_create_info = {VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
     swapchain_create_info.surface = context->surface_handle;
     swapchain_create_info.minImageCount = 3;
@@ -181,19 +215,13 @@ Bool create_vulkan_swapchain(VulkanContext *context, Int width, Int height, OUT 
     swapchain_create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     swapchain_create_info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
     swapchain_create_info.clipped = VK_TRUE;
-    swapchain_create_info.oldSwapchain = old_swapchain ? old_swapchain->handle : VK_NULL_HANDLE;
+    swapchain_create_info.oldSwapchain = VK_NULL_HANDLE;
 
     VkResult result_code;
     result_code = vkCreateSwapchainKHR(context->device_handle, &swapchain_create_info, NULL, &swapchain->handle);
     if (result_code != VK_SUCCESS)
     {
         return false;
-    }
-
-    if (old_swapchain != NULL)
-    {
-        vkDestroySwapchainKHR(context->device_handle, old_swapchain->handle, NULL);
-        destroy_array(old_swapchain->images);
     }
 
     UInt4 swapchain_images_count = 0;
@@ -240,6 +268,12 @@ struct VulkanPipeline
     VkRenderPass render_pass;
     VkPipeline pipeline;
     Array<VkFramebuffer> framebuffers;
+};
+
+struct Vertex
+{
+    Real4 pos[2];
+    Real4 color[3];
 };
 
 Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, OUT VulkanPipeline *pipeline_data)
@@ -301,7 +335,27 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
 
     VkPipelineShaderStageCreateInfo shader_stage_create_info[2] = {vertex_shader_stage_create_info, fragment_shader_stage_create_info};
 
+    VkVertexInputBindingDescription vertex_binding_description = {};
+    vertex_binding_description.binding = 0;
+    vertex_binding_description.stride = sizeof(Vertex);
+    vertex_binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription vertex_attribute_description[2] = {};
+    vertex_attribute_description[0].binding = 0;
+    vertex_attribute_description[0].location = 0;
+    vertex_attribute_description[0].format = VK_FORMAT_R32G32_SFLOAT;
+    vertex_attribute_description[0].offset = offsetof(Vertex, pos);
+
+    vertex_attribute_description[1].binding = 0;
+    vertex_attribute_description[1].location = 1;
+    vertex_attribute_description[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    vertex_attribute_description[1].offset = offsetof(Vertex, color);
+
     VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    vertex_input_state_create_info.vertexBindingDescriptionCount = 1;
+    vertex_input_state_create_info.pVertexBindingDescriptions = &vertex_binding_description;
+    vertex_input_state_create_info.vertexAttributeDescriptionCount = 2;
+    vertex_input_state_create_info.pVertexAttributeDescriptions = vertex_attribute_description;
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state_create_info = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     input_assembly_state_create_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -330,7 +384,7 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     rasterization_state_create_info.rasterizerDiscardEnable = VK_FALSE;
     rasterization_state_create_info.polygonMode = VK_POLYGON_MODE_FILL;
     rasterization_state_create_info.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterization_state_create_info.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterization_state_create_info.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterization_state_create_info.depthBiasEnable = VK_FALSE;
     rasterization_state_create_info.depthBiasConstantFactor = 0.0f;
     rasterization_state_create_info.depthBiasClamp = 0.0f;
@@ -505,7 +559,81 @@ Bool create_vulkan_frame(VulkanContext *context, Int frame_count, OUT Array<Vulk
     return true;
 }
 
-Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline, VulkanFrame *frame)
+struct VulkanBuffer
+{
+    VkBuffer handle;
+    VkDeviceMemory memory;
+    Int length;
+    Int1 *data;
+};
+
+Bool create_vulkan_buffer(VulkanContext *context, Int length, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_property, VulkanBuffer *buffer)
+{
+    VkResult result_code;
+
+    buffer->length = length;
+    VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    buffer_create_info.size = buffer->length;
+    buffer_create_info.usage = usage;
+    buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    result_code = vkCreateBuffer(context->device_handle, &buffer_create_info, NULL, &buffer->handle);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkMemoryRequirements memory_requirements;
+    vkGetBufferMemoryRequirements(context->device_handle, buffer->handle, &memory_requirements);
+
+    VkPhysicalDeviceMemoryProperties memory_properties;
+    vkGetPhysicalDeviceMemoryProperties(context->physical_device_handle, &memory_properties);
+
+    VkDeviceMemory buffer_memory;
+    for (Int memory_type_index = 0; memory_type_index < memory_properties.memoryTypeCount; memory_type_index++)
+    {
+        if (has_flag(memory_requirements.memoryTypeBits, 1 << memory_type_index) &&
+            has_flag(memory_properties.memoryTypes[memory_type_index].propertyFlags, memory_property))
+        {
+            VkMemoryAllocateInfo buffer_memory_allocate_info = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+            buffer_memory_allocate_info.allocationSize = memory_requirements.size;
+            buffer_memory_allocate_info.memoryTypeIndex = memory_type_index;
+
+            result_code = vkAllocateMemory(context->device_handle, &buffer_memory_allocate_info, NULL, &buffer_memory);
+            if (result_code == VK_SUCCESS)
+            {
+                break;
+            }
+            else
+            {
+                return false;
+            }
+        }
+    }
+
+    result_code = vkBindBufferMemory(context->device_handle, buffer->handle, buffer_memory, 0);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    if (has_flag(memory_property, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+    {
+        result_code = vkMapMemory(context->device_handle, buffer_memory, 0, buffer_create_info.size, 0, (void **)&buffer->data);
+        if (result_code != VK_SUCCESS)
+        {
+            return false;
+        }
+    }
+    else
+    {
+        buffer->data = NULL;
+    }
+
+    return true;
+}
+
+Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline, VulkanFrame *frame, VkBuffer vertex_buffer, VkBuffer index_buffer)
 {
     VkResult result_code;
     result_code = vkWaitForFences(context->device_handle, 1, &frame->frame_finished_fence, false, UINT64_MAX);
@@ -536,7 +664,7 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
         return false;
     }
 
-    VkClearValue clear_color = {1.0f, 0.0f, 0.0f, 1.0f};
+    VkClearValue clear_color = {0.0f, 0.0f, 0.0f, 1.0f};
     VkRenderPassBeginInfo render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     render_pass_begin_info.renderPass = pipeline->render_pass;
     render_pass_begin_info.framebuffer = pipeline->framebuffers[image_index];
@@ -549,7 +677,12 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
 
     vkCmdBindPipeline(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
 
-    vkCmdDraw(frame->command_buffer, 3, 1, 0, 0);
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(frame->command_buffer, 0, 1, &vertex_buffer, &offset);
+    vkCmdBindIndexBuffer(frame->command_buffer, index_buffer, 0, VK_INDEX_TYPE_UINT16);
+
+    // vkCmdDraw(frame->command_buffer, 3, 1, 0, 0);
+    vkCmdDrawIndexed(frame->command_buffer, 6, 1, 0, 0, 0);
 
     vkCmdEndRenderPass(frame->command_buffer);
 
@@ -559,7 +692,7 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
         return false;
     }
 
-    VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
     VkSubmitInfo submit_info = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submit_info.waitSemaphoreCount = 1;
     submit_info.pWaitSemaphores = &frame->image_aquired_semaphore;

@@ -11,7 +11,6 @@ typedef int16_t Int2;
 typedef int32_t Int4;
 typedef int64_t Int8;
 typedef Int8 Int;
-typedef Int1 Byte;
 
 typedef uint8_t UInt1;
 typedef uint16_t UInt2;
@@ -34,12 +33,18 @@ void assert(Bool predicate)
     }
 }
 
+template <typename T, typename S>
+Bool has_flag(T value, S flag)
+{
+    return (value & flag) == flag;
+}
+
 typedef char *RawStr;
 
 struct Str
 {
     Int length;
-    Byte *data;
+    Int1 *data;
 };
 
 constexpr Str wrap_str(const char *raw_str)
@@ -48,7 +53,7 @@ constexpr Str wrap_str(const char *raw_str)
     {
         Str result = {};
 
-        result.data = (Byte *)raw_str;
+        result.data = (Int1 *)raw_str;
         while (*raw_str)
         {
             raw_str++;
@@ -127,7 +132,7 @@ Bool read_file(Str filename, Str *file)
     assert(length >= 0);
     rewind(file_handle);
 
-    Byte *data = (Byte *)malloc(length + 1);
+    Int1 *data = (Int1 *)malloc(length + 1);
     Int read_length = fread(data, 1, length, file_handle);
     assert(read_length == length);
     data[length] = 0;
