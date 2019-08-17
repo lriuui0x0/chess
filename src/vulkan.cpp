@@ -140,7 +140,7 @@ Bool create_vulkan_context(Window window, OUT VulkanContext *context)
         return false;
     }
 
-    Real4 priority = 1.0f;
+    Real priority = 1.0f;
     Int queues_create_count = 1;
     VkDeviceQueueCreateInfo queues_create_info[2];
     queues_create_info[0] = {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
@@ -271,13 +271,14 @@ struct VulkanPipeline
     VkRenderPass render_pass;
     VkPipeline pipeline;
     Array<VkFramebuffer> framebuffers;
+    VkPipelineLayout pipeline_layout;
     VkDescriptorSet descriptor_set;
 };
 
 struct Vertex
 {
-    Real4 position[2];
-    Real4 color[3];
+    Real position[2];
+    Real color[3];
 };
 
 struct Transform
@@ -396,8 +397,8 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     VkViewport viewport;
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = (Real4)swapchain->width;
-    viewport.height = (Real4)swapchain->height;
+    viewport.width = (Real)swapchain->width;
+    viewport.height = (Real)swapchain->height;
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
@@ -485,8 +486,7 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     pipeline_layout_create_info.pushConstantRangeCount = 0;
     pipeline_layout_create_info.pPushConstantRanges = NULL;
 
-    VkPipelineLayout pipeline_layout;
-    result_code = vkCreatePipelineLayout(context->device_handle, &pipeline_layout_create_info, NULL, &pipeline_layout);
+    result_code = vkCreatePipelineLayout(context->device_handle, &pipeline_layout_create_info, NULL, &pipeline_data->pipeline_layout);
 
     VkGraphicsPipelineCreateInfo pipeline_create_info = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
     pipeline_create_info.stageCount = 2;
@@ -500,7 +500,7 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     pipeline_create_info.pDepthStencilState = NULL;
     pipeline_create_info.pColorBlendState = &color_blend_state_create_info;
     pipeline_create_info.pDynamicState = NULL;
-    pipeline_create_info.layout = pipeline_layout;
+    pipeline_create_info.layout = pipeline_data->pipeline_layout;
     pipeline_create_info.renderPass = pipeline_data->render_pass;
     pipeline_create_info.subpass = 0;
     pipeline_create_info.basePipelineHandle = VK_NULL_HANDLE;
@@ -696,7 +696,7 @@ Bool create_vulkan_buffer(VulkanContext *context, Int length, VkBufferUsageFlags
 Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline, VulkanFrame *frame,
                          VulkanBuffer *host_vertex_buffer, VulkanBuffer *vertex_buffer,
                          VulkanBuffer *host_index_buffer, VulkanBuffer *index_buffer,
-                         VulkanBuffer *host_transform_buffer, VulkanBuffer *transform_buffer)
+                         VulkanBuffer *host_uniform_buffer, VulkanBuffer *uniform_buffer)
 {
     VkResult result_code;
     result_code = vkWaitForFences(context->device_handle, 1, &frame->frame_finished_fence, false, UINT64_MAX);
@@ -739,29 +739,41 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     index_buffer_copy.size = index_buffer->length;
     vkCmdCopyBuffer(frame->command_buffer, host_index_buffer->handle, index_buffer->handle, 1, &index_buffer_copy);
 
-    VkBufferMemoryBarrier buffer_memory_barrier[2] = {{
-                                                          VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                                                      },
-                                                      {
-                                                          VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                                                      }};
-    buffer_memory_barrier[0].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    buffer_memory_barrier[0].dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-    buffer_memory_barrier[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    buffer_memory_barrier[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    buffer_memory_barrier[0].buffer = vertex_buffer->handle;
-    buffer_memory_barrier[0].offset = 0;
-    buffer_memory_barrier[0].size = VK_WHOLE_SIZE;
+    VkBufferCopy uniform_buffer_copy = {};
+    uniform_buffer_copy.srcOffset = 0;
+    uniform_buffer_copy.dstOffset = 0;
+    uniform_buffer_copy.size = uniform_buffer->length;
+    vkCmdCopyBuffer(frame->command_buffer, host_uniform_buffer->handle, uniform_buffer->handle, 1, &uniform_buffer_copy);
 
-    buffer_memory_barrier[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    buffer_memory_barrier[1].dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-    buffer_memory_barrier[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    buffer_memory_barrier[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    buffer_memory_barrier[1].buffer = index_buffer->handle;
-    buffer_memory_barrier[1].offset = 0;
-    buffer_memory_barrier[1].size = VK_WHOLE_SIZE;
+    VkBufferMemoryBarrier vertex_buffer_memory_barrier[2] = {{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER}, {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER}};
+    vertex_buffer_memory_barrier[0].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vertex_buffer_memory_barrier[0].dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+    vertex_buffer_memory_barrier[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    vertex_buffer_memory_barrier[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    vertex_buffer_memory_barrier[0].buffer = vertex_buffer->handle;
+    vertex_buffer_memory_barrier[0].offset = 0;
+    vertex_buffer_memory_barrier[0].size = VK_WHOLE_SIZE;
 
-    vkCmdPipelineBarrier(frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, NULL, 2, buffer_memory_barrier, 0, NULL);
+    vertex_buffer_memory_barrier[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vertex_buffer_memory_barrier[1].dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+    vertex_buffer_memory_barrier[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    vertex_buffer_memory_barrier[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    vertex_buffer_memory_barrier[1].buffer = index_buffer->handle;
+    vertex_buffer_memory_barrier[1].offset = 0;
+    vertex_buffer_memory_barrier[1].size = VK_WHOLE_SIZE;
+
+    vkCmdPipelineBarrier(frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, NULL, 2, vertex_buffer_memory_barrier, 0, NULL);
+
+    VkBufferMemoryBarrier uniform_buffer_memory_barrier = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+    uniform_buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    uniform_buffer_memory_barrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
+    uniform_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    uniform_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    uniform_buffer_memory_barrier.buffer = uniform_buffer->handle;
+    uniform_buffer_memory_barrier.offset = 0;
+    uniform_buffer_memory_barrier.size = VK_WHOLE_SIZE;
+
+    vkCmdPipelineBarrier(frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, NULL, 1, &uniform_buffer_memory_barrier, 0, NULL);
 
     VkClearValue clear_color = {0.0f, 0.0f, 0.0f, 1.0f};
     VkRenderPassBeginInfo render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
@@ -779,6 +791,8 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(frame->command_buffer, 0, 1, &vertex_buffer->handle, &offset);
     vkCmdBindIndexBuffer(frame->command_buffer, index_buffer->handle, 0, VK_INDEX_TYPE_UINT16);
+
+    vkCmdBindDescriptorSets(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline_layout, 0, 1, &pipeline->descriptor_set, 0, NULL);
 
     vkCmdDrawIndexed(frame->command_buffer, 6, 1, 0, 0, 0);
 

@@ -50,22 +50,36 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                 &index_buffer));
 
-    Transform transform = {
-        {{1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 1.0f}},
-        {{1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 1.0f}},
-        {{1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 1.0f}},
-    };
+    Transform transform;
+    transform.model = get_identity_matrix();
+    transform.view = get_translate_matrix(0.2f, 0.2f, 0.0f);
+    transform.projection = get_translate_matrix(-0.2f, -0.2f, 0.0f);
 
-    VulkanBuffer host_transform_buffer;
+    VulkanBuffer host_uniform_buffer;
     assert(create_vulkan_buffer(&vulkan_context, sizeof(transform),
                                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                &host_transform_buffer));
-    memcpy(host_transform_buffer.data, &transform, sizeof(transform));
+                                &host_uniform_buffer));
+    memcpy(host_uniform_buffer.data, &transform, sizeof(transform));
 
-    VulkanBuffer transform_buffer;
+    VulkanBuffer uniform_buffer;
     assert(create_vulkan_buffer(&vulkan_context, sizeof(transform),
                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                &transform_buffer));
+                                &uniform_buffer));
+
+    VkDescriptorBufferInfo descriptor_buffer_info = {};
+    descriptor_buffer_info.buffer = uniform_buffer.handle;
+    descriptor_buffer_info.offset = 0;
+    descriptor_buffer_info.range = VK_WHOLE_SIZE;
+
+    VkWriteDescriptorSet descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    descriptor_set_write.dstSet = vulkan_pipeline.descriptor_set;
+    descriptor_set_write.dstBinding = 0;
+    descriptor_set_write.dstArrayElement = 0;
+    descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptor_set_write.descriptorCount = 1;
+    descriptor_set_write.pBufferInfo = &descriptor_buffer_info;
+
+    vkUpdateDescriptorSets(vulkan_context.device_handle, 1, &descriptor_set_write, 0, NULL);
 
     show_window(window);
 
@@ -84,7 +98,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         }
 
         assert(render_vulkan_frame(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline, &vulkan_frames[current_frame_index],
-                                   &host_vertex_buffer, &vertex_buffer, &host_index_buffer, &index_buffer, &host_transform_buffer, &transform_buffer));
+                                   &host_vertex_buffer, &vertex_buffer, &host_index_buffer, &index_buffer, &host_uniform_buffer, &uniform_buffer));
         current_frame_index = (current_frame_index + 1) % 3;
     }
 

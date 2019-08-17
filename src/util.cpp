@@ -10,17 +10,17 @@ typedef int8_t Int1;
 typedef int16_t Int2;
 typedef int32_t Int4;
 typedef int64_t Int8;
-typedef Int8 Int;
+typedef Int4 Int;
 
 typedef uint8_t UInt1;
 typedef uint16_t UInt2;
 typedef uint32_t UInt4;
 typedef uint64_t UInt8;
-typedef UInt8 UInt;
+typedef UInt4 UInt;
 
 typedef float Real4;
 typedef double Real8;
-typedef Real8 Real;
+typedef Real4 Real;
 
 typedef bool Bool;
 
