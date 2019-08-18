@@ -3,6 +3,7 @@
 #include "util.cpp"
 #include "math.cpp"
 #include "window.cpp"
+#include "model.cpp"
 
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
@@ -281,14 +282,7 @@ struct Vertex
     Real color[3];
 };
 
-struct Transform
-{
-    Mat4 model;
-    Mat4 view;
-    Mat4 projection;
-};
-
-Bool create_vulkan_shader(VulkanContext *context, Str filename, OUT VkShaderModule *shader_module)
+Bool create_vulkan_shader(VulkanContext *context, RawStr filename, OUT VkShaderModule *shader_module)
 {
     Str code;
     if (!read_file(filename, &code))
@@ -345,7 +339,7 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     }
 
     VkShaderModule vert_shader_module;
-    if (!create_vulkan_shader(context, wrap_str("vert.spv"), &vert_shader_module))
+    if (!create_vulkan_shader(context, "vert.spv", &vert_shader_module))
     {
         return false;
     }
@@ -356,7 +350,7 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     vertex_shader_stage_create_info.pName = "main";
 
     VkShaderModule frag_shader_module;
-    if (!create_vulkan_shader(context, wrap_str("frag.spv"), &frag_shader_module))
+    if (!create_vulkan_shader(context, "frag.spv", &frag_shader_module))
     {
         return false;
     }
@@ -370,25 +364,20 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
 
     VkVertexInputBindingDescription vertex_binding_description = {};
     vertex_binding_description.binding = 0;
-    vertex_binding_description.stride = sizeof(Vertex);
+    vertex_binding_description.stride = sizeof(Vec3);
     vertex_binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkVertexInputAttributeDescription vertex_attribute_description[2] = {};
-    vertex_attribute_description[0].binding = 0;
-    vertex_attribute_description[0].location = 0;
-    vertex_attribute_description[0].format = VK_FORMAT_R32G32_SFLOAT;
-    vertex_attribute_description[0].offset = offsetof(Vertex, position);
-
-    vertex_attribute_description[1].binding = 0;
-    vertex_attribute_description[1].location = 1;
-    vertex_attribute_description[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-    vertex_attribute_description[1].offset = offsetof(Vertex, color);
+    VkVertexInputAttributeDescription vertex_attribute_description;
+    vertex_attribute_description.binding = 0;
+    vertex_attribute_description.location = 0;
+    vertex_attribute_description.format = VK_FORMAT_R32G32B32_SFLOAT;
+    vertex_attribute_description.offset = 0;
 
     VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     vertex_input_state_create_info.vertexBindingDescriptionCount = 1;
     vertex_input_state_create_info.pVertexBindingDescriptions = &vertex_binding_description;
-    vertex_input_state_create_info.vertexAttributeDescriptionCount = 2;
-    vertex_input_state_create_info.pVertexAttributeDescriptions = vertex_attribute_description;
+    vertex_input_state_create_info.vertexAttributeDescriptionCount = 1;
+    vertex_input_state_create_info.pVertexAttributeDescriptions = &vertex_attribute_description;
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state_create_info = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     input_assembly_state_create_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -696,7 +685,8 @@ Bool create_vulkan_buffer(VulkanContext *context, Int length, VkBufferUsageFlags
 Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline, VulkanFrame *frame,
                          VulkanBuffer *host_vertex_buffer, VulkanBuffer *vertex_buffer,
                          VulkanBuffer *host_index_buffer, VulkanBuffer *index_buffer,
-                         VulkanBuffer *host_uniform_buffer, VulkanBuffer *uniform_buffer)
+                         VulkanBuffer *host_uniform_buffer, VulkanBuffer *uniform_buffer,
+                         Int indices_count)
 {
     VkResult result_code;
     result_code = vkWaitForFences(context->device_handle, 1, &frame->frame_finished_fence, false, UINT64_MAX);
@@ -790,11 +780,11 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
 
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(frame->command_buffer, 0, 1, &vertex_buffer->handle, &offset);
-    vkCmdBindIndexBuffer(frame->command_buffer, index_buffer->handle, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdBindIndexBuffer(frame->command_buffer, index_buffer->handle, 0, VK_INDEX_TYPE_UINT32);
 
     vkCmdBindDescriptorSets(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline_layout, 0, 1, &pipeline->descriptor_set, 0, NULL);
 
-    vkCmdDrawIndexed(frame->command_buffer, 6, 1, 0, 0, 0);
+    vkCmdDrawIndexed(frame->command_buffer, indices_count, 1, 0, 0, 0);
 
     vkCmdEndRenderPass(frame->command_buffer);
 

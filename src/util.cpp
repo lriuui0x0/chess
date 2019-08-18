@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <cstdio>
 
 #define OUT
@@ -118,9 +119,9 @@ T *Array<T>::push()
     return &this->data[this->length - 1];
 }
 
-Bool read_file(Str filename, Str *file)
+Bool read_file(RawStr filename, Str *file)
 {
-    FILE *file_handle = fopen((RawStr)filename.data, "rb");
+    FILE *file_handle = fopen(filename, "rb");
     if (!file_handle)
     {
         return false;

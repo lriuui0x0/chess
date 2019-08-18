@@ -2,6 +2,14 @@
 #include "math.cpp"
 #include "window.cpp"
 #include "vulkan.cpp"
+#include "model.cpp"
+
+struct Transform
+{
+    Mat4 model;
+    Mat4 view;
+    Mat4 projection;
+};
 
 int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int show_code)
 {
@@ -14,46 +22,74 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanSwapchain vulkan_swapchain;
     assert(create_vulkan_swapchain(&vulkan_context, 800, 600, &vulkan_swapchain));
 
-    Vertex vertices[4] = {
-        {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-        {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-        {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-        {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}},
-    };
-    UInt2 vertex_indices[6] = {0, 1, 2, 2, 3, 0};
-
     VulkanPipeline vulkan_pipeline;
     assert(create_vulkan_pipeline(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline));
 
     Array<VulkanFrame> vulkan_frames;
     assert(create_vulkan_frame(&vulkan_context, 3, &vulkan_frames));
 
+    Str file;
+    assert(read_file("../asset/bishop.asset", &file));
+    Model bishop_model;
+    assert(deserialise_model(file, &bishop_model));
+    Int vertices_data_length = sizeof(Vec3) * bishop_model.vertices_count;
+    Int indices_data_length = sizeof(UInt4) * bishop_model.indices_count;
+
+    Real min_x = 1000;
+    Real min_y = 1000;
+    Real min_z = 1000;
+    Real max_x = -1000;
+    Real max_y = -1000;
+    Real max_z = -1000;
+    for (Int vertex_index = 0; vertex_index < bishop_model.vertices_count; vertex_index++)
+    {
+        Vec3 vertex = bishop_model.vertices_data[vertex_index];
+        min_x = min(min_x, vertex.x);
+        min_y = min(min_y, vertex.y);
+        min_z = min(min_z, vertex.z);
+        max_x = max(max_x, vertex.x);
+        max_y = max(max_y, vertex.y);
+        max_z = max(max_z, vertex.z);
+    }
+
     VulkanBuffer host_vertex_buffer;
-    assert(create_vulkan_buffer(&vulkan_context, sizeof(vertices),
+    assert(create_vulkan_buffer(&vulkan_context, vertices_data_length,
                                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                 &host_vertex_buffer));
-    memcpy(host_vertex_buffer.data, vertices, sizeof(vertices));
+    memcpy(host_vertex_buffer.data, bishop_model.vertices_data, vertices_data_length);
 
     VulkanBuffer vertex_buffer;
-    assert(create_vulkan_buffer(&vulkan_context, sizeof(vertices),
+    assert(create_vulkan_buffer(&vulkan_context, vertices_data_length,
                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                 &vertex_buffer));
 
     VulkanBuffer host_index_buffer;
-    assert(create_vulkan_buffer(&vulkan_context, sizeof(vertex_indices),
+    assert(create_vulkan_buffer(&vulkan_context, indices_data_length,
                                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                 &host_index_buffer));
-    memcpy(host_index_buffer.data, vertex_indices, sizeof(vertex_indices));
+    memcpy(host_index_buffer.data, bishop_model.indices_data, indices_data_length);
 
     VulkanBuffer index_buffer;
-    assert(create_vulkan_buffer(&vulkan_context, sizeof(vertex_indices),
+    assert(create_vulkan_buffer(&vulkan_context, indices_data_length,
                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                 &index_buffer));
 
     Transform transform;
     transform.model = get_identity_matrix();
-    transform.view = get_translate_matrix(0.2f, 0.2f, 0.0f);
-    transform.projection = get_translate_matrix(-0.2f, -0.2f, 0.0f);
+    transform.view = get_view_matrix({0, 50, -200}, {0, 50, 0}, {0, 1, 0});
+    transform.projection = get_perspective_matrix(degree_to_radian(60), 800.0 / 600.0, 150, 250);
+
+    for (Int vertex_index = 0; vertex_index < bishop_model.vertices_count; vertex_index++)
+    {
+        Vec3 vertex3 = bishop_model.vertices_data[vertex_index];
+        Vec4 vertex = {vertex3.x, vertex3.y, vertex3.z, 1};
+
+        Vec4 view_vertex = transform.view * vertex;
+        Vec4 projection_vertex = transform.projection * view_vertex;
+        Vec4 final_vertex = perspective_divide(projection_vertex);
+        OutputDebugStringA("");
+    }
+
 
     VulkanBuffer host_uniform_buffer;
     assert(create_vulkan_buffer(&vulkan_context, sizeof(transform),
@@ -83,7 +119,8 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     show_window(window);
 
-    bool is_running = true;
+    Int current_angle = 0;
+    Bool is_running = true;
     Int current_frame_index = 0;
     while (is_running)
     {
@@ -97,9 +134,13 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
         }
 
+        transform.model = get_rotation_matrix_z(degree_to_radian(current_angle));
+        memcpy(host_uniform_buffer.data, &transform, sizeof(transform));
+
         assert(render_vulkan_frame(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline, &vulkan_frames[current_frame_index],
-                                   &host_vertex_buffer, &vertex_buffer, &host_index_buffer, &index_buffer, &host_uniform_buffer, &uniform_buffer));
+                                   &host_vertex_buffer, &vertex_buffer, &host_index_buffer, &index_buffer, &host_uniform_buffer, &uniform_buffer, bishop_model.indices_count));
         current_frame_index = (current_frame_index + 1) % 3;
+        current_angle = (current_angle + 1) % 360;
     }
 
     return 0;
