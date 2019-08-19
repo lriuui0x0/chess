@@ -3,11 +3,17 @@
 #include "util.cpp"
 #include "math.cpp"
 
+struct Vertex
+{
+    Vec3 pos;
+    Vec3 normal;
+};
+
 struct Model
 {
     Int4 vertices_count;
     Int4 indices_count;
-    Vec3 *vertices_data;
+    Vertex *vertices_data;
     UInt4 *indices_data;
 };
 
@@ -20,7 +26,7 @@ Bool deserialise_model(Str buffer, OUT Model *model)
     model->vertices_count = *(Int4 *)buffer.data;
 
     Int vertices_data_start = 4;
-    Int vertices_data_length = sizeof(Vec3) * model->vertices_count;
+    Int vertices_data_length = sizeof(Vertex) * model->vertices_count;
     if (buffer.length < vertices_data_start + vertices_data_length)
     {
         return false;
@@ -40,7 +46,7 @@ Bool deserialise_model(Str buffer, OUT Model *model)
         return false;
     }
 
-    model->vertices_data = (Vec3 *)malloc(vertices_data_length);
+    model->vertices_data = (Vertex *)malloc(vertices_data_length);
     memcpy(model->vertices_data, buffer.data + vertices_data_start, vertices_data_length);
     model->indices_data = (UInt4 *)malloc(indices_data_length);
     memcpy(model->indices_data, buffer.data + indices_data_start, indices_data_length);

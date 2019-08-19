@@ -70,7 +70,7 @@ Vec3 operator-(Vec3 u)
     return result;
 }
 
-Vec3 norm(Vec3 u)
+Vec3 normalize(Vec3 u)
 {
     Vec3 result;
     Real length = sqrtf(u.x * u.x + u.y * u.y + u.z * u.z);
@@ -110,6 +110,16 @@ Real &Vec4::operator[](Int index)
 {
     assert(index >= 0 && index < 4);
     return this->entries[index];
+}
+
+Vec4 vec4(Vec3 u, Real w)
+{
+    return {u.x, u.y, u.z, w};
+}
+
+Vec3 vec3(Vec4 u)
+{
+    return {u.x, u.y, u.z};
 }
 
 Vec4 perspective_divide(Vec4 u)
@@ -257,13 +267,26 @@ Mat4 get_rotation_matrix_z(Real angle)
 Mat4 get_view_matrix(Vec3 eye, Vec3 center, Vec3 down)
 {
     Mat4 result;
-    Vec3 pos_z = norm(center - eye);
-    Vec3 pos_x = norm(cross(down, pos_z));
+    Vec3 pos_z = normalize(center - eye);
+    Vec3 pos_x = normalize(cross(down, pos_z));
     Vec3 pos_y = cross(pos_z, pos_x);
     result[0] = {pos_x.x, pos_y.x, pos_z.x, 0};
     result[1] = {pos_x.y, pos_y.y, pos_z.y, 0};
     result[2] = {pos_x.z, pos_y.z, pos_z.z, 0};
     result[3] = {-dot(eye, pos_x), -dot(eye, pos_y), -dot(eye, pos_z), 1};
+    return result;
+}
+
+Mat4 get_normal_view_matrix(Vec3 eye, Vec3 center, Vec3 down)
+{
+    Mat4 result;
+    Vec3 pos_z = normalize(center - eye);
+    Vec3 pos_x = normalize(cross(down, pos_z));
+    Vec3 pos_y = cross(pos_z, pos_x);
+    result[0] = {pos_x.x, pos_y.x, pos_z.x, 0};
+    result[1] = {pos_x.y, pos_y.y, pos_z.y, 0};
+    result[2] = {pos_x.z, pos_y.z, pos_z.z, 0};
+    result[3] = {0, 0, 0, 1};
     return result;
 }
 
