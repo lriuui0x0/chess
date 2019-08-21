@@ -14,21 +14,6 @@ struct Transform
 
 int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int show_code)
 {
-    Window window = create_window(wrap_str("Chess"), 800, 600, 50, 50);
-    assert(window);
-
-    VulkanContext vulkan_context;
-    assert(create_vulkan_context(window, &vulkan_context));
-
-    VulkanSwapchain vulkan_swapchain;
-    assert(create_vulkan_swapchain(&vulkan_context, 800, 600, &vulkan_swapchain));
-
-    VulkanPipeline vulkan_pipeline;
-    assert(create_vulkan_pipeline(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline));
-
-    Array<VulkanFrame> vulkan_frames;
-    assert(create_vulkan_frame(&vulkan_context, 3, &vulkan_frames));
-
     Str file;
     assert(read_file("../asset/bishop.asset", &file));
     Model bishop_model;
@@ -53,36 +38,15 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         max_z = max(max_z, vertex.z);
     }
 
-    VulkanBuffer host_vertex_buffer;
-    assert(create_vulkan_buffer(&vulkan_context, vertices_data_length,
-                                VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                &host_vertex_buffer));
-    memcpy(host_vertex_buffer.data, bishop_model.vertices_data, vertices_data_length);
-
-    VulkanBuffer vertex_buffer;
-    assert(create_vulkan_buffer(&vulkan_context, vertices_data_length,
-                                VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                &vertex_buffer));
-
-    VulkanBuffer host_index_buffer;
-    assert(create_vulkan_buffer(&vulkan_context, indices_data_length,
-                                VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                &host_index_buffer));
-    memcpy(host_index_buffer.data, bishop_model.indices_data, indices_data_length);
-
-    VulkanBuffer index_buffer;
-    assert(create_vulkan_buffer(&vulkan_context, indices_data_length,
-                                VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                &index_buffer));
-
     Vec3 light_pos = {0, 0, -100};
+    Vec3 camera_pos = {0, 100, -300};
+    Vec3 camera_dir = {0, 0, 1};
 
     Transform transform;
     transform.model = get_identity_matrix();
-    transform.view = get_view_matrix({0, 100, -300}, {0, 0, 0}, {0, 1, 0});
-    transform.normal_view = get_normal_view_matrix({0, 100, -300}, {0, 0, 0}, {0, 1, 0});
+    transform.view = get_view_matrix(camera_pos, camera_dir, {0, -1, 0});
+    transform.normal_view = get_normal_view_matrix(camera_pos, camera_dir, {0, -1, 0});
     transform.projection = get_perspective_matrix(degree_to_radian(60), 800.0 / 600.0, 50, 500);
-
 
     for (Int vertex_index = 0; vertex_index < bishop_model.vertices_count; vertex_index++)
     {
@@ -98,37 +62,58 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         OutputDebugStringA("");
     }
 
+    Window window = create_window(wrap_str("Chess"), 800, 600, 50, 50);
+    assert(window);
+
+    VulkanContext vulkan_context;
+    assert(create_vulkan_context(window, &vulkan_context));
+
+    VulkanSwapchain vulkan_swapchain;
+    assert(create_vulkan_swapchain(&vulkan_context, 800, 600, &vulkan_swapchain));
+
+    VulkanPipeline vulkan_pipeline;
+    assert(create_vulkan_pipeline(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline));
+
+    VulkanFrame vulkan_frame;
+    assert(create_vulkan_frame(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline, vertices_data_length, indices_data_length, sizeof(transform), &vulkan_frame));
+
+    VulkanBuffer host_vertex_buffer;
+    assert(create_vulkan_buffer(&vulkan_context, vertices_data_length,
+                                VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                &host_vertex_buffer));
+    memcpy(host_vertex_buffer.data, bishop_model.vertices_data, vertices_data_length);
+
+    VulkanBuffer host_index_buffer;
+    assert(create_vulkan_buffer(&vulkan_context, indices_data_length,
+                                VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                &host_index_buffer));
+    memcpy(host_index_buffer.data, bishop_model.indices_data, indices_data_length);
+
     VulkanBuffer host_uniform_buffer;
     assert(create_vulkan_buffer(&vulkan_context, sizeof(transform),
                                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                 &host_uniform_buffer));
     memcpy(host_uniform_buffer.data, &transform, sizeof(transform));
 
-    VulkanBuffer uniform_buffer;
-    assert(create_vulkan_buffer(&vulkan_context, sizeof(transform),
-                                VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                &uniform_buffer));
-
-    VkDescriptorBufferInfo descriptor_buffer_info = {};
-    descriptor_buffer_info.buffer = uniform_buffer.handle;
-    descriptor_buffer_info.offset = 0;
-    descriptor_buffer_info.range = VK_WHOLE_SIZE;
-
-    VkWriteDescriptorSet descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    descriptor_set_write.dstSet = vulkan_pipeline.descriptor_set;
-    descriptor_set_write.dstBinding = 0;
-    descriptor_set_write.dstArrayElement = 0;
-    descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptor_set_write.descriptorCount = 1;
-    descriptor_set_write.pBufferInfo = &descriptor_buffer_info;
-
-    vkUpdateDescriptorSets(vulkan_context.device_handle, 1, &descriptor_set_write, 0, NULL);
-
     show_window(window);
 
     Int current_angle = 0;
+
+    Bool camera_moving_x_pos = false;
+    Bool camera_moving_x_neg = false;
+    Bool camera_moving_y_pos = false;
+    Bool camera_moving_y_neg = false;
+    Bool camera_moving_z_pos = false;
+    Bool camera_moving_z_neg = false;
+
+    Bool camera_rotating_x_pos = false;
+    Bool camera_rotating_x_neg = false;
+    Bool camera_rotating_y_pos = false;
+    Bool camera_rotating_y_neg = false;
+    Bool camera_rotating_z_pos = false;
+    Bool camera_rotating_z_neg = false;
+
     Bool is_running = true;
-    Int current_frame_index = 0;
     while (is_running)
     {
         WindowMessage message;
@@ -139,15 +124,176 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 is_running = false;
                 break;
             }
+            else if (message.type == WindowMessageType::key_down)
+            {
+                WindowMessageKeyCode key_code = message.key_down_data.key_code;
+
+                if (key_code == WindowMessageKeyCode::key_d)
+                {
+                    camera_moving_x_pos = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_a)
+                {
+                    camera_moving_x_neg = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_x)
+                {
+                    camera_moving_y_pos = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_2)
+                {
+                    camera_moving_y_neg = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_w)
+                {
+                    camera_moving_z_pos = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_s)
+                {
+                    camera_moving_z_neg = true;
+                }
+
+                if (key_code == WindowMessageKeyCode::key_u)
+                {
+                    camera_rotating_x_pos = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_j)
+                {
+                    camera_rotating_x_neg = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_k)
+                {
+                    camera_rotating_y_pos = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_h)
+                {
+                    camera_rotating_y_neg = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_l)
+                {
+                    camera_rotating_z_pos = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_g)
+                {
+                    camera_rotating_z_neg = true;
+                }
+            }
+            else if (message.type == WindowMessageType::key_up)
+            {
+                WindowMessageKeyCode key_code = message.key_down_data.key_code;
+
+                if (key_code == WindowMessageKeyCode::key_d)
+                {
+                    camera_moving_x_pos = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_a)
+                {
+                    camera_moving_x_neg = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_x)
+                {
+                    camera_moving_y_pos = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_2)
+                {
+                    camera_moving_y_neg = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_w)
+                {
+                    camera_moving_z_pos = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_s)
+                {
+                    camera_moving_z_neg = false;
+                }
+
+                if (key_code == WindowMessageKeyCode::key_u)
+                {
+                    camera_rotating_x_pos = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_j)
+                {
+                    camera_rotating_x_neg = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_k)
+                {
+                    camera_rotating_y_pos = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_h)
+                {
+                    camera_rotating_y_neg = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_l)
+                {
+                    camera_rotating_z_pos = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_g)
+                {
+                    camera_rotating_z_neg = false;
+                }
+            }
         }
 
-        transform.model = get_rotation_matrix_z(degree_to_radian(current_angle));
+        Real speed = 3;
+        if (camera_moving_x_pos)
+        {
+            camera_pos.x += speed;
+        }
+        else if (camera_moving_x_neg)
+        {
+            camera_pos.x -= speed;
+        }
+        else if (camera_moving_y_pos)
+        {
+            camera_pos.y += speed;
+        }
+        else if (camera_moving_y_neg)
+        {
+            camera_pos.y -= speed;
+        }
+        else if (camera_moving_z_pos)
+        {
+            camera_pos.z += speed;
+        }
+        else if (camera_moving_z_neg)
+        {
+            camera_pos.z -= speed;
+        }
+
+        Real rotating_speed = PI / 180;
+        if (camera_rotating_x_pos)
+        {
+            camera_dir = vec3(get_rotation_matrix_x(rotating_speed) * vec4(camera_dir));
+        }
+        else if (camera_rotating_x_neg)
+        {
+            camera_dir = vec3(get_rotation_matrix_x(-rotating_speed) * vec4(camera_dir));
+        }
+        else if (camera_rotating_y_pos)
+        {
+            camera_dir = vec3(get_rotation_matrix_y(rotating_speed) * vec4(camera_dir));
+        }
+        else if (camera_rotating_y_neg)
+        {
+            camera_dir = vec3(get_rotation_matrix_y(-rotating_speed) * vec4(camera_dir));
+        }
+        else if (camera_rotating_z_pos)
+        {
+            camera_dir = vec3(get_rotation_matrix_z(rotating_speed) * vec4(camera_dir));
+        }
+        else if (camera_rotating_z_neg)
+        {
+            camera_dir = vec3(get_rotation_matrix_z(-rotating_speed) * vec4(camera_dir));
+        }
+
+        transform.model = get_rotation_matrix_y(degree_to_radian(current_angle));
+        transform.view = get_view_matrix(camera_pos, camera_dir, {0, 1, 0});
+        transform.normal_view = get_normal_view_matrix(camera_pos, camera_dir, {0, 1, 0});
         memcpy(host_uniform_buffer.data, &transform, sizeof(transform));
 
-        assert(render_vulkan_frame(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline, &vulkan_frames[current_frame_index],
-                                   &host_vertex_buffer, &vertex_buffer, &host_index_buffer, &index_buffer, &host_uniform_buffer, &uniform_buffer, bishop_model.indices_count,
-                                   light_pos));
-        current_frame_index = (current_frame_index + 1) % 3;
+        assert(render_vulkan_frame(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline, &vulkan_frame,
+                                   &host_vertex_buffer, &host_index_buffer, &host_uniform_buffer,
+                                   bishop_model.indices_count, light_pos));
         current_angle = (current_angle + 1) % 360;
     }
 

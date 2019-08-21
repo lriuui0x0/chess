@@ -112,7 +112,7 @@ Real &Vec4::operator[](Int index)
     return this->entries[index];
 }
 
-Vec4 vec4(Vec3 u, Real w)
+Vec4 vec4(Vec3 u, Real w = 1)
 {
     return {u.x, u.y, u.z, w};
 }
@@ -264,24 +264,24 @@ Mat4 get_rotation_matrix_z(Real angle)
     return result;
 }
 
-Mat4 get_view_matrix(Vec3 eye, Vec3 center, Vec3 down)
+Mat4 get_view_matrix(Vec3 pos, Vec3 dir, Vec3 up)
 {
     Mat4 result;
-    Vec3 pos_z = normalize(center - eye);
-    Vec3 pos_x = normalize(cross(down, pos_z));
+    Vec3 pos_z = normalize(dir);
+    Vec3 pos_x = normalize(cross(up, pos_z));
     Vec3 pos_y = cross(pos_z, pos_x);
     result[0] = {pos_x.x, pos_y.x, pos_z.x, 0};
     result[1] = {pos_x.y, pos_y.y, pos_z.y, 0};
     result[2] = {pos_x.z, pos_y.z, pos_z.z, 0};
-    result[3] = {-dot(eye, pos_x), -dot(eye, pos_y), -dot(eye, pos_z), 1};
+    result[3] = {-dot(pos, pos_x), -dot(pos, pos_y), -dot(pos, pos_z), 1};
     return result;
 }
 
-Mat4 get_normal_view_matrix(Vec3 eye, Vec3 center, Vec3 down)
+Mat4 get_normal_view_matrix(Vec3 pos, Vec3 dir, Vec3 up)
 {
     Mat4 result;
-    Vec3 pos_z = normalize(center - eye);
-    Vec3 pos_x = normalize(cross(down, pos_z));
+    Vec3 pos_z = normalize(dir);
+    Vec3 pos_x = normalize(cross(up, pos_z));
     Vec3 pos_y = cross(pos_z, pos_x);
     result[0] = {pos_x.x, pos_y.x, pos_z.x, 0};
     result[1] = {pos_x.y, pos_y.y, pos_z.y, 0};

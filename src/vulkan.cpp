@@ -269,11 +269,10 @@ Bool create_descriptor_set(VulkanContext *context, OUT VkDescriptorSetLayout *de
 
 struct VulkanPipeline
 {
+    VkPipeline handle;
     VkRenderPass render_pass;
-    VkPipeline pipeline;
-    Array<VkFramebuffer> framebuffers;
     VkPipelineLayout pipeline_layout;
-    VkDescriptorSet descriptor_set;
+    VkDescriptorSetLayout descriptor_set_layout;
 };
 
 Bool create_vulkan_shader(VulkanContext *context, RawStr filename, OUT VkShaderModule *shader_module)
@@ -297,7 +296,7 @@ Bool create_vulkan_shader(VulkanContext *context, RawStr filename, OUT VkShaderM
     return true;
 }
 
-Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, OUT VulkanPipeline *pipeline_data)
+Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, OUT VulkanPipeline *pipeline)
 {
     VkResult result_code;
 
@@ -326,7 +325,7 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     render_pass_create_info.subpassCount = 1;
     render_pass_create_info.pSubpasses = &subpass;
 
-    result_code = vkCreateRenderPass(context->device_handle, &render_pass_create_info, NULL, &pipeline_data->render_pass);
+    result_code = vkCreateRenderPass(context->device_handle, &render_pass_create_info, NULL, &pipeline->render_pass);
     if (result_code != VK_SUCCESS)
     {
         return false;
@@ -450,19 +449,7 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     descriptor_set_layout_create_info.bindingCount = 1;
     descriptor_set_layout_create_info.pBindings = &descriptor_set_binding;
 
-    VkDescriptorSetLayout descriptor_set_layout;
-    result_code = vkCreateDescriptorSetLayout(context->device_handle, &descriptor_set_layout_create_info, NULL, &descriptor_set_layout);
-    if (result_code != VK_SUCCESS)
-    {
-        return false;
-    }
-
-    VkDescriptorSetAllocateInfo descriptor_set_alloc_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-    descriptor_set_alloc_info.descriptorPool = context->descriptor_pool;
-    descriptor_set_alloc_info.descriptorSetCount = 1;
-    descriptor_set_alloc_info.pSetLayouts = &descriptor_set_layout;
-
-    result_code = vkAllocateDescriptorSets(context->device_handle, &descriptor_set_alloc_info, &pipeline_data->descriptor_set);
+    result_code = vkCreateDescriptorSetLayout(context->device_handle, &descriptor_set_layout_create_info, NULL, &pipeline->descriptor_set_layout);
     if (result_code != VK_SUCCESS)
     {
         return false;
@@ -475,11 +462,11 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
 
     VkPipelineLayoutCreateInfo pipeline_layout_create_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pipeline_layout_create_info.setLayoutCount = 1;
-    pipeline_layout_create_info.pSetLayouts = &descriptor_set_layout;
+    pipeline_layout_create_info.pSetLayouts = &pipeline->descriptor_set_layout;
     pipeline_layout_create_info.pushConstantRangeCount = 1;
     pipeline_layout_create_info.pPushConstantRanges = &push_constant_range;
 
-    result_code = vkCreatePipelineLayout(context->device_handle, &pipeline_layout_create_info, NULL, &pipeline_data->pipeline_layout);
+    result_code = vkCreatePipelineLayout(context->device_handle, &pipeline_layout_create_info, NULL, &pipeline->pipeline_layout);
 
     VkGraphicsPipelineCreateInfo pipeline_create_info = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
     pipeline_create_info.stageCount = 2;
@@ -493,68 +480,20 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     pipeline_create_info.pDepthStencilState = NULL;
     pipeline_create_info.pColorBlendState = &color_blend_state_create_info;
     pipeline_create_info.pDynamicState = NULL;
-    pipeline_create_info.layout = pipeline_data->pipeline_layout;
-    pipeline_create_info.renderPass = pipeline_data->render_pass;
+    pipeline_create_info.layout = pipeline->pipeline_layout;
+    pipeline_create_info.renderPass = pipeline->render_pass;
     pipeline_create_info.subpass = 0;
     pipeline_create_info.basePipelineHandle = VK_NULL_HANDLE;
     pipeline_create_info.basePipelineIndex = -1;
 
-    result_code = vkCreateGraphicsPipelines(context->device_handle, VK_NULL_HANDLE, 1, &pipeline_create_info, NULL, &pipeline_data->pipeline);
+    result_code = vkCreateGraphicsPipelines(context->device_handle, VK_NULL_HANDLE, 1, &pipeline_create_info, NULL, &pipeline->handle);
     if (result_code != VK_SUCCESS)
     {
         return false;
     }
 
-    pipeline_data->framebuffers = create_array<VkFramebuffer>(swapchain->images.length);
-    for (Int image_index = 0; image_index < swapchain->images.length; image_index++)
-    {
-        VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-        image_view_create_info.image = swapchain->images[image_index];
-        image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
-        image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        image_view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        image_view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        image_view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        image_view_create_info.subresourceRange.baseMipLevel = 0;
-        image_view_create_info.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
-        image_view_create_info.subresourceRange.baseArrayLayer = 0;
-        image_view_create_info.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
-
-        VkImageView image_view;
-        result_code = vkCreateImageView(context->device_handle, &image_view_create_info, NULL, &image_view);
-        if (result_code != VK_SUCCESS)
-        {
-            return false;
-        }
-
-        VkFramebufferCreateInfo frame_buffer_create_info = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-        frame_buffer_create_info.renderPass = pipeline_data->render_pass;
-        frame_buffer_create_info.attachmentCount = 1;
-        frame_buffer_create_info.pAttachments = &image_view;
-        frame_buffer_create_info.width = swapchain->width;
-        frame_buffer_create_info.height = swapchain->height;
-        frame_buffer_create_info.layers = 1;
-
-        VkFramebuffer *framebuffer = pipeline_data->framebuffers.push();
-        result_code = vkCreateFramebuffer(context->device_handle, &frame_buffer_create_info, NULL, framebuffer);
-        if (result_code != VK_SUCCESS)
-        {
-            return false;
-        }
-    }
-
     return true;
 }
-
-struct VulkanFrame
-{
-    VkCommandBuffer command_buffer;
-    VkSemaphore image_aquired_semaphore;
-    VkSemaphore render_finished_semaphore;
-    VkFence frame_finished_fence;
-};
 
 Bool create_vulkan_semaphore(VulkanContext *context, OUT VkSemaphore *semaphore)
 {
@@ -571,45 +510,6 @@ Bool create_vulkan_fence(VulkanContext *context, Bool signaled, OUT VkFence *fen
 
     VkResult result_code = vkCreateFence(context->device_handle, &fence_create_info, NULL, fence);
     return result_code == VK_SUCCESS;
-}
-
-Bool create_vulkan_frame(VulkanContext *context, Int frame_count, OUT Array<VulkanFrame> *frames)
-{
-    VkResult result_code;
-
-    *frames = create_array<VulkanFrame>(frame_count);
-    for (Int frame_index = 0; frame_index < frame_count; frame_index++)
-    {
-        VulkanFrame *frame = frames->push();
-
-        VkCommandBufferAllocateInfo command_buffer_allocate_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-        command_buffer_allocate_info.commandPool = context->command_pool;
-        command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        command_buffer_allocate_info.commandBufferCount = 1;
-
-        result_code = vkAllocateCommandBuffers(context->device_handle, &command_buffer_allocate_info, &frame->command_buffer);
-        if (result_code != VK_SUCCESS)
-        {
-            return false;
-        }
-
-        if (!create_vulkan_semaphore(context, &frame->image_aquired_semaphore))
-        {
-            return false;
-        }
-
-        if (!create_vulkan_semaphore(context, &frame->render_finished_semaphore))
-        {
-            return false;
-        }
-
-        if (!create_vulkan_fence(context, true, &frame->frame_finished_fence))
-        {
-            return false;
-        }
-    }
-
-    return true;
 }
 
 struct VulkanBuffer
@@ -686,10 +586,143 @@ Bool create_vulkan_buffer(VulkanContext *context, Int length, VkBufferUsageFlags
     return true;
 }
 
+struct VulkanFrame
+{
+    VkCommandBuffer command_buffer;
+    VkSemaphore image_aquired_semaphore;
+    VkSemaphore render_finished_semaphore;
+    VkFence frame_finished_fence;
+    Array<VkFramebuffer> frame_buffers;
+    VulkanBuffer vertex_buffer;
+    VulkanBuffer index_buffer;
+    VulkanBuffer uniform_buffer;
+    VkDescriptorSet descriptor_set;
+};
+
+Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline,
+                         Int vertex_buffer_size, Int index_buffer_size, Int uniform_buffer_size,
+                         OUT VulkanFrame *frame)
+{
+    VkResult result_code;
+
+    VkCommandBufferAllocateInfo command_buffer_allocate_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    command_buffer_allocate_info.commandPool = context->command_pool;
+    command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    command_buffer_allocate_info.commandBufferCount = 1;
+
+    result_code = vkAllocateCommandBuffers(context->device_handle, &command_buffer_allocate_info, &frame->command_buffer);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    if (!create_vulkan_semaphore(context, &frame->image_aquired_semaphore))
+    {
+        return false;
+    }
+
+    if (!create_vulkan_semaphore(context, &frame->render_finished_semaphore))
+    {
+        return false;
+    }
+
+    if (!create_vulkan_fence(context, true, &frame->frame_finished_fence))
+    {
+        return false;
+    }
+
+    frame->frame_buffers = create_array<VkFramebuffer>(swapchain->images.length);
+    for (Int image_index = 0; image_index < swapchain->images.length; image_index++)
+    {
+        VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        image_view_create_info.image = swapchain->images[image_index];
+        image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+        image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        image_view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        image_view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        image_view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        image_view_create_info.subresourceRange.baseMipLevel = 0;
+        image_view_create_info.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+        image_view_create_info.subresourceRange.baseArrayLayer = 0;
+        image_view_create_info.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+        VkImageView image_view;
+        result_code = vkCreateImageView(context->device_handle, &image_view_create_info, NULL, &image_view);
+        if (result_code != VK_SUCCESS)
+        {
+            return false;
+        }
+
+        VkFramebufferCreateInfo frame_buffer_create_info = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+        frame_buffer_create_info.renderPass = pipeline->render_pass;
+        frame_buffer_create_info.attachmentCount = 1;
+        frame_buffer_create_info.pAttachments = &image_view;
+        frame_buffer_create_info.width = swapchain->width;
+        frame_buffer_create_info.height = swapchain->height;
+        frame_buffer_create_info.layers = 1;
+
+        VkFramebuffer *frame_buffer = frame->frame_buffers.push();
+        result_code = vkCreateFramebuffer(context->device_handle, &frame_buffer_create_info, NULL, frame_buffer);
+        if (result_code != VK_SUCCESS)
+        {
+            return false;
+        }
+    }
+
+    if (!create_vulkan_buffer(context, vertex_buffer_size,
+                              VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                              &frame->vertex_buffer))
+    {
+        return false;
+    }
+
+    if (!create_vulkan_buffer(context, index_buffer_size,
+                              VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                              &frame->index_buffer))
+    {
+        return false;
+    }
+
+    if (!create_vulkan_buffer(context, uniform_buffer_size,
+                              VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                              &frame->uniform_buffer))
+    {
+        return false;
+    }
+
+    VkDescriptorSetAllocateInfo descriptor_set_alloc_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    descriptor_set_alloc_info.descriptorPool = context->descriptor_pool;
+    descriptor_set_alloc_info.descriptorSetCount = 1;
+    descriptor_set_alloc_info.pSetLayouts = &pipeline->descriptor_set_layout;
+
+    result_code = vkAllocateDescriptorSets(context->device_handle, &descriptor_set_alloc_info, &frame->descriptor_set);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkDescriptorBufferInfo descriptor_buffer_info = {};
+    descriptor_buffer_info.buffer = frame->uniform_buffer.handle;
+    descriptor_buffer_info.offset = 0;
+    descriptor_buffer_info.range = VK_WHOLE_SIZE;
+
+    VkWriteDescriptorSet descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    descriptor_set_write.dstSet = frame->descriptor_set;
+    descriptor_set_write.dstBinding = 0;
+    descriptor_set_write.dstArrayElement = 0;
+    descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptor_set_write.descriptorCount = 1;
+    descriptor_set_write.pBufferInfo = &descriptor_buffer_info;
+
+    vkUpdateDescriptorSets(context->device_handle, 1, &descriptor_set_write, 0, NULL);
+
+    return true;
+}
+
 Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline, VulkanFrame *frame,
-                         VulkanBuffer *host_vertex_buffer, VulkanBuffer *vertex_buffer,
-                         VulkanBuffer *host_index_buffer, VulkanBuffer *index_buffer,
-                         VulkanBuffer *host_uniform_buffer, VulkanBuffer *uniform_buffer,
+                         VulkanBuffer *host_vertex_buffer, VulkanBuffer *host_index_buffer, VulkanBuffer *host_uniform_buffer, 
                          Int indices_count, Vec3 light_pos)
 {
     VkResult result_code;
@@ -724,27 +757,27 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     VkBufferCopy vertex_buffer_copy = {};
     vertex_buffer_copy.srcOffset = 0;
     vertex_buffer_copy.dstOffset = 0;
-    vertex_buffer_copy.size = vertex_buffer->length;
-    vkCmdCopyBuffer(frame->command_buffer, host_vertex_buffer->handle, vertex_buffer->handle, 1, &vertex_buffer_copy);
+    vertex_buffer_copy.size = frame->vertex_buffer.length;
+    vkCmdCopyBuffer(frame->command_buffer, host_vertex_buffer->handle, frame->vertex_buffer.handle, 1, &vertex_buffer_copy);
 
     VkBufferCopy index_buffer_copy = {};
     index_buffer_copy.srcOffset = 0;
     index_buffer_copy.dstOffset = 0;
-    index_buffer_copy.size = index_buffer->length;
-    vkCmdCopyBuffer(frame->command_buffer, host_index_buffer->handle, index_buffer->handle, 1, &index_buffer_copy);
+    index_buffer_copy.size = frame->index_buffer.length;
+    vkCmdCopyBuffer(frame->command_buffer, host_index_buffer->handle, frame->index_buffer.handle, 1, &index_buffer_copy);
 
     VkBufferCopy uniform_buffer_copy = {};
     uniform_buffer_copy.srcOffset = 0;
     uniform_buffer_copy.dstOffset = 0;
-    uniform_buffer_copy.size = uniform_buffer->length;
-    vkCmdCopyBuffer(frame->command_buffer, host_uniform_buffer->handle, uniform_buffer->handle, 1, &uniform_buffer_copy);
+    uniform_buffer_copy.size = frame->uniform_buffer.length;
+    vkCmdCopyBuffer(frame->command_buffer, host_uniform_buffer->handle, frame->uniform_buffer.handle, 1, &uniform_buffer_copy);
 
     VkBufferMemoryBarrier vertex_buffer_memory_barrier[2] = {{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER}, {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER}};
     vertex_buffer_memory_barrier[0].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     vertex_buffer_memory_barrier[0].dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
     vertex_buffer_memory_barrier[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     vertex_buffer_memory_barrier[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    vertex_buffer_memory_barrier[0].buffer = vertex_buffer->handle;
+    vertex_buffer_memory_barrier[0].buffer = frame->vertex_buffer.handle;
     vertex_buffer_memory_barrier[0].offset = 0;
     vertex_buffer_memory_barrier[0].size = VK_WHOLE_SIZE;
 
@@ -752,7 +785,7 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     vertex_buffer_memory_barrier[1].dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
     vertex_buffer_memory_barrier[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     vertex_buffer_memory_barrier[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    vertex_buffer_memory_barrier[1].buffer = index_buffer->handle;
+    vertex_buffer_memory_barrier[1].buffer = frame->index_buffer.handle;
     vertex_buffer_memory_barrier[1].offset = 0;
     vertex_buffer_memory_barrier[1].size = VK_WHOLE_SIZE;
 
@@ -763,7 +796,7 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     uniform_buffer_memory_barrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
     uniform_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     uniform_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    uniform_buffer_memory_barrier.buffer = uniform_buffer->handle;
+    uniform_buffer_memory_barrier.buffer = frame->uniform_buffer.handle;
     uniform_buffer_memory_barrier.offset = 0;
     uniform_buffer_memory_barrier.size = VK_WHOLE_SIZE;
 
@@ -772,7 +805,7 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     VkClearValue clear_color = {1, 1, 1, 1};
     VkRenderPassBeginInfo render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     render_pass_begin_info.renderPass = pipeline->render_pass;
-    render_pass_begin_info.framebuffer = pipeline->framebuffers[image_index];
+    render_pass_begin_info.framebuffer = frame->frame_buffers[image_index];
     render_pass_begin_info.renderArea.offset = {0, 0};
     render_pass_begin_info.renderArea.extent = {(UInt4)swapchain->width, (UInt4)swapchain->height};
     render_pass_begin_info.clearValueCount = 1;
@@ -780,13 +813,13 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
 
     vkCmdBeginRenderPass(frame->command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
+    vkCmdBindPipeline(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle);
 
     VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(frame->command_buffer, 0, 1, &vertex_buffer->handle, &offset);
-    vkCmdBindIndexBuffer(frame->command_buffer, index_buffer->handle, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindVertexBuffers(frame->command_buffer, 0, 1, &frame->vertex_buffer.handle, &offset);
+    vkCmdBindIndexBuffer(frame->command_buffer, frame->index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
 
-    vkCmdBindDescriptorSets(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline_layout, 0, 1, &pipeline->descriptor_set, 0, NULL);
+    vkCmdBindDescriptorSets(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline_layout, 0, 1, &frame->descriptor_set, 0, NULL);
     vkCmdPushConstants(frame->command_buffer, pipeline->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Vec3), &light_pos);
 
     vkCmdDrawIndexed(frame->command_buffer, indices_count, 1, 0, 0, 0);

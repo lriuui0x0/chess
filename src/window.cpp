@@ -81,6 +81,8 @@ enum struct WindowMessageType
     mouse_left_down,
     mouse_left_up,
     mouse_move,
+    key_down,
+    key_up,
 };
 
 enum struct WindowMessageResizeType
@@ -103,10 +105,61 @@ struct WindowMessageMouseClickData
     Int y;
 };
 
-struct WIndowMessageMouseMoveData
+struct WindowMessageMouseMoveData
 {
     Int x;
     Int y;
+};
+
+enum struct WindowMessageKeyCode
+{
+    key_0 = '0',
+    key_1 = '1',
+    key_2 = '2',
+    key_3 = '3',
+    key_4 = '4',
+    key_5 = '5',
+    key_6 = '6',
+    key_7 = '7',
+    key_8 = '8',
+    key_9 = '9',
+
+    key_a = 'A',
+    key_b = 'B',
+    key_c = 'C',
+    key_d = 'D',
+    key_e = 'E',
+    key_f = 'F',
+    key_g = 'G',
+    key_h = 'H',
+    key_i = 'I',
+    key_j = 'J',
+    key_k = 'K',
+    key_l = 'L',
+    key_m = 'M',
+    key_n = 'N',
+    key_o = 'O',
+    key_p = 'P',
+    key_q = 'Q',
+    key_r = 'R',
+    key_s = 'S',
+    key_t = 'T',
+    key_u = 'U',
+    key_v = 'V',
+    key_w = 'W',
+    key_x = 'X',
+    key_y = 'Y',
+    key_z = 'Z',
+};
+
+struct WindowMessageKeyDownData
+{
+    WindowMessageKeyCode key_code;
+};
+
+struct WindowMessageKeyUpData
+{
+    WindowMessageKeyCode key_code;
 };
 
 struct WindowMessage
@@ -115,7 +168,9 @@ struct WindowMessage
     union {
         WindowMessageResizeData resize_data;
         WindowMessageMouseClickData mouse_click_data;
-        WIndowMessageMouseMoveData mouse_move_data;
+        WindowMessageMouseMoveData mouse_move_data;
+        WindowMessageKeyDownData key_down_data;
+        WindowMessageKeyUpData key_up_data;
     };
 };
 
@@ -185,6 +240,23 @@ Bool get_window_message(Window window, OUT WindowMessage *message)
                 message->type = WindowMessageType::mouse_move;
                 message->mouse_move_data.x = GET_X_LPARAM(os_message.lParam);
                 message->mouse_move_data.y = GET_Y_LPARAM(os_message.lParam);
+
+                got_message = true;
+            }
+            else if (os_message.message == WM_SYSKEYDOWN || os_message.message == WM_KEYDOWN)
+            {
+                if (!(os_message.lParam & (1 << 30)))
+                {
+                    message->type = WindowMessageType::key_down;
+                    message->key_down_data.key_code = (WindowMessageKeyCode)os_message.wParam;
+
+                    got_message = true;
+                }
+            }
+            else if (os_message.message == WM_SYSKEYUP || os_message.message == WM_KEYUP)
+            {
+                message->type = WindowMessageType::key_up;
+                message->key_up_data.key_code = (WindowMessageKeyCode)os_message.wParam;
 
                 got_message = true;
             }

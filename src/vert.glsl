@@ -21,11 +21,11 @@ void main() {
     vec3 light_dir = normalize(light.pos - world_pos);
     vec3 normal_dir = vec3(transform.normal_view * transform.model * vec4(normal, 1));
 
-    vec3 ambient_color = 0.1 * vec3(1);
+    vec3 ambient_color = 0.2 * vec3(1);
     float diffuse_coef = max(dot(light_dir, normal_dir), 0);
-    vec3 diffuse_color = diffuse_coef * vec3(1);
+    vec3 diffuse_color = 0.9 * diffuse_coef * vec3(1);
 
     color = (ambient_color + diffuse_color) * vec3(1, 0, 0);
 
-    gl_Position = transform.projection * vec4(world_pos, 1);
+    gl_Position = transform.projection * vec4(world_pos.x, world_pos.y, world_pos.z, 1);
 }
