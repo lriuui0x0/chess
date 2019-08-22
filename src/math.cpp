@@ -70,6 +70,15 @@ Vec3 operator-(Vec3 u)
     return result;
 }
 
+Vec3 operator*(Real s, Vec3 u)
+{
+    Vec3 result;
+    result.x = s * u.x;
+    result.y = s * u.y;
+    result.z = s * u.z;
+    return result;
+}
+
 Vec3 normalize(Vec3 u)
 {
     Vec3 result;
@@ -214,6 +223,38 @@ Vec4 operator*(Mat4 transform, Vec4 u)
     return result;
 }
 
+Vec3 operator*(Mat4 transform, Vec3 u)
+{
+    Vec3 result;
+    result.x = dot(vec3(transform.row(0)), u);
+    result.y = dot(vec3(transform.row(1)), u);
+    result.z = dot(vec3(transform.row(2)), u);
+    return result;
+}
+
+Mat4 operator*(Mat4 transform1, Mat4 transform2)
+{
+    Mat4 result;
+    for (Int row = 0; row < 4; row++)
+    {
+        for (Int col = 0; col < 4; col++)
+        {
+            result[col][row] = dot(transform1.row(row), transform2[col]);
+        }
+    }
+    return result;
+}
+
+Mat4 transpose(Mat4 transform)
+{
+    Mat4 result;
+    result[0] = transform.row(0);
+    result[1] = transform.row(1);
+    result[2] = transform.row(2);
+    result[3] = transform.row(3);
+    return result;
+}
+
 Mat4 get_identity_matrix()
 {
     Mat4 result;
@@ -268,7 +309,7 @@ Mat4 get_view_matrix(Vec3 pos, Vec3 dir, Vec3 up)
 {
     Mat4 result;
     Vec3 pos_z = normalize(dir);
-    Vec3 pos_x = normalize(cross(up, pos_z));
+    Vec3 pos_x = normalize(cross(pos_z, up));
     Vec3 pos_y = cross(pos_z, pos_x);
     result[0] = {pos_x.x, pos_y.x, pos_z.x, 0};
     result[1] = {pos_x.y, pos_y.y, pos_z.y, 0};

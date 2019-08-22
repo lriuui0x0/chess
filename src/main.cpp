@@ -12,6 +12,12 @@ struct Transform
     Mat4 projection;
 };
 
+struct Entity
+{
+    Vec3 pos;
+    Mat4 rotation;
+};
+
 int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int show_code)
 {
     Str file;
@@ -38,14 +44,20 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         max_z = max(max_z, vertex.z);
     }
 
-    Vec3 light_pos = {0, 0, -100};
-    Vec3 camera_pos = {0, 100, -300};
-    Vec3 camera_dir = {0, 0, 1};
+    Entity camera;
+    camera.pos = {0, 100, -300};
+    camera.rotation = get_identity_matrix();
+
+    Entity light;
+    light.pos = {0, 0, -100}; 
+    light.rotation = get_identity_matrix();
+
+    Entity *active_entity = &camera;
 
     Transform transform;
     transform.model = get_identity_matrix();
-    transform.view = get_view_matrix(camera_pos, camera_dir, {0, -1, 0});
-    transform.normal_view = get_normal_view_matrix(camera_pos, camera_dir, {0, -1, 0});
+    transform.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+    transform.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
     transform.projection = get_perspective_matrix(degree_to_radian(60), 800.0 / 600.0, 50, 500);
 
     for (Int vertex_index = 0; vertex_index < bishop_model.vertices_count; vertex_index++)
@@ -54,7 +66,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         Vec3 normal = bishop_model.vertices_data[vertex_index].normal;
 
         Vec3 world_pos = vec3(transform.view * (transform.model * vec4(vertex, 1)));
-        Vec3 light_dir = normalize(light_pos - world_pos);
+        Vec3 light_dir = normalize(light.pos - world_pos);
         Vec3 normal_dir = normalize(vec3(transform.normal_view * (transform.model * vec4(normal, 1))));
 
         Real diffuse_coef = dot(light_dir, normal_dir);
@@ -99,19 +111,19 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     Int current_angle = 0;
 
-    Bool camera_moving_x_pos = false;
-    Bool camera_moving_x_neg = false;
-    Bool camera_moving_y_pos = false;
-    Bool camera_moving_y_neg = false;
-    Bool camera_moving_z_pos = false;
-    Bool camera_moving_z_neg = false;
+    Bool moving_x_pos = false;
+    Bool moving_x_neg = false;
+    Bool moving_y_pos = false;
+    Bool moving_y_neg = false;
+    Bool moving_z_pos = false;
+    Bool moving_z_neg = false;
 
-    Bool camera_rotating_x_pos = false;
-    Bool camera_rotating_x_neg = false;
-    Bool camera_rotating_y_pos = false;
-    Bool camera_rotating_y_neg = false;
-    Bool camera_rotating_z_pos = false;
-    Bool camera_rotating_z_neg = false;
+    Bool rotating_x_pos = false;
+    Bool rotating_x_neg = false;
+    Bool rotating_y_pos = false;
+    Bool rotating_y_neg = false;
+    Bool rotating_z_pos = false;
+    Bool rotating_z_neg = false;
 
     Bool is_running = true;
     while (is_running)
@@ -130,170 +142,185 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
                 if (key_code == WindowMessageKeyCode::key_d)
                 {
-                    camera_moving_x_pos = true;
+                    moving_x_pos = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_a)
                 {
-                    camera_moving_x_neg = true;
+                    moving_x_neg = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_x)
                 {
-                    camera_moving_y_pos = true;
+                    moving_y_pos = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_2)
                 {
-                    camera_moving_y_neg = true;
+                    moving_y_neg = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_w)
                 {
-                    camera_moving_z_pos = true;
+                    moving_z_pos = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_s)
                 {
-                    camera_moving_z_neg = true;
+                    moving_z_neg = true;
                 }
 
                 if (key_code == WindowMessageKeyCode::key_u)
                 {
-                    camera_rotating_x_pos = true;
+                    rotating_x_pos = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_j)
                 {
-                    camera_rotating_x_neg = true;
+                    rotating_x_neg = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_k)
                 {
-                    camera_rotating_y_pos = true;
+                    rotating_y_pos = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_h)
                 {
-                    camera_rotating_y_neg = true;
+                    rotating_y_neg = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_l)
                 {
-                    camera_rotating_z_pos = true;
+                    rotating_z_pos = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_g)
                 {
-                    camera_rotating_z_neg = true;
+                    rotating_z_neg = true;
                 }
             }
             else if (message.type == WindowMessageType::key_up)
             {
                 WindowMessageKeyCode key_code = message.key_down_data.key_code;
 
+                if (key_code == WindowMessageKeyCode::key_tab)
+                {
+                    if (active_entity == &camera)
+                    {
+                        active_entity = &light;
+                    }
+                    else
+                    {
+                        active_entity = &camera;
+                    }
+                }
+
                 if (key_code == WindowMessageKeyCode::key_d)
                 {
-                    camera_moving_x_pos = false;
+                    moving_x_pos = false;
                 }
                 else if (key_code == WindowMessageKeyCode::key_a)
                 {
-                    camera_moving_x_neg = false;
+                    moving_x_neg = false;
                 }
                 else if (key_code == WindowMessageKeyCode::key_x)
                 {
-                    camera_moving_y_pos = false;
+                    moving_y_pos = false;
                 }
                 else if (key_code == WindowMessageKeyCode::key_2)
                 {
-                    camera_moving_y_neg = false;
+                    moving_y_neg = false;
                 }
                 else if (key_code == WindowMessageKeyCode::key_w)
                 {
-                    camera_moving_z_pos = false;
+                    moving_z_pos = false;
                 }
                 else if (key_code == WindowMessageKeyCode::key_s)
                 {
-                    camera_moving_z_neg = false;
+                    moving_z_neg = false;
                 }
 
                 if (key_code == WindowMessageKeyCode::key_u)
                 {
-                    camera_rotating_x_pos = false;
+                    rotating_x_pos = false;
                 }
                 else if (key_code == WindowMessageKeyCode::key_j)
                 {
-                    camera_rotating_x_neg = false;
+                    rotating_x_neg = false;
                 }
                 else if (key_code == WindowMessageKeyCode::key_k)
                 {
-                    camera_rotating_y_pos = false;
+                    rotating_y_pos = false;
                 }
                 else if (key_code == WindowMessageKeyCode::key_h)
                 {
-                    camera_rotating_y_neg = false;
+                    rotating_y_neg = false;
                 }
                 else if (key_code == WindowMessageKeyCode::key_l)
                 {
-                    camera_rotating_z_pos = false;
+                    rotating_z_pos = false;
                 }
                 else if (key_code == WindowMessageKeyCode::key_g)
                 {
-                    camera_rotating_z_neg = false;
+                    rotating_z_neg = false;
                 }
             }
         }
 
         Real speed = 3;
-        if (camera_moving_x_pos)
+        if (moving_x_pos)
         {
-            camera_pos.x += speed;
+            active_entity->pos = active_entity->pos + speed * vec3(active_entity->rotation.x);
         }
-        else if (camera_moving_x_neg)
+        else if (moving_x_neg)
         {
-            camera_pos.x -= speed;
+            active_entity->pos = active_entity->pos - speed * vec3(active_entity->rotation.x);
         }
-        else if (camera_moving_y_pos)
+        else if (moving_y_pos)
         {
-            camera_pos.y += speed;
+            active_entity->pos = active_entity->pos + speed * vec3(active_entity->rotation.y);
         }
-        else if (camera_moving_y_neg)
+        else if (moving_y_neg)
         {
-            camera_pos.y -= speed;
+            active_entity->pos = active_entity->pos - speed * vec3(active_entity->rotation.y);
         }
-        else if (camera_moving_z_pos)
+        else if (moving_z_pos)
         {
-            camera_pos.z += speed;
+            active_entity->pos = active_entity->pos + speed * vec3(active_entity->rotation.z);
         }
-        else if (camera_moving_z_neg)
+        else if (moving_z_neg)
         {
-            camera_pos.z -= speed;
+            active_entity->pos = active_entity->pos - speed * vec3(active_entity->rotation.z);
         }
 
         Real rotating_speed = PI / 180;
-        if (camera_rotating_x_pos)
+        Mat4 local_transform = get_identity_matrix();
+        if (rotating_x_pos)
         {
-            camera_dir = vec3(get_rotation_matrix_x(rotating_speed) * vec4(camera_dir));
+            local_transform = get_rotation_matrix_x(rotating_speed);
         }
-        else if (camera_rotating_x_neg)
+        else if (rotating_x_neg)
         {
-            camera_dir = vec3(get_rotation_matrix_x(-rotating_speed) * vec4(camera_dir));
+            local_transform = get_rotation_matrix_x(-rotating_speed);
         }
-        else if (camera_rotating_y_pos)
+        else if (rotating_y_pos)
         {
-            camera_dir = vec3(get_rotation_matrix_y(rotating_speed) * vec4(camera_dir));
+            local_transform = get_rotation_matrix_y(rotating_speed);
         }
-        else if (camera_rotating_y_neg)
+        else if (rotating_y_neg)
         {
-            camera_dir = vec3(get_rotation_matrix_y(-rotating_speed) * vec4(camera_dir));
+            local_transform = get_rotation_matrix_y(-rotating_speed);
         }
-        else if (camera_rotating_z_pos)
+        else if (rotating_z_pos)
         {
-            camera_dir = vec3(get_rotation_matrix_z(rotating_speed) * vec4(camera_dir));
+            local_transform = get_rotation_matrix_z(rotating_speed);
         }
-        else if (camera_rotating_z_neg)
+        else if (rotating_z_neg)
         {
-            camera_dir = vec3(get_rotation_matrix_z(-rotating_speed) * vec4(camera_dir));
+            local_transform = get_rotation_matrix_z(-rotating_speed);
         }
 
+        active_entity->rotation = active_entity->rotation * local_transform;
+
         transform.model = get_rotation_matrix_y(degree_to_radian(current_angle));
-        transform.view = get_view_matrix(camera_pos, camera_dir, {0, 1, 0});
-        transform.normal_view = get_normal_view_matrix(camera_pos, camera_dir, {0, 1, 0});
+        transform.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+        transform.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
         memcpy(host_uniform_buffer.data, &transform, sizeof(transform));
 
         assert(render_vulkan_frame(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline, &vulkan_frame,
                                    &host_vertex_buffer, &host_index_buffer, &host_uniform_buffer,
-                                   bishop_model.indices_count, light_pos));
+                                   bishop_model.indices_count, light.pos));
         current_angle = (current_angle + 1) % 360;
     }
 

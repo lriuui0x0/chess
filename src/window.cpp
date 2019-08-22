@@ -113,6 +113,8 @@ struct WindowMessageMouseMoveData
 
 enum struct WindowMessageKeyCode
 {
+    key_tab = '\t',
+
     key_0 = '0',
     key_1 = '1',
     key_2 = '2',
@@ -248,7 +250,8 @@ Bool get_window_message(Window window, OUT WindowMessage *message)
                 if (!(os_message.lParam & (1 << 30)))
                 {
                     message->type = WindowMessageType::key_down;
-                    message->key_down_data.key_code = (WindowMessageKeyCode)os_message.wParam;
+                    UINT char_code = MapVirtualKeyA(os_message.wParam, MAPVK_VK_TO_CHAR);
+                    message->key_down_data.key_code = (WindowMessageKeyCode)char_code;
 
                     got_message = true;
                 }
@@ -256,7 +259,8 @@ Bool get_window_message(Window window, OUT WindowMessage *message)
             else if (os_message.message == WM_SYSKEYUP || os_message.message == WM_KEYUP)
             {
                 message->type = WindowMessageType::key_up;
-                message->key_up_data.key_code = (WindowMessageKeyCode)os_message.wParam;
+                UINT char_code = MapVirtualKeyA(os_message.wParam, MAPVK_VK_TO_CHAR);
+                message->key_up_data.key_code = (WindowMessageKeyCode)char_code;
 
                 got_message = true;
             }
