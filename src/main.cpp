@@ -4,14 +4,6 @@
 #include "vulkan.cpp"
 #include "model.cpp"
 
-struct Transform
-{
-    Mat4 model;
-    Mat4 view;
-    Mat4 normal_view;
-    Mat4 projection;
-};
-
 Bool read_mesh(RawStr filename, OUT Mesh *mesh)
 {
     Str file_contents;
@@ -54,29 +46,15 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Mesh pawn_mesh;
     assert(read_mesh("../asset/pawn.asset", &pawn_mesh));
 
-    // for (Int vertex_index = 0; vertex_index < king_mesh.vertices_count; vertex_index++)
-    // {
-    //     Vec3 vertex = king_mesh.vertices_data[vertex_index].pos;
-    //     Vec3 normal = king_mesh.vertices_data[vertex_index].normal;
-
-    //     Vec3 world_pos = vec3(transform.view * (transform.model * vec4(vertex, 1)));
-    //     Vec3 light_dir = normalize(light.pos - world_pos);
-    //     Vec3 normal_dir = normalize(vec3(transform.normal_view * (transform.model * vec4(normal, 1))));
-
-    //     Real diffuse_coef = dot(light_dir, normal_dir);
-
-    //     OutputDebugStringA("");
-    // }
-
     Array<Entity> entities = create_array<Entity>();
-    add_entity(&entities, wrap_str("rook1"), {0, 0, 0}, &king_mesh);
-    add_entity(&entities, wrap_str("knight1"), {100, 0, 0}, &king_mesh);
-    add_entity(&entities, wrap_str("bishop1"), {200, 0, 0}, &king_mesh);
-    add_entity(&entities, wrap_str("queen"), {300, 0, 0}, &king_mesh);
+    add_entity(&entities, wrap_str("rook1"), {0, 0, 0}, &rook_mesh);
+    add_entity(&entities, wrap_str("knight1"), {100, 0, 0}, &knight_mesh);
+    add_entity(&entities, wrap_str("bishop1"), {200, 0, 0}, &bishop_mesh);
+    add_entity(&entities, wrap_str("queen"), {300, 0, 0}, &queen_mesh);
     add_entity(&entities, wrap_str("king"), {400, 0, 0}, &king_mesh);
-    add_entity(&entities, wrap_str("bishop2"), {500, 0, 0}, &king_mesh);
-    add_entity(&entities, wrap_str("knight2"), {600, 0, 0}, &king_mesh);
-    add_entity(&entities, wrap_str("rook2"), {700, 0, 0}, &king_mesh);
+    add_entity(&entities, wrap_str("bishop2"), {500, 0, 0}, &bishop_mesh);
+    add_entity(&entities, wrap_str("knight2"), {600, 0, 0}, &knight_mesh);
+    add_entity(&entities, wrap_str("rook2"), {700, 0, 0}, &rook_mesh);
     for (Int i = 0; i < 8; i++)
     {
         Int1 number_suffix_data[2];
@@ -92,8 +70,8 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Int total_index_data_length = 0;
     for (Int i = 0; i < entities.length; i++)
     {
-        total_vertex_data_length += sizeof(Vertex) * entities[i].mesh->vertices_count;
-        total_index_data_length += sizeof(UInt4) * entities[i].mesh->indices_count;
+        total_vertex_data_length += sizeof(Vertex) * entities[i].mesh->vertex_count;
+        total_index_data_length += sizeof(UInt4) * entities[i].mesh->index_count;
     }
 
     Entity camera;
@@ -106,11 +84,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     Entity *active_entity = &camera;
 
-    Transform transform;
-    transform.model = get_identity_matrix();
-    transform.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-    transform.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-    transform.projection = get_perspective_matrix(degree_to_radian(45), (Real)window_width / (Real)window_height, 10, 1000);
+    CommonTransform common_transform;
+    common_transform.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+    common_transform.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+    common_transform.projection = get_perspective_matrix(degree_to_radian(45), (Real)window_width / (Real)window_height, 10, 1000);
 
     Window window = create_window(wrap_str("Chess"), window_width, window_height, 50, 50);
     assert(window);
@@ -133,11 +110,13 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Int current_vertex_data_offset = 0;
     Int current_index_data_offset = 0;
     Int current_uniform_data_offset = 0;
+    memcpy(host_uniform_buffer.data, &common_transform, sizeof(common_transform));
+    current_uniform_data_offset += sizeof(common_transform);
     for (Int i = 0; i < entities.length; i++)
     {
         Mesh *mesh = entities[i].mesh;
-        Int current_vertex_data_length = sizeof(mesh->vertices_data[0]);
-        Int current_index_data_length = sizeof(mesh->indices_data[0]);
+        Int current_vertex_data_length = mesh->vertex_count * sizeof(mesh->vertices_data[0]);
+        Int current_index_data_length = mesh->index_count * sizeof(mesh->indices_data[0]);
         memcpy(host_vertex_buffer.data + current_vertex_data_offset, entities[i].mesh->vertices_data, current_vertex_data_length);
         memcpy(host_index_buffer.data + current_index_data_offset, entities[i].mesh->indices_data, current_index_data_length);
         *(Mat4 *)(host_uniform_buffer.data + current_uniform_data_offset) = get_translate_matrix(entities[i].pos.x, entities[i].pos.y, entities[i].pos.z);
@@ -147,9 +126,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         current_uniform_data_offset += sizeof(Mat4);
     }
 
-    assert(upload_vulkan_buffer(&vulkan_context, &host_vertex_buffer, &vulkan_frame.entity_vertex_buffer));
-    assert(upload_vulkan_buffer(&vulkan_context, &host_index_buffer, &vulkan_frame.entity_index_buffer));
-    assert(upload_vulkan_buffer(&vulkan_context, &host_uniform_buffer, &vulkan_frame.entity_uniform_buffer));
+    assert(upload_vulkan_buffer(&vulkan_context, &host_vertex_buffer, &vulkan_frame.vertex_buffer));
+    assert(upload_vulkan_buffer(&vulkan_context, &host_index_buffer, &vulkan_frame.index_buffer));
+    assert(upload_vulkan_buffer(&vulkan_context, &host_uniform_buffer, &vulkan_frame.uniform_buffer));
 
     show_window(window);
 
@@ -327,13 +306,12 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
         active_entity->rotation = active_entity->rotation * local_transform;
 
-        transform.model = get_identity_matrix();
-        transform.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-        transform.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-        memcpy(host_uniform_buffer.data, &transform, sizeof(transform));
+        common_transform.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+        common_transform.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+        memcpy(host_uniform_buffer.data, &common_transform, sizeof(CommonTransform));
 
         assert(render_vulkan_frame(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline, &vulkan_frame,
-                                   &entities, light.pos));
+                                   &entities, &host_uniform_buffer, light.pos));
     }
 
     return 0;

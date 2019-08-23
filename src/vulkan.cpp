@@ -200,10 +200,10 @@ Bool create_vulkan_context(Window window, OUT VulkanContext *context)
 
     VkDescriptorPoolSize descriptor_pool_size = {};
     descriptor_pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptor_pool_size.descriptorCount = 1;
+    descriptor_pool_size.descriptorCount = 32;
 
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    descriptor_pool_create_info.maxSets = 1;
+    descriptor_pool_create_info.maxSets = 32;
     descriptor_pool_create_info.poolSizeCount = 1;
     descriptor_pool_create_info.pPoolSizes = &descriptor_pool_size;
 
@@ -283,8 +283,9 @@ struct VulkanPipeline
 {
     VkPipeline handle;
     VkRenderPass render_pass;
+    VkDescriptorSetLayout entity_descriptor_set_layout;
+    VkDescriptorSetLayout common_descriptor_set_layout;
     VkPipelineLayout pipeline_layout;
-    VkDescriptorSetLayout descriptor_set_layout;
 };
 
 Bool create_vulkan_shader(VulkanContext *context, RawStr filename, OUT VkShaderModule *shader_module)
@@ -312,28 +313,42 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
 {
     VkResult result_code;
 
-    VkAttachmentDescription framebuffer_description = {};
-    framebuffer_description.format = VK_FORMAT_R8G8B8A8_UNORM;
-    framebuffer_description.samples = VK_SAMPLE_COUNT_1_BIT;
-    framebuffer_description.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    framebuffer_description.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    framebuffer_description.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    framebuffer_description.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    framebuffer_description.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    framebuffer_description.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    VkAttachmentDescription framebuffer_description[2] = {};
+    framebuffer_description[0].format = VK_FORMAT_R8G8B8A8_UNORM;
+    framebuffer_description[0].samples = VK_SAMPLE_COUNT_1_BIT;
+    framebuffer_description[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    framebuffer_description[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    framebuffer_description[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    framebuffer_description[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    framebuffer_description[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    framebuffer_description[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-    VkAttachmentReference framebuffer_reference = {};
-    framebuffer_reference.attachment = 0;
-    framebuffer_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    framebuffer_description[1].format = VK_FORMAT_D32_SFLOAT;
+    framebuffer_description[1].samples = VK_SAMPLE_COUNT_1_BIT;
+    framebuffer_description[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    framebuffer_description[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    framebuffer_description[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    framebuffer_description[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    framebuffer_description[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    framebuffer_description[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference color_framebuffer_reference = {};
+    color_framebuffer_reference.attachment = 0;
+    color_framebuffer_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depth_framebuffer_reference = {};
+    depth_framebuffer_reference.attachment = 1;
+    depth_framebuffer_reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkSubpassDescription subpass = {};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &framebuffer_reference;
+    subpass.pColorAttachments = &color_framebuffer_reference;
+    subpass.pDepthStencilAttachment = &depth_framebuffer_reference;
 
     VkRenderPassCreateInfo render_pass_create_info = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-    render_pass_create_info.attachmentCount = 1;
-    render_pass_create_info.pAttachments = &framebuffer_description;
+    render_pass_create_info.attachmentCount = 2;
+    render_pass_create_info.pAttachments = framebuffer_description;
     render_pass_create_info.subpassCount = 1;
     render_pass_create_info.pSubpasses = &subpass;
 
@@ -431,6 +446,17 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     multi_sample_state_create_info.alphaToCoverageEnable = VK_FALSE;
     multi_sample_state_create_info.alphaToOneEnable = VK_FALSE;
 
+    VkPipelineDepthStencilStateCreateInfo depth_stencil_state_create_info = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+    depth_stencil_state_create_info.depthTestEnable = VK_TRUE;
+    depth_stencil_state_create_info.depthWriteEnable = VK_TRUE;
+    depth_stencil_state_create_info.depthCompareOp = VK_COMPARE_OP_LESS;
+    depth_stencil_state_create_info.depthBoundsTestEnable = VK_FALSE;
+    depth_stencil_state_create_info.stencilTestEnable = VK_FALSE;
+    depth_stencil_state_create_info.front = {};
+    depth_stencil_state_create_info.back = {};
+    depth_stencil_state_create_info.minDepthBounds = 0.0f;
+    depth_stencil_state_create_info.maxDepthBounds = 1.0f;
+
     VkPipelineColorBlendAttachmentState framebuffer_color_blend_state;
     framebuffer_color_blend_state.blendEnable = VK_FALSE;
     framebuffer_color_blend_state.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
@@ -461,11 +487,21 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     descriptor_set_layout_create_info.bindingCount = 1;
     descriptor_set_layout_create_info.pBindings = &descriptor_set_binding;
 
-    result_code = vkCreateDescriptorSetLayout(context->device_handle, &descriptor_set_layout_create_info, NULL, &pipeline->descriptor_set_layout);
+    result_code = vkCreateDescriptorSetLayout(context->device_handle, &descriptor_set_layout_create_info, NULL, &pipeline->entity_descriptor_set_layout);
     if (result_code != VK_SUCCESS)
     {
         return false;
     }
+
+    result_code = vkCreateDescriptorSetLayout(context->device_handle, &descriptor_set_layout_create_info, NULL, &pipeline->common_descriptor_set_layout);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkDescriptorSetLayout descriptor_set_layout[2];
+    descriptor_set_layout[0] = pipeline->entity_descriptor_set_layout;
+    descriptor_set_layout[1] = pipeline->common_descriptor_set_layout;
 
     VkPushConstantRange push_constant_range;
     push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
@@ -473,8 +509,8 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     push_constant_range.size = sizeof(Vec3);
 
     VkPipelineLayoutCreateInfo pipeline_layout_create_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-    pipeline_layout_create_info.setLayoutCount = 1;
-    pipeline_layout_create_info.pSetLayouts = &pipeline->descriptor_set_layout;
+    pipeline_layout_create_info.setLayoutCount = 2;
+    pipeline_layout_create_info.pSetLayouts = descriptor_set_layout;
     pipeline_layout_create_info.pushConstantRangeCount = 1;
     pipeline_layout_create_info.pPushConstantRanges = &push_constant_range;
 
@@ -489,7 +525,7 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     pipeline_create_info.pViewportState = &viewport_state_create_info;
     pipeline_create_info.pRasterizationState = &rasterization_state_create_info;
     pipeline_create_info.pMultisampleState = &multi_sample_state_create_info;
-    pipeline_create_info.pDepthStencilState = NULL;
+    pipeline_create_info.pDepthStencilState = &depth_stencil_state_create_info;
     pipeline_create_info.pColorBlendState = &color_blend_state_create_info;
     pipeline_create_info.pDynamicState = NULL;
     pipeline_create_info.layout = pipeline->pipeline_layout;
@@ -598,6 +634,92 @@ Bool create_vulkan_buffer(VulkanContext *context, Int length, VkBufferUsageFlags
     return true;
 }
 
+Bool create_vulkan_image(VulkanContext *context, Int width, Int height, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags memory_property, OUT VkImage *image)
+{
+    VkResult result_code;
+
+    VkImageCreateInfo depth_image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    depth_image_create_info.imageType = VK_IMAGE_TYPE_2D;
+    depth_image_create_info.format = format;
+    depth_image_create_info.extent = {(UInt4)width, (UInt4)height, 1};
+    depth_image_create_info.mipLevels = 1;
+    depth_image_create_info.arrayLayers = 1;
+    depth_image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    depth_image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    depth_image_create_info.usage = usage;
+    depth_image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    depth_image_create_info.queueFamilyIndexCount = 0;
+    depth_image_create_info.pQueueFamilyIndices = NULL;
+    depth_image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    result_code = vkCreateImage(context->device_handle, &depth_image_create_info, NULL, image);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkMemoryRequirements memory_requirements;
+    vkGetImageMemoryRequirements(context->device_handle, *image, &memory_requirements);
+
+    VkPhysicalDeviceMemoryProperties memory_properties;
+    vkGetPhysicalDeviceMemoryProperties(context->physical_device_handle, &memory_properties);
+
+    VkDeviceMemory image_memory;
+    for (Int memory_type_index = 0; memory_type_index < memory_properties.memoryTypeCount; memory_type_index++)
+    {
+        if (has_flag(memory_requirements.memoryTypeBits, 1 << memory_type_index) &&
+            has_flag(memory_properties.memoryTypes[memory_type_index].propertyFlags, memory_property))
+        {
+            VkMemoryAllocateInfo image_memory_allocate_info = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+            image_memory_allocate_info.allocationSize = memory_requirements.size;
+            image_memory_allocate_info.memoryTypeIndex = memory_type_index;
+
+            result_code = vkAllocateMemory(context->device_handle, &image_memory_allocate_info, NULL, &image_memory);
+            if (result_code == VK_SUCCESS)
+            {
+                break;
+            }
+            else
+            {
+                return false;
+            }
+        }
+    }
+
+    result_code = vkBindImageMemory(context->device_handle, *image, image_memory, 0);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+Bool create_image_view(VulkanContext *context, VkImage image, VkFormat format, VkImageAspectFlags aspect_mask, OUT VkImageView *image_view)
+{
+    VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    image_view_create_info.image = image;
+    image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    image_view_create_info.format = format;
+    image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+    image_view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+    image_view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+    image_view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+    image_view_create_info.subresourceRange.aspectMask = aspect_mask;
+    image_view_create_info.subresourceRange.baseMipLevel = 0;
+    image_view_create_info.subresourceRange.levelCount = 1;
+    image_view_create_info.subresourceRange.baseArrayLayer = 0;
+    image_view_create_info.subresourceRange.layerCount = 1;
+
+    VkResult result_code = vkCreateImageView(context->device_handle, &image_view_create_info, NULL, image_view);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    return true;
+}
+
 Bool upload_vulkan_buffer(VulkanContext *context, VulkanBuffer *host_buffer, VulkanBuffer *device_buffer)
 {
     VkResult result_code;
@@ -611,13 +733,28 @@ Bool upload_vulkan_buffer(VulkanContext *context, VulkanBuffer *host_buffer, Vul
         return false;
     }
 
-    VkBufferCopy vertex_buffer_copy = {};
-    vertex_buffer_copy.srcOffset = 0;
-    vertex_buffer_copy.dstOffset = 0;
-    vertex_buffer_copy.size = VK_WHOLE_SIZE;
-    vkCmdCopyBuffer(context->temp_command_buffer, host_buffer->handle, device_buffer->handle, 1, &vertex_buffer_copy);
+    VkBufferCopy buffer_copy = {};
+    buffer_copy.srcOffset = 0;
+    buffer_copy.dstOffset = 0;
+    buffer_copy.size = host_buffer->length;
+    vkCmdCopyBuffer(context->temp_command_buffer, host_buffer->handle, device_buffer->handle, 1, &buffer_copy);
 
     result_code = vkEndCommandBuffer(context->temp_command_buffer);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkSubmitInfo submit_info = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submit_info.waitSemaphoreCount = 0;
+    submit_info.pWaitSemaphores = NULL;
+    submit_info.pWaitDstStageMask = NULL;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &context->temp_command_buffer;
+    submit_info.signalSemaphoreCount = 0;
+    submit_info.pSignalSemaphores = NULL;
+
+    result_code = vkQueueSubmit(context->graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
     if (result_code != VK_SUCCESS)
     {
         return false;
@@ -639,10 +776,12 @@ struct VulkanFrame
     VkSemaphore render_finished_semaphore;
     VkFence frame_finished_fence;
     Array<VkFramebuffer> frame_buffers;
-    VulkanBuffer entity_vertex_buffer;
-    VulkanBuffer entity_index_buffer;
-    VulkanBuffer entity_uniform_buffer;
+    VkImage depth_image;
+    VulkanBuffer vertex_buffer;
+    VulkanBuffer index_buffer;
+    VulkanBuffer uniform_buffer;
     Array<VkDescriptorSet> entity_descriptor_sets;
+    VkDescriptorSet common_descriptor_set;
 };
 
 struct Entity
@@ -651,6 +790,13 @@ struct Entity
     Vec3 pos;
     Mat4 rotation;
     Mesh *mesh;
+};
+
+struct CommonTransform
+{
+    Mat4 view;
+    Mat4 normal_view;
+    Mat4 projection;
 };
 
 Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline, Array<Entity> *entities,
@@ -684,34 +830,32 @@ Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
         return false;
     }
 
+    if (!create_vulkan_image(context, swapchain->width, swapchain->height,
+                             VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &frame->depth_image))
+    {
+        return false;
+    }
+
+    VkImageView depth_image_view;
+    if (!create_image_view(context, frame->depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, &depth_image_view))
+    {
+        return false;
+    }
+
     frame->frame_buffers = create_array<VkFramebuffer>(swapchain->images.length);
     for (Int image_index = 0; image_index < swapchain->images.length; image_index++)
     {
-        VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-        image_view_create_info.image = swapchain->images[image_index];
-        image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
-        image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        image_view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        image_view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        image_view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        image_view_create_info.subresourceRange.baseMipLevel = 0;
-        image_view_create_info.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
-        image_view_create_info.subresourceRange.baseArrayLayer = 0;
-        image_view_create_info.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
-
         VkImageView image_view;
-        result_code = vkCreateImageView(context->device_handle, &image_view_create_info, NULL, &image_view);
-        if (result_code != VK_SUCCESS)
+        if (!create_image_view(context, swapchain->images[image_index], VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, &image_view))
         {
             return false;
         }
 
+        VkImageView attachments[2] = {image_view, depth_image_view};
         VkFramebufferCreateInfo frame_buffer_create_info = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
         frame_buffer_create_info.renderPass = pipeline->render_pass;
-        frame_buffer_create_info.attachmentCount = 1;
-        frame_buffer_create_info.pAttachments = &image_view;
+        frame_buffer_create_info.attachmentCount = 2;
+        frame_buffer_create_info.pAttachments = attachments;
         frame_buffer_create_info.width = swapchain->width;
         frame_buffer_create_info.height = swapchain->height;
         frame_buffer_create_info.layers = 1;
@@ -728,14 +872,14 @@ Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     Int total_index_data_length = 0;
     for (Int i = 0; i < entities->length; i++)
     {
-        total_vertex_data_length += sizeof(Vertex) * entities->data[i].mesh->vertices_count;
-        total_index_data_length += sizeof(UInt4) * entities->data[i].mesh->indices_count;
+        total_vertex_data_length += sizeof(Vertex) * entities->data[i].mesh->vertex_count;
+        total_index_data_length += sizeof(UInt4) * entities->data[i].mesh->index_count;
     }
-    Int total_uniform_data_length = sizeof(Mat4) * entities->length;
+    Int total_uniform_data_length = sizeof(CommonTransform) + sizeof(Mat4) * entities->length;
 
     if (!create_vulkan_buffer(context, total_vertex_data_length,
                               VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                              &frame->entity_vertex_buffer))
+                              &frame->vertex_buffer))
     {
         return false;
     }
@@ -749,7 +893,7 @@ Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
 
     if (!create_vulkan_buffer(context, total_index_data_length,
                               VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                              &frame->entity_index_buffer))
+                              &frame->index_buffer))
     {
         return false;
     }
@@ -763,7 +907,7 @@ Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
 
     if (!create_vulkan_buffer(context, total_uniform_data_length,
                               VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                              &frame->entity_uniform_buffer))
+                              &frame->uniform_buffer))
     {
         return false;
     }
@@ -775,25 +919,51 @@ Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
         return false;
     }
 
-    frame->entity_descriptor_sets = create_array<VkDescriptorSet>(entities->length);
-    frame->entity_descriptor_sets.length = entities->length;
+    VkDescriptorSetAllocateInfo common_descriptor_set_alloc_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    common_descriptor_set_alloc_info.descriptorPool = context->descriptor_pool;
+    common_descriptor_set_alloc_info.descriptorSetCount = 1;
+    common_descriptor_set_alloc_info.pSetLayouts = &pipeline->common_descriptor_set_layout;
 
-    VkDescriptorSetAllocateInfo descriptor_set_alloc_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-    descriptor_set_alloc_info.descriptorPool = context->descriptor_pool;
-    descriptor_set_alloc_info.descriptorSetCount = entities->length;
-    descriptor_set_alloc_info.pSetLayouts = &pipeline->descriptor_set_layout;
-
-    result_code = vkAllocateDescriptorSets(context->device_handle, &descriptor_set_alloc_info, frame->entity_descriptor_sets.data);
+    result_code = vkAllocateDescriptorSets(context->device_handle, &common_descriptor_set_alloc_info, &frame->common_descriptor_set);
     if (result_code != VK_SUCCESS)
     {
         return false;
     }
 
+    VkDescriptorBufferInfo descriptor_buffer_info = {};
+    descriptor_buffer_info.buffer = frame->uniform_buffer.handle;
+    descriptor_buffer_info.offset = 0;
+    descriptor_buffer_info.range = sizeof(CommonTransform);
+
+    VkWriteDescriptorSet descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    descriptor_set_write.dstSet = frame->common_descriptor_set;
+    descriptor_set_write.dstBinding = 0;
+    descriptor_set_write.dstArrayElement = 0;
+    descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptor_set_write.descriptorCount = 1;
+    descriptor_set_write.pBufferInfo = &descriptor_buffer_info;
+
+    vkUpdateDescriptorSets(context->device_handle, 1, &descriptor_set_write, 0, NULL);
+
+    frame->entity_descriptor_sets = create_array<VkDescriptorSet>(entities->length);
+    frame->entity_descriptor_sets.length = entities->length;
+
     for (Int i = 0; i < entities->length; i++)
     {
+        VkDescriptorSetAllocateInfo entity_descriptor_set_alloc_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        entity_descriptor_set_alloc_info.descriptorPool = context->descriptor_pool;
+        entity_descriptor_set_alloc_info.descriptorSetCount = 1;
+        entity_descriptor_set_alloc_info.pSetLayouts = &pipeline->entity_descriptor_set_layout;
+
+        result_code = vkAllocateDescriptorSets(context->device_handle, &entity_descriptor_set_alloc_info, &frame->entity_descriptor_sets[i]);
+        if (result_code != VK_SUCCESS)
+        {
+            return false;
+        }
+
         VkDescriptorBufferInfo descriptor_buffer_info = {};
-        descriptor_buffer_info.buffer = frame->entity_uniform_buffer.handle;
-        descriptor_buffer_info.offset = i * sizeof(Mat4);
+        descriptor_buffer_info.buffer = frame->uniform_buffer.handle;
+        descriptor_buffer_info.offset = i * sizeof(Mat4) + sizeof(CommonTransform);
         descriptor_buffer_info.range = sizeof(Mat4);
 
         VkWriteDescriptorSet descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
@@ -810,7 +980,8 @@ Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     return true;
 }
 
-Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline, VulkanFrame *frame, Array<Entity> *entities, Vec3 light_pos)
+Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline, VulkanFrame *frame, Array<Entity> *entities,
+                         VulkanBuffer *host_uniform_buffer, Vec3 light_pos)
 {
     VkResult result_code;
     result_code = vkWaitForFences(context->device_handle, 1, &frame->frame_finished_fence, false, UINT64_MAX);
@@ -841,58 +1012,67 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
         return false;
     }
 
-    VkBufferMemoryBarrier vertex_buffer_memory_barrier[2] = {{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER}, {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER}};
-    vertex_buffer_memory_barrier[0].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    vertex_buffer_memory_barrier[0].dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-    vertex_buffer_memory_barrier[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    vertex_buffer_memory_barrier[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    vertex_buffer_memory_barrier[0].buffer = frame->entity_vertex_buffer.handle;
-    vertex_buffer_memory_barrier[0].offset = 0;
-    vertex_buffer_memory_barrier[0].size = VK_WHOLE_SIZE;
-
-    vertex_buffer_memory_barrier[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    vertex_buffer_memory_barrier[1].dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-    vertex_buffer_memory_barrier[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    vertex_buffer_memory_barrier[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    vertex_buffer_memory_barrier[1].buffer = frame->entity_index_buffer.handle;
-    vertex_buffer_memory_barrier[1].offset = 0;
-    vertex_buffer_memory_barrier[1].size = VK_WHOLE_SIZE;
-
-    vkCmdPipelineBarrier(frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, NULL, 2, vertex_buffer_memory_barrier, 0, NULL);
+    VkBufferCopy uniform_buffer_copy = {};
+    uniform_buffer_copy.srcOffset = 0;
+    uniform_buffer_copy.dstOffset = 0;
+    uniform_buffer_copy.size = sizeof(CommonTransform);
+    vkCmdCopyBuffer(frame->command_buffer, host_uniform_buffer->handle, frame->uniform_buffer.handle, 1, &uniform_buffer_copy);
 
     VkBufferMemoryBarrier uniform_buffer_memory_barrier = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
     uniform_buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     uniform_buffer_memory_barrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
     uniform_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     uniform_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    uniform_buffer_memory_barrier.buffer = frame->entity_uniform_buffer.handle;
+    uniform_buffer_memory_barrier.buffer = frame->uniform_buffer.handle;
     uniform_buffer_memory_barrier.offset = 0;
-    uniform_buffer_memory_barrier.size = VK_WHOLE_SIZE;
+    uniform_buffer_memory_barrier.size = sizeof(CommonTransform);
 
     vkCmdPipelineBarrier(frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, NULL, 1, &uniform_buffer_memory_barrier, 0, NULL);
 
-    VkClearValue clear_color = {1, 1, 1, 1};
+    VkImageMemoryBarrier depth_image_memory_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    depth_image_memory_barrier.srcAccessMask = 0;
+    depth_image_memory_barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    depth_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depth_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depth_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    depth_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    depth_image_memory_barrier.image = frame->depth_image;
+    depth_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    depth_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+    depth_image_memory_barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+    depth_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+    depth_image_memory_barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+    vkCmdPipelineBarrier(frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, 0, 0, NULL, 0, NULL, 1, &depth_image_memory_barrier);
+
+    VkClearValue clear_colors[2] = {{1.0f, 1.0f, 1.0f, 1.0f},
+                                    {1.0f, 0}};
     VkRenderPassBeginInfo render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     render_pass_begin_info.renderPass = pipeline->render_pass;
     render_pass_begin_info.framebuffer = frame->frame_buffers[image_index];
     render_pass_begin_info.renderArea.offset = {0, 0};
     render_pass_begin_info.renderArea.extent = {(UInt4)swapchain->width, (UInt4)swapchain->height};
-    render_pass_begin_info.clearValueCount = 1;
-    render_pass_begin_info.pClearValues = &clear_color;
+    render_pass_begin_info.clearValueCount = 2;
+    render_pass_begin_info.pClearValues = clear_colors;
 
     vkCmdBeginRenderPass(frame->command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
     vkCmdBindPipeline(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle);
 
     VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(frame->command_buffer, 0, 1, &frame->entity_vertex_buffer.handle, &offset);
-    vkCmdBindIndexBuffer(frame->command_buffer, frame->entity_index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindVertexBuffers(frame->command_buffer, 0, 1, &frame->vertex_buffer.handle, &offset);
+    vkCmdBindIndexBuffer(frame->command_buffer, frame->index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
     vkCmdPushConstants(frame->command_buffer, pipeline->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Vec3), &light_pos);
 
+    Int index_offset = 0;
+    Int vertex_offset = 0;
+    vkCmdBindDescriptorSets(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline_layout, 0, 1, &frame->common_descriptor_set, 0, NULL);
     for (Int entity_index = 0; entity_index < entities->length; entity_index++)
     {
-        vkCmdBindDescriptorSets(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline_layout, 0, 1, &frame->entity_descriptor_sets[entity_index], 0, NULL);
-        vkCmdDrawIndexed(frame->command_buffer, entities->data[entity_index].mesh->indices_count, 1, 0, 0, 0);
+        vkCmdBindDescriptorSets(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline_layout, 1, 1, &frame->entity_descriptor_sets[entity_index], 0, NULL);
+        vkCmdDrawIndexed(frame->command_buffer, entities->data[entity_index].mesh->index_count, 1, index_offset, vertex_offset, 0);
+        index_offset += entities->data[entity_index].mesh->index_count;
+        vertex_offset += entities->data[entity_index].mesh->vertex_count;
     }
 
     vkCmdEndRenderPass(frame->command_buffer);
