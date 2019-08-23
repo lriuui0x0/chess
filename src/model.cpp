@@ -9,7 +9,7 @@ struct Vertex
     Vec3 normal;
 };
 
-struct Model
+struct Mesh
 {
     Int4 vertices_count;
     Int4 indices_count;
@@ -17,7 +17,7 @@ struct Model
     UInt4 *indices_data;
 };
 
-Bool deserialise_model(Str buffer, OUT Model *model)
+Bool deserialise_model(Str buffer, OUT Mesh *model)
 {
     if (buffer.length < 4)
     {

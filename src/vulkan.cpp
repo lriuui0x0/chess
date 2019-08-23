@@ -19,6 +19,7 @@ struct VulkanContext
     UInt4 present_queue_index;
     VkQueue present_queue;
     VkCommandPool command_pool;
+    VkCommandBuffer temp_command_buffer;
     VkDescriptorPool descriptor_pool;
 };
 
@@ -181,6 +182,17 @@ Bool create_vulkan_context(Window window, OUT VulkanContext *context)
     command_pool_create_info.queueFamilyIndex = context->graphics_queue_index,
 
     result_code = vkCreateCommandPool(context->device_handle, &command_pool_create_info, NULL, &context->command_pool);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkCommandBufferAllocateInfo command_buffer_alloc_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    command_buffer_alloc_info.commandPool = context->command_pool;
+    command_buffer_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    command_buffer_alloc_info.commandBufferCount = 1;
+
+    result_code = vkAllocateCommandBuffers(context->device_handle, &command_buffer_alloc_info, &context->temp_command_buffer);
     if (result_code != VK_SUCCESS)
     {
         return false;
@@ -586,6 +598,40 @@ Bool create_vulkan_buffer(VulkanContext *context, Int length, VkBufferUsageFlags
     return true;
 }
 
+Bool upload_vulkan_buffer(VulkanContext *context, VulkanBuffer *host_buffer, VulkanBuffer *device_buffer)
+{
+    VkResult result_code;
+
+    VkCommandBufferBeginInfo command_buffer_begin_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    result_code = vkBeginCommandBuffer(context->temp_command_buffer, &command_buffer_begin_info);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkBufferCopy vertex_buffer_copy = {};
+    vertex_buffer_copy.srcOffset = 0;
+    vertex_buffer_copy.dstOffset = 0;
+    vertex_buffer_copy.size = VK_WHOLE_SIZE;
+    vkCmdCopyBuffer(context->temp_command_buffer, host_buffer->handle, device_buffer->handle, 1, &vertex_buffer_copy);
+
+    result_code = vkEndCommandBuffer(context->temp_command_buffer);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    result_code = vkDeviceWaitIdle(context->device_handle);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    return true;
+}
+
 struct VulkanFrame
 {
     VkCommandBuffer command_buffer;
@@ -593,15 +639,22 @@ struct VulkanFrame
     VkSemaphore render_finished_semaphore;
     VkFence frame_finished_fence;
     Array<VkFramebuffer> frame_buffers;
-    VulkanBuffer vertex_buffer;
-    VulkanBuffer index_buffer;
-    VulkanBuffer uniform_buffer;
-    VkDescriptorSet descriptor_set;
+    VulkanBuffer entity_vertex_buffer;
+    VulkanBuffer entity_index_buffer;
+    VulkanBuffer entity_uniform_buffer;
+    Array<VkDescriptorSet> entity_descriptor_sets;
 };
 
-Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline,
-                         Int vertex_buffer_size, Int index_buffer_size, Int uniform_buffer_size,
-                         OUT VulkanFrame *frame)
+struct Entity
+{
+    Str name;
+    Vec3 pos;
+    Mat4 rotation;
+    Mesh *mesh;
+};
+
+Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline, Array<Entity> *entities,
+                         OUT VulkanFrame *frame, OUT VulkanBuffer *host_vertex_buffer, OUT VulkanBuffer *host_index_buffer, OUT VulkanBuffer *host_uniform_buffer)
 {
     VkResult result_code;
 
@@ -671,59 +724,93 @@ Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
         }
     }
 
-    if (!create_vulkan_buffer(context, vertex_buffer_size,
+    Int total_vertex_data_length = 0;
+    Int total_index_data_length = 0;
+    for (Int i = 0; i < entities->length; i++)
+    {
+        total_vertex_data_length += sizeof(Vertex) * entities->data[i].mesh->vertices_count;
+        total_index_data_length += sizeof(UInt4) * entities->data[i].mesh->indices_count;
+    }
+    Int total_uniform_data_length = sizeof(Mat4) * entities->length;
+
+    if (!create_vulkan_buffer(context, total_vertex_data_length,
                               VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                              &frame->vertex_buffer))
+                              &frame->entity_vertex_buffer))
     {
         return false;
     }
 
-    if (!create_vulkan_buffer(context, index_buffer_size,
+    if (!create_vulkan_buffer(context, total_vertex_data_length,
+                              VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                              host_vertex_buffer))
+    {
+        return false;
+    }
+
+    if (!create_vulkan_buffer(context, total_index_data_length,
                               VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                              &frame->index_buffer))
+                              &frame->entity_index_buffer))
     {
         return false;
     }
 
-    if (!create_vulkan_buffer(context, uniform_buffer_size,
-                              VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                              &frame->uniform_buffer))
+    if (!create_vulkan_buffer(context, total_index_data_length,
+                              VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                              host_index_buffer))
     {
         return false;
     }
+
+    if (!create_vulkan_buffer(context, total_uniform_data_length,
+                              VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                              &frame->entity_uniform_buffer))
+    {
+        return false;
+    }
+
+    if (!create_vulkan_buffer(context, total_uniform_data_length,
+                              VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                              host_uniform_buffer))
+    {
+        return false;
+    }
+
+    frame->entity_descriptor_sets = create_array<VkDescriptorSet>(entities->length);
+    frame->entity_descriptor_sets.length = entities->length;
 
     VkDescriptorSetAllocateInfo descriptor_set_alloc_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     descriptor_set_alloc_info.descriptorPool = context->descriptor_pool;
-    descriptor_set_alloc_info.descriptorSetCount = 1;
+    descriptor_set_alloc_info.descriptorSetCount = entities->length;
     descriptor_set_alloc_info.pSetLayouts = &pipeline->descriptor_set_layout;
 
-    result_code = vkAllocateDescriptorSets(context->device_handle, &descriptor_set_alloc_info, &frame->descriptor_set);
+    result_code = vkAllocateDescriptorSets(context->device_handle, &descriptor_set_alloc_info, frame->entity_descriptor_sets.data);
     if (result_code != VK_SUCCESS)
     {
         return false;
     }
 
-    VkDescriptorBufferInfo descriptor_buffer_info = {};
-    descriptor_buffer_info.buffer = frame->uniform_buffer.handle;
-    descriptor_buffer_info.offset = 0;
-    descriptor_buffer_info.range = VK_WHOLE_SIZE;
+    for (Int i = 0; i < entities->length; i++)
+    {
+        VkDescriptorBufferInfo descriptor_buffer_info = {};
+        descriptor_buffer_info.buffer = frame->entity_uniform_buffer.handle;
+        descriptor_buffer_info.offset = i * sizeof(Mat4);
+        descriptor_buffer_info.range = sizeof(Mat4);
 
-    VkWriteDescriptorSet descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    descriptor_set_write.dstSet = frame->descriptor_set;
-    descriptor_set_write.dstBinding = 0;
-    descriptor_set_write.dstArrayElement = 0;
-    descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptor_set_write.descriptorCount = 1;
-    descriptor_set_write.pBufferInfo = &descriptor_buffer_info;
+        VkWriteDescriptorSet descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        descriptor_set_write.dstSet = frame->entity_descriptor_sets[i];
+        descriptor_set_write.dstBinding = 0;
+        descriptor_set_write.dstArrayElement = 0;
+        descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptor_set_write.descriptorCount = 1;
+        descriptor_set_write.pBufferInfo = &descriptor_buffer_info;
 
-    vkUpdateDescriptorSets(context->device_handle, 1, &descriptor_set_write, 0, NULL);
+        vkUpdateDescriptorSets(context->device_handle, 1, &descriptor_set_write, 0, NULL);
+    }
 
     return true;
 }
 
-Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline, VulkanFrame *frame,
-                         VulkanBuffer *host_vertex_buffer, VulkanBuffer *host_index_buffer, VulkanBuffer *host_uniform_buffer, 
-                         Int indices_count, Vec3 light_pos)
+Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline, VulkanFrame *frame, Array<Entity> *entities, Vec3 light_pos)
 {
     VkResult result_code;
     result_code = vkWaitForFences(context->device_handle, 1, &frame->frame_finished_fence, false, UINT64_MAX);
@@ -754,30 +841,12 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
         return false;
     }
 
-    VkBufferCopy vertex_buffer_copy = {};
-    vertex_buffer_copy.srcOffset = 0;
-    vertex_buffer_copy.dstOffset = 0;
-    vertex_buffer_copy.size = frame->vertex_buffer.length;
-    vkCmdCopyBuffer(frame->command_buffer, host_vertex_buffer->handle, frame->vertex_buffer.handle, 1, &vertex_buffer_copy);
-
-    VkBufferCopy index_buffer_copy = {};
-    index_buffer_copy.srcOffset = 0;
-    index_buffer_copy.dstOffset = 0;
-    index_buffer_copy.size = frame->index_buffer.length;
-    vkCmdCopyBuffer(frame->command_buffer, host_index_buffer->handle, frame->index_buffer.handle, 1, &index_buffer_copy);
-
-    VkBufferCopy uniform_buffer_copy = {};
-    uniform_buffer_copy.srcOffset = 0;
-    uniform_buffer_copy.dstOffset = 0;
-    uniform_buffer_copy.size = frame->uniform_buffer.length;
-    vkCmdCopyBuffer(frame->command_buffer, host_uniform_buffer->handle, frame->uniform_buffer.handle, 1, &uniform_buffer_copy);
-
     VkBufferMemoryBarrier vertex_buffer_memory_barrier[2] = {{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER}, {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER}};
     vertex_buffer_memory_barrier[0].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     vertex_buffer_memory_barrier[0].dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
     vertex_buffer_memory_barrier[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     vertex_buffer_memory_barrier[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    vertex_buffer_memory_barrier[0].buffer = frame->vertex_buffer.handle;
+    vertex_buffer_memory_barrier[0].buffer = frame->entity_vertex_buffer.handle;
     vertex_buffer_memory_barrier[0].offset = 0;
     vertex_buffer_memory_barrier[0].size = VK_WHOLE_SIZE;
 
@@ -785,7 +854,7 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     vertex_buffer_memory_barrier[1].dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
     vertex_buffer_memory_barrier[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     vertex_buffer_memory_barrier[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    vertex_buffer_memory_barrier[1].buffer = frame->index_buffer.handle;
+    vertex_buffer_memory_barrier[1].buffer = frame->entity_index_buffer.handle;
     vertex_buffer_memory_barrier[1].offset = 0;
     vertex_buffer_memory_barrier[1].size = VK_WHOLE_SIZE;
 
@@ -796,7 +865,7 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     uniform_buffer_memory_barrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
     uniform_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     uniform_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    uniform_buffer_memory_barrier.buffer = frame->uniform_buffer.handle;
+    uniform_buffer_memory_barrier.buffer = frame->entity_uniform_buffer.handle;
     uniform_buffer_memory_barrier.offset = 0;
     uniform_buffer_memory_barrier.size = VK_WHOLE_SIZE;
 
@@ -816,13 +885,15 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     vkCmdBindPipeline(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle);
 
     VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(frame->command_buffer, 0, 1, &frame->vertex_buffer.handle, &offset);
-    vkCmdBindIndexBuffer(frame->command_buffer, frame->index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
-
-    vkCmdBindDescriptorSets(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline_layout, 0, 1, &frame->descriptor_set, 0, NULL);
+    vkCmdBindVertexBuffers(frame->command_buffer, 0, 1, &frame->entity_vertex_buffer.handle, &offset);
+    vkCmdBindIndexBuffer(frame->command_buffer, frame->entity_index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
     vkCmdPushConstants(frame->command_buffer, pipeline->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Vec3), &light_pos);
 
-    vkCmdDrawIndexed(frame->command_buffer, indices_count, 1, 0, 0, 0);
+    for (Int entity_index = 0; entity_index < entities->length; entity_index++)
+    {
+        vkCmdBindDescriptorSets(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline_layout, 0, 1, &frame->entity_descriptor_sets[entity_index], 0, NULL);
+        vkCmdDrawIndexed(frame->command_buffer, entities->data[entity_index].mesh->indices_count, 1, 0, 0, 0);
+    }
 
     vkCmdEndRenderPass(frame->command_buffer);
 

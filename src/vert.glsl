@@ -14,7 +14,7 @@ layout(push_constant) uniform Light {
 layout(location = 0) in vec3 pos;
 layout(location = 1) in vec3 normal;
 
-layout(location = 0) out vec3 color;
+layout(location = 0) flat out vec3 color;
 
 void main() {
     vec3 world_pos = vec3(transform.view * transform.model * vec4(pos, 1)); 
@@ -25,7 +25,7 @@ void main() {
     float diffuse_coef = max(dot(light_dir, normal_dir), 0);
     vec3 diffuse_color = 0.9 * diffuse_coef * vec3(1);
 
-    color = (ambient_color + diffuse_color) * vec3(1, 0, 0);
+    color = (ambient_color + diffuse_color) * vec3(0.330882340669632, 0.330882340669632, 0.330882340669632);
 
     gl_Position = transform.projection * vec4(world_pos.x, world_pos.y, world_pos.z, 1);
 }

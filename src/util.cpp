@@ -26,6 +26,8 @@ typedef Real4 Real;
 typedef bool Bool;
 
 void __builtin_trap();
+void *__builtin_alloca(Int size);
+
 void assert(Bool predicate)
 {
     if (!predicate)
@@ -67,6 +69,21 @@ constexpr Str wrap_str(const char *raw_str)
     {
         return {};
     }
+}
+
+Str concat_str(Str a, Str b)
+{
+    assert(a.data && b.data);
+
+    Int1 *data = (Int1 *)malloc(a.length + b.length + 1);
+    memcpy(data, a.data, a.length);
+    memcpy(data + a.length, b.data, b.length);
+    data[a.length + b.length] = '\0';
+
+    Str result;
+    result.length = a.length + b.length;
+    result.data = data;
+    return result;
 }
 
 template <typename T>

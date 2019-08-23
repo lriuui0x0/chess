@@ -35,6 +35,20 @@ LRESULT window_procedure(HWND window, UINT message_type, WPARAM wparam, LPARAM l
     return DefWindowProcA(window, message_type, wparam, lparam);
 }
 
+void track_mouse_enter_leave_event(HWND window_handle, DWORD event)
+{
+    TRACKMOUSEEVENT track_mouse_event_info;
+    track_mouse_event_info.cbSize = sizeof(TRACKMOUSEEVENT);
+    track_mouse_event_info.dwFlags = event;
+    track_mouse_event_info.hwndTrack = window_handle;
+    track_mouse_event_info.dwHoverTime = USER_TIMER_MINIMUM;
+
+    if (!TrackMouseEvent(&track_mouse_event_info))
+    {
+        OutputDebugStringA("Tracking mouse enter / leave failed.\n");
+    }
+}
+
 Window create_window(Str title, Int client_width, Int client_height, Int window_x, Int window_y)
 {
     HINSTANCE module_handle = GetModuleHandleA(NULL);
@@ -60,6 +74,7 @@ Window create_window(Str title, Int client_width, Int client_height, Int window_
         HWND window_handle = CreateWindowExA(0, (LPCSTR)title.data, (LPCSTR)title.data, WS_OVERLAPPEDWINDOW,
                                              window_x, window_y, window_width, window_height,
                                              NULL, NULL, module_handle, NULL);
+
         return (Window)window_handle;
     }
     else
@@ -78,9 +93,11 @@ enum struct WindowMessageType
     close,
     resize,
     paint,
-    mouse_left_down,
-    mouse_left_up,
+    mouse_down,
+    mouse_up,
     mouse_move,
+    mouse_enter,
+    mouse_leave,
     key_down,
     key_up,
 };
@@ -99,8 +116,23 @@ struct WindowMessageResizeData
     Int height;
 };
 
-struct WindowMessageMouseClickData
+enum struct WindowMessageMouseButtonType
 {
+    left = 0x1,
+    right = 0x2,
+    middle = 0x4,
+};
+
+struct WindowMessageMouseDownData
+{
+    WindowMessageMouseButtonType button_type;
+    Int x;
+    Int y;
+};
+
+struct WindowMessageMouseUpData
+{
+    WindowMessageMouseButtonType button_type;
     Int x;
     Int y;
 };
@@ -169,7 +201,8 @@ struct WindowMessage
     WindowMessageType type;
     union {
         WindowMessageResizeData resize_data;
-        WindowMessageMouseClickData mouse_click_data;
+        WindowMessageMouseDownData mouse_down_data;
+        WindowMessageMouseUpData mouse_up_data;
         WindowMessageMouseMoveData mouse_move_data;
         WindowMessageKeyDownData key_down_data;
         WindowMessageKeyUpData key_up_data;
@@ -223,17 +256,19 @@ Bool get_window_message(Window window, OUT WindowMessage *message)
             }
             else if (os_message.message == WM_LBUTTONDOWN)
             {
-                message->type = WindowMessageType::mouse_left_down;
-                message->mouse_click_data.x = GET_X_LPARAM(os_message.lParam);
-                message->mouse_click_data.y = GET_Y_LPARAM(os_message.lParam);
+                message->type = WindowMessageType::mouse_down;
+                message->mouse_down_data.button_type = WindowMessageMouseButtonType::left;
+                message->mouse_down_data.x = GET_X_LPARAM(os_message.lParam);
+                message->mouse_down_data.y = GET_Y_LPARAM(os_message.lParam);
 
                 got_message = true;
             }
             else if (os_message.message == WM_LBUTTONUP)
             {
-                message->type = WindowMessageType::mouse_left_up;
-                message->mouse_click_data.x = GET_X_LPARAM(os_message.lParam);
-                message->mouse_click_data.y = GET_Y_LPARAM(os_message.lParam);
+                message->type = WindowMessageType::mouse_up;
+                message->mouse_up_data.button_type = WindowMessageMouseButtonType::left;
+                message->mouse_up_data.x = GET_X_LPARAM(os_message.lParam);
+                message->mouse_up_data.y = GET_Y_LPARAM(os_message.lParam);
 
                 got_message = true;
             }
