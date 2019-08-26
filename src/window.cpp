@@ -5,7 +5,7 @@
 #include "windows.h"
 #include "windowsx.h"
 
-typedef void *Window;
+typedef Void *Window;
 
 enum WindowProcedureRelayMessage
 {
@@ -35,7 +35,7 @@ LRESULT window_procedure(HWND window, UINT message_type, WPARAM wparam, LPARAM l
     return DefWindowProcA(window, message_type, wparam, lparam);
 }
 
-void track_mouse_enter_leave_event(HWND window_handle, DWORD event)
+Void track_mouse_enter_leave_event(HWND window_handle, DWORD event)
 {
     TRACKMOUSEEVENT track_mouse_event_info;
     track_mouse_event_info.cbSize = sizeof(TRACKMOUSEEVENT);
@@ -83,7 +83,7 @@ Window create_window(Str title, Int client_width, Int client_height, Int window_
     }
 }
 
-void show_window(Window window)
+Void show_window(Window window)
 {
     ShowWindow((HWND)window, SW_SHOW);
 }

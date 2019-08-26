@@ -20,7 +20,7 @@ Bool read_mesh(RawStr filename, OUT Mesh *mesh)
     return true;
 }
 
-void add_entity(Array<Entity> *entities, Str name, Vec3 pos, Mesh *mesh)
+Void add_entity(Array<Entity> *entities, Str name, Vec3 pos, Mesh *mesh)
 {
     Entity *entity = entities->push();
     entity->name = name;
@@ -50,14 +50,14 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     add_entity(&entities, wrap_str("rook1"), {0, 0, 0}, &rook_mesh);
     add_entity(&entities, wrap_str("knight1"), {100, 0, 0}, &knight_mesh);
     add_entity(&entities, wrap_str("bishop1"), {200, 0, 0}, &bishop_mesh);
-    add_entity(&entities, wrap_str("queen"), {300, 0, 0}, &queen_mesh);
-    add_entity(&entities, wrap_str("king"), {400, 0, 0}, &king_mesh);
+    add_entity(&entities, wrap_str("king"), {300, 0, 0}, &king_mesh);
+    add_entity(&entities, wrap_str("queen"), {400, 0, 0}, &queen_mesh);
     add_entity(&entities, wrap_str("bishop2"), {500, 0, 0}, &bishop_mesh);
     add_entity(&entities, wrap_str("knight2"), {600, 0, 0}, &knight_mesh);
     add_entity(&entities, wrap_str("rook2"), {700, 0, 0}, &rook_mesh);
     for (Int i = 0; i < 8; i++)
     {
-        Int1 number_suffix_data[2];
+        UInt8 number_suffix_data[2];
         number_suffix_data[0] = '0' + i;
         number_suffix_data[1] = '\0';
         Str number_suffix;
@@ -71,12 +71,12 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     for (Int i = 0; i < entities.length; i++)
     {
         total_vertex_data_length += sizeof(Vertex) * entities[i].mesh->vertex_count;
-        total_index_data_length += sizeof(UInt4) * entities[i].mesh->index_count;
+        total_index_data_length += sizeof(UInt32) * entities[i].mesh->index_count;
     }
 
     Entity camera;
-    camera.pos = {0, 100, -300};
-    camera.rotation = get_rotation_matrix_z(PI);
+    camera.pos = {350, 1000, -300};
+    camera.rotation = get_rotation_matrix_x(PI / 3) * get_rotation_matrix_z(PI);
 
     Entity light;
     light.pos = {0, 0, -100};
@@ -87,7 +87,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     CommonTransform common_transform;
     common_transform.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
     common_transform.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-    common_transform.projection = get_perspective_matrix(degree_to_radian(45), (Real)window_width / (Real)window_height, 10, 1000);
+    common_transform.projection = get_perspective_matrix(degree_to_radian(45), (Real)window_width / (Real)window_height, 10, 10000);
 
     Window window = create_window(wrap_str("Chess"), window_width, window_height, 50, 50);
     assert(window);

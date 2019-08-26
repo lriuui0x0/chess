@@ -13,10 +13,10 @@ struct VulkanContext
     VkInstance instance_handle;
     VkPhysicalDevice physical_device_handle;
     VkDevice device_handle;
-    UInt4 graphics_queue_index;
+    UInt32 graphics_queue_index;
     VkQueue graphics_queue;
     VkSurfaceKHR surface_handle;
-    UInt4 present_queue_index;
+    UInt32 present_queue_index;
     VkQueue present_queue;
     VkCommandPool command_pool;
     VkCommandBuffer temp_command_buffer;
@@ -32,7 +32,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugReportFlagsEXT flags,
                                               int32_t messageCode,
                                               const char *pLayerPrefix,
                                               const char *pMessage,
-                                              void *pUserData)
+                                              Void *pUserData)
 {
     OutputDebugStringA(pMessage);
     OutputDebugStringA("\n");
@@ -80,14 +80,14 @@ Bool create_vulkan_context(Window window, OUT VulkanContext *context)
         return false;
     }
 
-    UInt4 physical_devices_count = 0;
+    UInt32 physical_devices_count = 0;
     result_code = vkEnumeratePhysicalDevices(context->instance_handle, &physical_devices_count, NULL);
     if (result_code != VK_SUCCESS || physical_devices_count < 1)
     {
         return false;
     }
 
-    UInt4 desired_physical_devices_count = 1;
+    UInt32 desired_physical_devices_count = 1;
     result_code = vkEnumeratePhysicalDevices(context->instance_handle, &desired_physical_devices_count, &context->physical_device_handle);
     if (result_code != VK_SUCCESS)
     {
@@ -104,40 +104,42 @@ Bool create_vulkan_context(Window window, OUT VulkanContext *context)
         return false;
     }
 
-    UInt4 queue_families_count = 0;
+    UInt32 queue_families_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(context->physical_device_handle, &queue_families_count, NULL);
 
     VkQueueFamilyProperties queue_families_properties[8];
     vkGetPhysicalDeviceQueueFamilyProperties(context->physical_device_handle, &queue_families_count, queue_families_properties);
 
-    context->graphics_queue_index = -1;
-    for (Int queue_family_index = 0; queue_family_index < queue_families_count; queue_family_index++)
+    Bool found_graphics_queue = false;
+    for (Int queue_family_index = 0; queue_family_index < (Int)queue_families_count; queue_family_index++)
     {
         if (queue_families_properties[queue_family_index].queueFlags & VK_QUEUE_GRAPHICS_BIT)
         {
             context->graphics_queue_index = queue_family_index;
+            found_graphics_queue = true;
             break;
         }
     }
 
-    if (context->graphics_queue_index == -1)
+    if (!found_graphics_queue)
     {
         return false;
     }
 
-    context->present_queue_index = -1;
-    for (Int queue_family_index = 0; queue_family_index < queue_families_count; queue_family_index++)
+    Bool found_present_queue = false;
+    for (Int queue_family_index = 0; queue_family_index < (Int)queue_families_count; queue_family_index++)
     {
         VkBool32 is_supported;
         result_code = vkGetPhysicalDeviceSurfaceSupportKHR(context->physical_device_handle, queue_family_index, context->surface_handle, &is_supported);
         if (result_code == VK_SUCCESS && is_supported)
         {
             context->present_queue_index = queue_family_index;
+            found_present_queue = true;
             break;
         }
     }
 
-    if (context->present_queue_index == -1)
+    if (!found_present_queue)
     {
         return false;
     }
@@ -160,7 +162,7 @@ Bool create_vulkan_context(Window window, OUT VulkanContext *context)
 
     RawStr device_extensions[1] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
     VkDeviceCreateInfo device_create_info = {VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
-    device_create_info.queueCreateInfoCount = (UInt4)queues_create_count;
+    device_create_info.queueCreateInfoCount = (UInt32)queues_create_count;
     device_create_info.pQueueCreateInfos = queues_create_info;
     device_create_info.enabledLayerCount = 0;
     device_create_info.ppEnabledLayerNames = NULL;
@@ -234,8 +236,8 @@ Bool create_vulkan_swapchain(VulkanContext *context, Int width, Int height, OUT 
     swapchain_create_info.minImageCount = 3;
     swapchain_create_info.imageFormat = VK_FORMAT_R8G8B8A8_UNORM;
     swapchain_create_info.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-    swapchain_create_info.imageExtent.width = (UInt4)width;
-    swapchain_create_info.imageExtent.height = (UInt4)height;
+    swapchain_create_info.imageExtent.width = (UInt32)width;
+    swapchain_create_info.imageExtent.height = (UInt32)height;
     swapchain_create_info.imageArrayLayers = 1;
     swapchain_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     swapchain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -254,7 +256,7 @@ Bool create_vulkan_swapchain(VulkanContext *context, Int width, Int height, OUT 
         return false;
     }
 
-    UInt4 swapchain_images_count = 0;
+    UInt32 swapchain_images_count = 0;
     result_code = vkGetSwapchainImagesKHR(context->device_handle, swapchain->handle, &swapchain_images_count, NULL);
     if (result_code != VK_SUCCESS)
     {
@@ -268,13 +270,6 @@ Bool create_vulkan_swapchain(VulkanContext *context, Int width, Int height, OUT 
     {
         return false;
     }
-
-    return true;
-}
-
-Bool create_descriptor_set(VulkanContext *context, OUT VkDescriptorSetLayout *descriptor_set_layout, OUT VkDescriptorSet *descriptor_set)
-{
-    VkResult result_code;
 
     return true;
 }
@@ -298,7 +293,7 @@ Bool create_vulkan_shader(VulkanContext *context, RawStr filename, OUT VkShaderM
 
     VkShaderModuleCreateInfo shader_module_create_info = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
     shader_module_create_info.codeSize = (size_t)code.length;
-    shader_module_create_info.pCode = (UInt4 *)code.data;
+    shader_module_create_info.pCode = (UInt32 *)code.data;
 
     VkResult result_code = vkCreateShaderModule(context->device_handle, &shader_module_create_info, NULL, shader_module);
     if (result_code != VK_SUCCESS)
@@ -418,7 +413,7 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
 
     VkRect2D scissor;
     scissor.offset = {0, 0};
-    scissor.extent = {(UInt4)swapchain->width, (UInt4)swapchain->height};
+    scissor.extent = {(UInt32)swapchain->width, (UInt32)swapchain->height};
 
     VkPipelineViewportStateCreateInfo viewport_state_create_info = {VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
     viewport_state_create_info.viewportCount = 1;
@@ -565,7 +560,7 @@ struct VulkanBuffer
     VkBuffer handle;
     VkDeviceMemory memory;
     Int length;
-    Int1 *data;
+    Int8 *data;
 };
 
 Bool create_vulkan_buffer(VulkanContext *context, Int length, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_property, VulkanBuffer *buffer)
@@ -590,8 +585,8 @@ Bool create_vulkan_buffer(VulkanContext *context, Int length, VkBufferUsageFlags
     VkPhysicalDeviceMemoryProperties memory_properties;
     vkGetPhysicalDeviceMemoryProperties(context->physical_device_handle, &memory_properties);
 
-    VkDeviceMemory buffer_memory;
-    for (Int memory_type_index = 0; memory_type_index < memory_properties.memoryTypeCount; memory_type_index++)
+    VkDeviceMemory buffer_memory = VK_NULL_HANDLE;
+    for (Int memory_type_index = 0; memory_type_index < (Int)memory_properties.memoryTypeCount; memory_type_index++)
     {
         if (has_flag(memory_requirements.memoryTypeBits, 1 << memory_type_index) &&
             has_flag(memory_properties.memoryTypes[memory_type_index].propertyFlags, memory_property))
@@ -612,6 +607,11 @@ Bool create_vulkan_buffer(VulkanContext *context, Int length, VkBufferUsageFlags
         }
     }
 
+    if (buffer_memory == VK_NULL_HANDLE)
+    {
+        return false;
+    }
+
     result_code = vkBindBufferMemory(context->device_handle, buffer->handle, buffer_memory, 0);
     if (result_code != VK_SUCCESS)
     {
@@ -620,7 +620,7 @@ Bool create_vulkan_buffer(VulkanContext *context, Int length, VkBufferUsageFlags
 
     if (has_flag(memory_property, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
     {
-        result_code = vkMapMemory(context->device_handle, buffer_memory, 0, buffer_create_info.size, 0, (void **)&buffer->data);
+        result_code = vkMapMemory(context->device_handle, buffer_memory, 0, buffer_create_info.size, 0, (Void **)&buffer->data);
         if (result_code != VK_SUCCESS)
         {
             return false;
@@ -641,7 +641,7 @@ Bool create_vulkan_image(VulkanContext *context, Int width, Int height, VkFormat
     VkImageCreateInfo depth_image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     depth_image_create_info.imageType = VK_IMAGE_TYPE_2D;
     depth_image_create_info.format = format;
-    depth_image_create_info.extent = {(UInt4)width, (UInt4)height, 1};
+    depth_image_create_info.extent = {(UInt32)width, (UInt32)height, 1};
     depth_image_create_info.mipLevels = 1;
     depth_image_create_info.arrayLayers = 1;
     depth_image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -664,8 +664,8 @@ Bool create_vulkan_image(VulkanContext *context, Int width, Int height, VkFormat
     VkPhysicalDeviceMemoryProperties memory_properties;
     vkGetPhysicalDeviceMemoryProperties(context->physical_device_handle, &memory_properties);
 
-    VkDeviceMemory image_memory;
-    for (Int memory_type_index = 0; memory_type_index < memory_properties.memoryTypeCount; memory_type_index++)
+    VkDeviceMemory image_memory = VK_NULL_HANDLE;
+    for (Int memory_type_index = 0; memory_type_index < (Int)memory_properties.memoryTypeCount; memory_type_index++)
     {
         if (has_flag(memory_requirements.memoryTypeBits, 1 << memory_type_index) &&
             has_flag(memory_properties.memoryTypes[memory_type_index].propertyFlags, memory_property))
@@ -684,6 +684,11 @@ Bool create_vulkan_image(VulkanContext *context, Int width, Int height, VkFormat
                 return false;
             }
         }
+    }
+
+    if (image_memory == VK_NULL_HANDLE)
+    {
+        return false;
     }
 
     result_code = vkBindImageMemory(context->device_handle, *image, image_memory, 0);
@@ -873,7 +878,7 @@ Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     for (Int i = 0; i < entities->length; i++)
     {
         total_vertex_data_length += sizeof(Vertex) * entities->data[i].mesh->vertex_count;
-        total_index_data_length += sizeof(UInt4) * entities->data[i].mesh->index_count;
+        total_index_data_length += sizeof(UInt32) * entities->data[i].mesh->index_count;
     }
     Int total_uniform_data_length = sizeof(CommonTransform) + sizeof(Mat4) * entities->length;
 
@@ -997,7 +1002,7 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     }
 
     Int image_index;
-    result_code = vkAcquireNextImageKHR(context->device_handle, swapchain->handle, UINT64_MAX, frame->image_aquired_semaphore, VK_NULL_HANDLE, (UInt4 *)&image_index);
+    result_code = vkAcquireNextImageKHR(context->device_handle, swapchain->handle, UINT64_MAX, frame->image_aquired_semaphore, VK_NULL_HANDLE, (UInt32 *)&image_index);
     if (result_code != VK_SUCCESS)
     {
         return false;
@@ -1051,7 +1056,7 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     render_pass_begin_info.renderPass = pipeline->render_pass;
     render_pass_begin_info.framebuffer = frame->frame_buffers[image_index];
     render_pass_begin_info.renderArea.offset = {0, 0};
-    render_pass_begin_info.renderArea.extent = {(UInt4)swapchain->width, (UInt4)swapchain->height};
+    render_pass_begin_info.renderArea.extent = {(UInt32)swapchain->width, (UInt32)swapchain->height};
     render_pass_begin_info.clearValueCount = 2;
     render_pass_begin_info.pClearValues = clear_colors;
 
@@ -1104,7 +1109,7 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     present_info.pWaitSemaphores = &frame->render_finished_semaphore;
     present_info.swapchainCount = 1;
     present_info.pSwapchains = &swapchain->handle;
-    present_info.pImageIndices = (UInt4 *)&image_index,
+    present_info.pImageIndices = (UInt32 *)&image_index,
     present_info.pResults = NULL;
 
     result_code = vkQueuePresentKHR(context->present_queue, &present_info);

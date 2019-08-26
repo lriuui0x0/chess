@@ -7,28 +7,29 @@
 
 #define OUT
 
-typedef int8_t Int1;
-typedef int16_t Int2;
-typedef int32_t Int4;
-typedef int64_t Int8;
-typedef Int4 Int;
+typedef int8_t Int8;
+typedef int16_t Int16;
+typedef int32_t Int32;
+typedef int64_t Int64;
+typedef Int32 Int;
 
-typedef uint8_t UInt1;
-typedef uint16_t UInt2;
-typedef uint32_t UInt4;
-typedef uint64_t UInt8;
-typedef UInt4 UInt;
+typedef uint8_t UInt8;
+typedef uint16_t UInt16;
+typedef uint32_t UInt32;
+typedef uint64_t UInt64;
+typedef UInt32 UInt;
 
-typedef float Real4;
-typedef double Real8;
-typedef Real4 Real;
+typedef float Real32;
+typedef double Real64;
+typedef Real32 Real;
 
 typedef bool Bool;
+typedef void Void;
 
-void __builtin_trap();
-void *__builtin_alloca(Int size);
+Void __builtin_trap();
+Void *__builtin_alloca(Int size);
 
-void assert(Bool predicate)
+Void assert(Bool predicate)
 {
     if (!predicate)
     {
@@ -36,8 +37,7 @@ void assert(Bool predicate)
     }
 }
 
-template <typename T, typename S>
-Bool has_flag(T value, S flag)
+Bool has_flag(UInt64 value, UInt64 flag)
 {
     return (value & flag) == flag;
 }
@@ -47,8 +47,15 @@ typedef char *RawStr;
 struct Str
 {
     Int length;
-    Int1 *data;
+    UInt8 *data;
+
+    UInt8 &operator[](Int index);
 };
+
+UInt8 &Str::operator[](Int index)
+{
+    return this->data[index];
+}
 
 constexpr Str wrap_str(const char *raw_str)
 {
@@ -56,7 +63,7 @@ constexpr Str wrap_str(const char *raw_str)
     {
         Str result = {};
 
-        result.data = (Int1 *)raw_str;
+        result.data = (UInt8 *)raw_str;
         while (*raw_str)
         {
             raw_str++;
@@ -71,11 +78,26 @@ constexpr Str wrap_str(const char *raw_str)
     }
 }
 
+Str copy_str(Void *data, Int length)
+{
+    assert(data);
+    assert(length >= 0);
+
+    UInt8 *str_data = (UInt8 *)malloc(length + 1);
+    memcpy(str_data, data, length);
+    str_data[length] = '\0';
+
+    Str result;
+    result.length = length;
+    result.data = str_data;
+    return result;
+}
+
 Str concat_str(Str a, Str b)
 {
     assert(a.data && b.data);
 
-    Int1 *data = (Int1 *)malloc(a.length + b.length + 1);
+    UInt8 *data = (UInt8 *)malloc(a.length + b.length + 1);
     memcpy(data, a.data, a.length);
     memcpy(data + a.length, b.data, b.length);
     data[a.length + b.length] = '\0';
@@ -108,7 +130,7 @@ Array<T> create_array(Int initial_size = 16)
 }
 
 template <typename T>
-void destroy_array(Array<T> array)
+Void destroy_array(Array<T> array)
 {
     free(array.data);
 }
@@ -150,7 +172,7 @@ Bool read_file(RawStr filename, Str *file)
     assert(length >= 0);
     rewind(file_handle);
 
-    Int1 *data = (Int1 *)malloc(length + 1);
+    UInt8 *data = (UInt8 *)malloc(length + 1);
     Int read_length = fread(data, 1, length, file_handle);
     assert(read_length == length);
     data[length] = 0;
