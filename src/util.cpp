@@ -158,7 +158,7 @@ T *Array<T>::push()
     return &this->data[this->length - 1];
 }
 
-Bool read_file(RawStr filename, Str *file)
+Bool read_file(RawStr filename, Str *contents)
 {
     FILE *file_handle = fopen(filename, "rb");
     if (!file_handle)
@@ -177,7 +177,25 @@ Bool read_file(RawStr filename, Str *file)
     assert(read_length == length);
     data[length] = 0;
 
-    file->data = data;
-    file->length = length;
+    assert(fclose(file_handle) == 0);
+
+    contents->data = data;
+    contents->length = length;
+    return true;
+}
+
+Bool write_file(RawStr filename, Str contents)
+{
+    FILE *file_handle = fopen(filename, "wb");
+    if (!file_handle)
+    {
+        return false;
+    }
+
+    Int write_length = fwrite(contents.data, 1, contents.length, file_handle);
+    assert(write_length == contents.length);
+
+    assert(fclose(file_handle) == 0);
+
     return true;
 }

@@ -286,7 +286,7 @@ void read_cff_dict_single_value(Reader *reader, OUT CffDictValue *value)
         read8(reader, &byte2);
 
         Int16 integer_value = ((Int)byte1 << 8) | (Int)byte2;
-        value->integer += integer_value;
+        value->integer = integer_value;
         assert(value->integer >= -32768 && value->integer <= 32767);
     }
     else if (byte0 == 29)
@@ -726,11 +726,21 @@ Int main(Int argc, RawStr *argv)
                 runner.stack_length = 0;
                 runner.x = {0};
                 runner.y = {0};
+                runner.min_x.integer = INT16_MAX;
+                runner.max_x.integer = INT16_MIN;
+                runner.min_y.integer = INT16_MAX;
+                runner.max_y.integer = INT16_MIN;
                 runner.subr_depth = 0;
                 runner.end = false;
 
+                memset(bitmap, 0, sizeof(bitmap));
                 run_char_string(&runner, char_string);
-                Int x = 1;
+
+                UInt8 filename_data[6] = {(UInt8)(character - 0x61 + 'a'), '.', 'b', 'm', 'p', '\0'};
+                Str filename;
+                filename.length = 5;
+                filename.data = filename_data;
+                write_bitmap(filename);
             }
             else
             {
