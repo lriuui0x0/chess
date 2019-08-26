@@ -80,7 +80,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     Entity light;
     light.pos = {0, 0, -100};
-    light.rotation = get_identity_matrix();
+    light.rotation = get_rotation_matrix_x(degree_to_radian(75)) * get_rotation_matrix_z(PI);
 
     Entity *active_entity = &camera;
 
@@ -311,7 +311,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         memcpy(host_uniform_buffer.data, &common_transform, sizeof(CommonTransform));
 
         assert(render_vulkan_frame(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline, &vulkan_frame,
-                                   &entities, &host_uniform_buffer, light.pos));
+                                   &entities, &host_uniform_buffer, vec3(light.rotation.z)));
     }
 
     return 0;
