@@ -682,7 +682,7 @@ Int main(Int argc, RawStr *argv)
     if (encoding_table)
     {
         assert(encoding_table->format == 4);
-        for (UInt16 character = 0x61; character <= 0x7a; character++)
+        for (UInt16 character = 0x21; character <= 0x7e; character++)
         {
             Int found_segment_index = -1;
             for (Int segment_index = 0; segment_index < encoding_table->segment_count_x2 / 2; segment_index++)
@@ -716,7 +716,7 @@ Int main(Int argc, RawStr *argv)
 
                 assert(glyph_id < cff_table->char_string_index.count);
 
-                printf("%c - %d\n", character - 0x61 + 'a', glyph_id);
+                printf("%c - %d\n", character, glyph_id);
 
                 CharString *char_string = (CharString *)cff_table->char_string_index.objects + glyph_id;
 
@@ -736,9 +736,12 @@ Int main(Int argc, RawStr *argv)
                 memset(bitmap, 0, sizeof(bitmap));
                 run_char_string(&runner, char_string);
 
-                UInt8 filename_data[6] = {(UInt8)(character - 0x61 + 'a'), '.', 'b', 'm', 'p', '\0'};
+                UInt8 filename_data[8] = {' ', ' ', ' ', '.', 'b', 'm', 'p', '\0'};
+                filename_data[0] = character / 100 + '0';
+                filename_data[1] = character / 10 % 10 + '0';
+                filename_data[2] = character % 10 + '0';
                 Str filename;
-                filename.length = 5;
+                filename.length = 7;
                 filename.data = filename_data;
                 write_bitmap(filename);
             }

@@ -370,7 +370,7 @@ void print_state(CharStringOpType op, CharStringRunner *runner)
     printf("\n");
 }
 
-const Int bitmap_size = 2000;
+const Int bitmap_size = 2200;
 Bool bitmap[bitmap_size][bitmap_size];
 
 void write_bitmap(Str filename)
@@ -438,8 +438,8 @@ void draw_line(CharStringFixed fx0, CharStringFixed fy0, CharStringFixed fx1, Ch
         Int x = x0 + i * dx;
         Int y = y0 + i * dy;
 
-        assert(x >= -500 && x < 1500);
-        assert(y >= -500 && y < 1500);
+        assert(x >= -500 && x < 1700);
+        assert(y >= -500 && y < 1700);
 
         bitmap[y + 500][x + 500] = true;
     }
@@ -450,6 +450,13 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
     for (Int atom_i = 0; atom_i < char_string->atoms.length; atom_i++)
     {
         CharStringAtom *atom = &char_string->atoms[atom_i];
+
+        CharStringFixed dx1;
+        CharStringFixed dy1;
+        CharStringFixed dx2;
+        CharStringFixed dy2;
+        CharStringFixed dx3;
+        CharStringFixed dy3;
 
         if (atom->type == CharStringAtomType::number)
         {
@@ -483,91 +490,185 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
             }
             else if (atom->op == CharStringOpType::rlineto)
             {
-                assert(runner->stack_length > 0 && runner->stack_length % 2 == 0);
+                assert(runner->stack_length > 0);
+                assert(runner->stack_length % 2 == 0);
 
-                for (Int arg_i = 0; arg_i < runner->stack_length; arg_i += 2)
+                Int arg_i = 0;
+                while (arg_i < runner->stack_length)
                 {
-                    draw_line(runner->x, runner->y, runner->x + runner->stack[arg_i], runner->y + runner->stack[arg_i + 1]);
+                    dx1 = runner->stack[arg_i++];
+                    dy1 = runner->stack[arg_i++];
 
-                    runner->x = runner->x + runner->stack[arg_i];
-                    runner->y = runner->y + runner->stack[arg_i + 1];
+                    draw_line(runner->x, runner->y, runner->x + dx1, runner->y + dy1);
+                    runner->x = runner->x + dx1;
+                    runner->y = runner->y + dy1;
                 }
                 runner->stack_length = 0;
             }
-            else if (atom->op == CharStringOpType::hlineto)
+            else if (atom->op == CharStringOpType::hlineto ||
+                     atom->op == CharStringOpType::vlineto)
             {
                 assert(runner->stack_length > 0);
 
-                if (runner->stack_length % 2 == 1)
+                Int arg_i = 0;
+                if (atom->op == CharStringOpType::vlineto)
                 {
-                    draw_line(runner->x, runner->y, runner->x + runner->stack[0], runner->y);
-                    runner->x = runner->x + runner->stack[0];
-
-                    for (Int arg_i = 1; arg_i < runner->stack_length; arg_i += 2)
-                    {
-                        draw_line(runner->x, runner->y, runner->x, runner->y + runner->stack[arg_i]);
-                        runner->y = runner->y + runner->stack[arg_i];
-
-                        draw_line(runner->x, runner->y, runner->x + runner->stack[arg_i + 1], runner->y);
-                        runner->x = runner->x + runner->stack[arg_i + 1];
-                    }
+                    goto start_vlineto;
                 }
-                else
+
+                while (arg_i < runner->stack_length)
                 {
-                    for (Int arg_i = 0; arg_i < runner->stack_length; arg_i += 2)
+                    dx1 = runner->stack[arg_i++];
+                    dy1 = {};
+
+                    draw_line(runner->x, runner->y, runner->x + dx1, runner->y + dy1);
+                    runner->x = runner->x + dx1;
+                    runner->y = runner->y + dy1;
+
+                    if (arg_i >= runner->stack_length)
                     {
-                        draw_line(runner->x, runner->y, runner->x + runner->stack[arg_i], runner->y);
-                        runner->x = runner->x + runner->stack[arg_i];
-
-                        draw_line(runner->x, runner->y, runner->x, runner->y + runner->stack[arg_i + 1]);
-                        runner->y = runner->y + runner->stack[arg_i + 1];
+                        break;
                     }
-                }
-                runner->stack_length = 0;
-            }
-            else if (atom->op == CharStringOpType::vlineto)
-            {
-                assert(runner->stack_length > 0);
 
-                if (runner->stack_length % 2 == 1)
-                {
-                    draw_line(runner->x, runner->y, runner->x, runner->y + runner->stack[0]);
-                    runner->y = runner->y + runner->stack[0];
+                start_vlineto:
+                    dx1 = {};
+                    dy1 = runner->stack[arg_i++];
 
-                    for (Int arg_i = 1; arg_i < runner->stack_length; arg_i += 2)
-                    {
-                        draw_line(runner->x, runner->y, runner->x + runner->stack[arg_i], runner->y);
-                        runner->x = runner->x + runner->stack[arg_i];
-
-                        draw_line(runner->x, runner->y, runner->x, runner->y + runner->stack[arg_i + 1]);
-                        runner->y = runner->y + runner->stack[arg_i + 1];
-                    }
-                }
-                else
-                {
-                    for (Int arg_i = 0; arg_i < runner->stack_length; arg_i += 2)
-                    {
-                        draw_line(runner->x, runner->y, runner->x, runner->y + runner->stack[arg_i]);
-                        runner->y = runner->y + runner->stack[arg_i];
-
-                        draw_line(runner->x, runner->y, runner->x + runner->stack[arg_i + 1], runner->y);
-                        runner->x = runner->x + runner->stack[arg_i + 1];
-                    }
+                    draw_line(runner->x, runner->y, runner->x + dx1, runner->y + dy1);
+                    runner->x = runner->x + dx1;
+                    runner->y = runner->y + dy1;
                 }
                 runner->stack_length = 0;
             }
             else if (atom->op == CharStringOpType::rrcurveto)
             {
+                assert(runner->stack_length > 0);
                 assert(runner->stack_length % 6 == 0);
 
-                for (Int arg_i = 0; arg_i < runner->stack_length; arg_i += 6)
+                Int arg_i = 0;
+                while (arg_i < runner->stack_length)
                 {
-                    CharStringFixed dx1 = runner->stack[arg_i];
-                    CharStringFixed dy1 = runner->stack[arg_i + 1];
-                    CharStringFixed dx2 = runner->stack[arg_i + 2];
-                    CharStringFixed dy2 = runner->stack[arg_i + 3];
-                    CharStringFixed dx3 = runner->stack[arg_i + 4];
-                    CharStringFixed dy3 = runner->stack[arg_i + 5];
+                    dx1 = runner->stack[arg_i++];
+                    dy1 = runner->stack[arg_i++];
+                    dx2 = runner->stack[arg_i++];
+                    dy2 = runner->stack[arg_i++];
+                    dx3 = runner->stack[arg_i++];
+                    dy3 = runner->stack[arg_i++];
+
+                    draw_line(runner->x, runner->y, runner->x + dx1 + dx2 + dx3, runner->y + dy1 + dy2 + dy3);
+                    runner->x = runner->x + dx1 + dx2 + dx3;
+                    runner->y = runner->y + dy1 + dy2 + dy3;
+                }
+                runner->stack_length = 0;
+            }
+            else if (atom->op == CharStringOpType::hhcurveto)
+            {
+                assert(runner->stack_length > 0);
+                assert(runner->stack_length % 4 == 0 || runner->stack_length % 4 == 1);
+
+                Int arg_i = 0;
+                if (runner->stack_length % 2 == 1)
+                {
+                    dy1 = runner->stack[arg_i++];
+                }
+                else
+                {
+                    dy1 = {};
+                }
+
+                while (arg_i < runner->stack_length)
+                {
+                    dx1 = runner->stack[arg_i++];
+                    dx2 = runner->stack[arg_i++];
+                    dy2 = runner->stack[arg_i++];
+                    dx3 = runner->stack[arg_i++];
+                    dy3 = {};
+
+                    draw_line(runner->x, runner->y, runner->x + dx1 + dx2 + dx3, runner->y + dy1 + dy2 + dy3);
+                    runner->x = runner->x + dx1 + dx2 + dx3;
+                    runner->y = runner->y + dy1 + dy2 + dy3;
+
+                    dy1 = {};
+                }
+                runner->stack_length = 0;
+            }
+            else if (atom->op == CharStringOpType::vvcurveto)
+            {
+                assert(runner->stack_length > 0);
+                assert(runner->stack_length % 4 == 0 || runner->stack_length % 4 == 1);
+
+                Int arg_i = 0;
+                if (runner->stack_length % 2 == 1)
+                {
+                    dx1 = runner->stack[arg_i++];
+                }
+                else
+                {
+                    dx1 = {};
+                }
+
+                while (arg_i < runner->stack_length)
+                {
+                    dy1 = runner->stack[arg_i++];
+                    dx2 = runner->stack[arg_i++];
+                    dy2 = runner->stack[arg_i++];
+                    dx3 = {};
+                    dy3 = runner->stack[arg_i++];
+
+                    draw_line(runner->x, runner->y, runner->x + dx1 + dx2 + dx3, runner->y + dy1 + dy2 + dy3);
+                    runner->x = runner->x + dx1 + dx2 + dx3;
+                    runner->y = runner->y + dy1 + dy2 + dy3;
+
+                    dx1 = {};
+                }
+                runner->stack_length = 0;
+            }
+            else if (atom->op == CharStringOpType::hvcurveto ||
+                     atom->op == CharStringOpType::vhcurveto)
+            {
+                assert(runner->stack_length > 0);
+                assert(runner->stack_length % 8 == 0 || runner->stack_length % 8 == 1 ||
+                       runner->stack_length % 8 == 4 || runner->stack_length % 8 == 5);
+
+                Int arg_i = 0;
+                if (atom->op == CharStringOpType::vhcurveto)
+                {
+                    goto start_vhcurveto;
+                }
+
+                while (arg_i < runner->stack_length)
+                {
+                    dx1 = runner->stack[arg_i++];
+                    dy1 = {};
+                    dx2 = runner->stack[arg_i++];
+                    dy2 = runner->stack[arg_i++];
+                    dx3 = {};
+                    dy3 = runner->stack[arg_i++];
+                    if (arg_i == runner->stack_length - 1)
+                    {
+                        dx3 = runner->stack[arg_i++];
+                    }
+
+                    draw_line(runner->x, runner->y, runner->x + dx1 + dx2 + dx3, runner->y + dy1 + dy2 + dy3);
+                    runner->x = runner->x + dx1 + dx2 + dx3;
+                    runner->y = runner->y + dy1 + dy2 + dy3;
+
+                    if (arg_i >= runner->stack_length)
+                    {
+                        break;
+                    }
+
+                start_vhcurveto:
+                    dx1 = {};
+                    dy1 = runner->stack[arg_i++];
+                    dx2 = runner->stack[arg_i++];
+                    dy2 = runner->stack[arg_i++];
+                    dx3 = runner->stack[arg_i++];
+                    dy3 = {};
+                    if (arg_i == runner->stack_length - 1)
+                    {
+                        dy3 = runner->stack[arg_i++];
+                    }
 
                     draw_line(runner->x, runner->y, runner->x + dx1 + dx2 + dx3, runner->y + dy1 + dy2 + dy3);
                     runner->x = runner->x + dx1 + dx2 + dx3;
