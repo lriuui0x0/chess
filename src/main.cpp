@@ -2,7 +2,7 @@
 #include "math.cpp"
 #include "window.cpp"
 #include "vulkan.cpp"
-#include "model.cpp"
+#include "mesh.cpp"
 
 Bool read_mesh(RawStr filename, OUT Mesh *mesh)
 {
@@ -12,7 +12,7 @@ Bool read_mesh(RawStr filename, OUT Mesh *mesh)
         return false;
     }
 
-    if (!deserialise_model(file_contents, mesh))
+    if (!deserialise_mesh(file_contents, mesh))
     {
         return false;
     }

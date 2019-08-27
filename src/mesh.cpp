@@ -17,7 +17,7 @@ struct Mesh
     UInt32 *indices_data;
 };
 
-Bool deserialise_model(Str buffer, OUT Mesh *model)
+Bool deserialise_mesh(Str buffer, OUT Mesh *model)
 {
     if (buffer.length < 4)
     {

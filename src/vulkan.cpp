@@ -3,7 +3,7 @@
 #include "util.cpp"
 #include "math.cpp"
 #include "window.cpp"
-#include "model.cpp"
+#include "mesh.cpp"
 
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
@@ -442,7 +442,7 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     rasterization_state_create_info.depthClampEnable = VK_FALSE;
     rasterization_state_create_info.rasterizerDiscardEnable = VK_FALSE;
     rasterization_state_create_info.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterization_state_create_info.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterization_state_create_info.cullMode = VK_CULL_MODE_NONE;
     rasterization_state_create_info.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterization_state_create_info.depthBiasEnable = VK_FALSE;
     rasterization_state_create_info.depthBiasConstantFactor = 0.0f;
