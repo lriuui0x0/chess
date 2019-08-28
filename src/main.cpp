@@ -78,16 +78,14 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     camera.pos = {350, 1000, -300};
     camera.rotation = get_rotation_matrix_x(PI / 3) * get_rotation_matrix_z(PI);
 
-    Entity light;
-    light.pos = {0, 0, -100};
-    light.rotation = get_rotation_matrix_x(degree_to_radian(75)) * get_rotation_matrix_z(PI);
-
-    Entity *active_entity = &camera;
-
-    CommonTransform common_transform;
-    common_transform.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-    common_transform.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-    common_transform.projection = get_perspective_matrix(degree_to_radian(45), (Real)window_width / (Real)window_height, 10, 10000);
+    Scene scene;
+    scene.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+    scene.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+    scene.projection = get_perspective_matrix(degree_to_radian(45), (Real)window_width / (Real)window_height, 10, 10000);
+    scene.light_dir[0] = {1, -1, 1};
+    scene.light_dir[1] = {1, -1, -1};
+    scene.light_dir[2] = {-1, -1, -1};
+    scene.light_dir[3] = {-1, -1, 1};
 
     Window window = create_window(wrap_str("Chess"), window_width, window_height, 50, 50);
     assert(window);
@@ -110,8 +108,8 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Int current_vertex_data_offset = 0;
     Int current_index_data_offset = 0;
     Int current_uniform_data_offset = 0;
-    memcpy(host_uniform_buffer.data, &common_transform, sizeof(common_transform));
-    current_uniform_data_offset += sizeof(common_transform);
+    memcpy(host_uniform_buffer.data, &scene, sizeof(scene));
+    current_uniform_data_offset += sizeof(scene);
     for (Int i = 0; i < entities.length; i++)
     {
         Mesh *mesh = entities[i].mesh;
@@ -260,27 +258,27 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         Real speed = 3;
         if (moving_x_pos)
         {
-            active_entity->pos = active_entity->pos + speed * vec3(active_entity->rotation.x);
+            camera.pos = camera.pos + speed * vec3(camera.rotation.x);
         }
         else if (moving_x_neg)
         {
-            active_entity->pos = active_entity->pos - speed * vec3(active_entity->rotation.x);
+            camera.pos = camera.pos - speed * vec3(camera.rotation.x);
         }
         else if (moving_y_pos)
         {
-            active_entity->pos = active_entity->pos + speed * vec3(active_entity->rotation.y);
+            camera.pos = camera.pos + speed * vec3(camera.rotation.y);
         }
         else if (moving_y_neg)
         {
-            active_entity->pos = active_entity->pos - speed * vec3(active_entity->rotation.y);
+            camera.pos = camera.pos - speed * vec3(camera.rotation.y);
         }
         else if (moving_z_pos)
         {
-            active_entity->pos = active_entity->pos + speed * vec3(active_entity->rotation.z);
+            camera.pos = camera.pos + speed * vec3(camera.rotation.z);
         }
         else if (moving_z_neg)
         {
-            active_entity->pos = active_entity->pos - speed * vec3(active_entity->rotation.z);
+            camera.pos = camera.pos - speed * vec3(camera.rotation.z);
         }
 
         Real rotating_speed = PI / 1800;
@@ -304,14 +302,13 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             assert(!is_mouse_left_dragging);
         }
 
-        active_entity->rotation = active_entity->rotation * local_transform;
+        camera.rotation = camera.rotation * local_transform;
 
-        common_transform.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-        common_transform.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-        memcpy(host_uniform_buffer.data, &common_transform, sizeof(CommonTransform));
+        scene.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+        scene.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+        memcpy(host_uniform_buffer.data, &scene, sizeof(scene));
 
-        assert(render_vulkan_frame(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline, &vulkan_frame,
-                                   &entities, &host_uniform_buffer, vec3(light.rotation.z)));
+        assert(render_vulkan_frame(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline, &vulkan_frame, &entities, &host_uniform_buffer));
     }
 
     return 0;

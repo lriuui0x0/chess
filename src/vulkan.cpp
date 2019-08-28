@@ -282,7 +282,7 @@ struct VulkanPipeline
     VkPipeline handle;
     VkRenderPass render_pass;
     VkDescriptorSetLayout entity_descriptor_set_layout;
-    VkDescriptorSetLayout common_descriptor_set_layout;
+    VkDescriptorSetLayout scene_descriptor_set_layout;
     VkPipelineLayout pipeline_layout;
 };
 
@@ -505,7 +505,7 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
         return false;
     }
 
-    result_code = vkCreateDescriptorSetLayout(context->device_handle, &descriptor_set_layout_create_info, NULL, &pipeline->common_descriptor_set_layout);
+    result_code = vkCreateDescriptorSetLayout(context->device_handle, &descriptor_set_layout_create_info, NULL, &pipeline->scene_descriptor_set_layout);
     if (result_code != VK_SUCCESS)
     {
         return false;
@@ -513,18 +513,11 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
 
     VkDescriptorSetLayout descriptor_set_layout[2];
     descriptor_set_layout[0] = pipeline->entity_descriptor_set_layout;
-    descriptor_set_layout[1] = pipeline->common_descriptor_set_layout;
-
-    VkPushConstantRange push_constant_range;
-    push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    push_constant_range.offset = 0;
-    push_constant_range.size = sizeof(Vec3);
+    descriptor_set_layout[1] = pipeline->scene_descriptor_set_layout;
 
     VkPipelineLayoutCreateInfo pipeline_layout_create_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pipeline_layout_create_info.setLayoutCount = 2;
     pipeline_layout_create_info.pSetLayouts = descriptor_set_layout;
-    pipeline_layout_create_info.pushConstantRangeCount = 1;
-    pipeline_layout_create_info.pPushConstantRanges = &push_constant_range;
 
     result_code = vkCreatePipelineLayout(context->device_handle, &pipeline_layout_create_info, NULL, &pipeline->pipeline_layout);
 
@@ -804,7 +797,7 @@ struct VulkanFrame
     VulkanBuffer index_buffer;
     VulkanBuffer uniform_buffer;
     Array<VkDescriptorSet> entity_descriptor_sets;
-    VkDescriptorSet common_descriptor_set;
+    VkDescriptorSet scene_descriptor_set;
 };
 
 struct Entity
@@ -815,11 +808,12 @@ struct Entity
     Mesh *mesh;
 };
 
-struct CommonTransform
+struct Scene
 {
     Mat4 view;
     Mat4 normal_view;
     Mat4 projection;
+    Vec4 light_dir[4];
 };
 
 Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline, Array<Entity> *entities,
@@ -912,7 +906,7 @@ Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
         total_vertex_data_length += sizeof(Vertex) * entities->data[i].mesh->vertex_count;
         total_index_data_length += sizeof(UInt32) * entities->data[i].mesh->index_count;
     }
-    Int total_uniform_data_length = sizeof(CommonTransform) + sizeof(Mat4) * entities->length;
+    Int total_uniform_data_length = sizeof(Scene) + sizeof(Mat4) * entities->length;
 
     if (!create_vulkan_buffer(context, total_vertex_data_length,
                               VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -959,9 +953,9 @@ Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     VkDescriptorSetAllocateInfo common_descriptor_set_alloc_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     common_descriptor_set_alloc_info.descriptorPool = context->descriptor_pool;
     common_descriptor_set_alloc_info.descriptorSetCount = 1;
-    common_descriptor_set_alloc_info.pSetLayouts = &pipeline->common_descriptor_set_layout;
+    common_descriptor_set_alloc_info.pSetLayouts = &pipeline->scene_descriptor_set_layout;
 
-    result_code = vkAllocateDescriptorSets(context->device_handle, &common_descriptor_set_alloc_info, &frame->common_descriptor_set);
+    result_code = vkAllocateDescriptorSets(context->device_handle, &common_descriptor_set_alloc_info, &frame->scene_descriptor_set);
     if (result_code != VK_SUCCESS)
     {
         return false;
@@ -970,10 +964,10 @@ Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     VkDescriptorBufferInfo descriptor_buffer_info = {};
     descriptor_buffer_info.buffer = frame->uniform_buffer.handle;
     descriptor_buffer_info.offset = 0;
-    descriptor_buffer_info.range = sizeof(CommonTransform);
+    descriptor_buffer_info.range = sizeof(Scene);
 
     VkWriteDescriptorSet descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    descriptor_set_write.dstSet = frame->common_descriptor_set;
+    descriptor_set_write.dstSet = frame->scene_descriptor_set;
     descriptor_set_write.dstBinding = 0;
     descriptor_set_write.dstArrayElement = 0;
     descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -1000,7 +994,7 @@ Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
 
         VkDescriptorBufferInfo descriptor_buffer_info = {};
         descriptor_buffer_info.buffer = frame->uniform_buffer.handle;
-        descriptor_buffer_info.offset = i * sizeof(Mat4) + sizeof(CommonTransform);
+        descriptor_buffer_info.offset = i * sizeof(Mat4) + sizeof(Scene);
         descriptor_buffer_info.range = sizeof(Mat4);
 
         VkWriteDescriptorSet descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
@@ -1018,7 +1012,7 @@ Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
 }
 
 Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline, VulkanFrame *frame, Array<Entity> *entities,
-                         VulkanBuffer *host_uniform_buffer, Vec3 light_dir)
+                         VulkanBuffer *host_uniform_buffer)
 {
     VkResult result_code;
     result_code = vkWaitForFences(context->device_handle, 1, &frame->frame_finished_fence, false, UINT64_MAX);
@@ -1052,7 +1046,7 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     VkBufferCopy uniform_buffer_copy = {};
     uniform_buffer_copy.srcOffset = 0;
     uniform_buffer_copy.dstOffset = 0;
-    uniform_buffer_copy.size = sizeof(CommonTransform);
+    uniform_buffer_copy.size = sizeof(Scene);
     vkCmdCopyBuffer(frame->command_buffer, host_uniform_buffer->handle, frame->uniform_buffer.handle, 1, &uniform_buffer_copy);
 
     VkBufferMemoryBarrier uniform_buffer_memory_barrier = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
@@ -1062,7 +1056,7 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     uniform_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     uniform_buffer_memory_barrier.buffer = frame->uniform_buffer.handle;
     uniform_buffer_memory_barrier.offset = 0;
-    uniform_buffer_memory_barrier.size = sizeof(CommonTransform);
+    uniform_buffer_memory_barrier.size = sizeof(Scene);
 
     vkCmdPipelineBarrier(frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, NULL, 1, &uniform_buffer_memory_barrier, 0, NULL);
 
@@ -1115,11 +1109,10 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(frame->command_buffer, 0, 1, &frame->vertex_buffer.handle, &offset);
     vkCmdBindIndexBuffer(frame->command_buffer, frame->index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdPushConstants(frame->command_buffer, pipeline->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Vec3), &light_dir);
 
     Int index_offset = 0;
     Int vertex_offset = 0;
-    vkCmdBindDescriptorSets(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline_layout, 0, 1, &frame->common_descriptor_set, 0, NULL);
+    vkCmdBindDescriptorSets(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline_layout, 0, 1, &frame->scene_descriptor_set, 0, NULL);
     for (Int entity_index = 0; entity_index < entities->length; entity_index++)
     {
         vkCmdBindDescriptorSets(frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline_layout, 1, 1, &frame->entity_descriptor_sets[entity_index], 0, NULL);
