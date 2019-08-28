@@ -4,6 +4,25 @@
 #include "../src/math.cpp"
 #include <cstdio>
 
+struct VertexCopy
+{
+    Int index;
+    Vec3 normal;
+};
+
+Vec3 convert_vec3(FbxVector4 fbx_vec4)
+{
+    Real x = fbx_vec4.mData[0];
+    Real y = fbx_vec4.mData[1];
+    Real z = fbx_vec4.mData[2];
+    return {x, y, z};
+}
+
+Bool vec3_equal(Vec3 u, Vec3 v)
+{
+    return u.x == v.x && u.y == v.y && u.z == v.z;
+}
+
 int main(Int argc, RawStr *argv)
 {
     argc--;
@@ -28,51 +47,61 @@ int main(Int argc, RawStr *argv)
     FbxNode *node = scene->GetRootNode()->GetChild(0);
     FbxMesh *mesh = (FbxMesh *)node->GetNodeAttribute();
 
-    Int32 vertex_count = mesh->GetControlPointsCount();
+    Array<VertexCopy> vertex_copies = create_array<VertexCopy>();
+    Array<UInt32> indices = create_array<UInt32>();
+
+    Int found_times = 0;
     Int polygon_count = mesh->GetPolygonCount();
-    Int indices_count = polygon_count * 3;
-
-    assert(fwrite(&vertex_count, sizeof(Int32), 1, output_file) == 1);
-    for (Int vertex_index = 0; vertex_index < vertex_count; vertex_index++)
-    {
-        FbxVector4 vertex = mesh->GetControlPointAt(vertex_index);
-        Real x = vertex.mData[0];
-        Real y = vertex.mData[1];
-        Real z = vertex.mData[2];
-        assert(fwrite(&x, sizeof(Real), 1, output_file) == 1);
-        assert(fwrite(&y, sizeof(Real), 1, output_file) == 1);
-        assert(fwrite(&z, sizeof(Real), 1, output_file) == 1);
-
-        Vec3 normal = {0, 0, 0};
-        for (Int polygon_index = 0; polygon_index < polygon_count; polygon_index++)
-        {
-            for (Int polygon_vertex_index = 0; polygon_vertex_index < 3; polygon_vertex_index++)
-            {
-                Int32 curr_vertex_index = mesh->GetPolygonVertex(polygon_index, polygon_vertex_index);
-                if (curr_vertex_index == vertex_index)
-                {
-                    FbxVector4 fbx_normal;
-                    assert(mesh->GetPolygonVertexNormal(polygon_index, polygon_vertex_index, fbx_normal));
-
-                    Vec3 current_normal = {(Real) fbx_normal.mData[0], (Real)fbx_normal.mData[1], (Real)fbx_normal.mData[2]};
-                    normal = normal + current_normal;
-                }
-            }
-        }
-
-        normal = normalize(normal); 
-        assert(fwrite(&normal.x, sizeof(Real), 1, output_file) == 1);
-        assert(fwrite(&normal.y, sizeof(Real), 1, output_file) == 1);
-        assert(fwrite(&normal.z, sizeof(Real), 1, output_file) == 1);
-    }
-
-    assert(fwrite(&indices_count, sizeof(Int32), 1, output_file) == 1);
     for (Int polygon_index = 0; polygon_index < polygon_count; polygon_index++)
     {
         for (Int polygon_vertex_index = 0; polygon_vertex_index < 3; polygon_vertex_index++)
         {
             Int32 vertex_index = mesh->GetPolygonVertex(polygon_index, polygon_vertex_index);
-            assert(fwrite(&vertex_index, sizeof(Int32), 1, output_file) == 1);
+            assert(vertex_index != -1);
+            FbxVector4 fbx_normal;
+            assert(mesh->GetPolygonVertexNormal(polygon_index, polygon_vertex_index, fbx_normal));
+            Vec3 vertex_normal = convert_vec3(fbx_normal);
+
+            Bool found_copy = false;
+            for (Int vertex_copy_index = 0; vertex_copy_index < vertex_copies.length; vertex_copy_index++)
+            {
+                VertexCopy *vertex_copy = &vertex_copies[vertex_copy_index];
+                if (vertex_index == vertex_copy->index && vec3_equal(vertex_copy->normal, vertex_normal))
+                {
+                    *indices.push() = vertex_copy_index;
+                    found_copy = true;
+                    found_times++;
+                    break;
+                }
+            }
+
+            if (!found_copy)
+            {
+                VertexCopy *vertex_copy = vertex_copies.push();
+                vertex_copy->index = vertex_index;
+                vertex_copy->normal = vertex_normal;
+                *indices.push() = vertex_copies.length - 1;
+            }
         }
     }
+
+    assert(fwrite(&vertex_copies.length, sizeof(Int32), 1, output_file) == 1);
+    for (Int i = 0; i < vertex_copies.length; i++)
+    {
+        VertexCopy *vertex_copy = &vertex_copies[i];
+
+        FbxVector4 fbx_vertex_pos = mesh->GetControlPointAt(vertex_copy->index);
+        Vec3 vertex_pos = convert_vec3(fbx_vertex_pos);
+        assert(fwrite(&vertex_pos.x, sizeof(Real), 1, output_file) == 1);
+        assert(fwrite(&vertex_pos.y, sizeof(Real), 1, output_file) == 1);
+        assert(fwrite(&vertex_pos.z, sizeof(Real), 1, output_file) == 1);
+
+        Vec3 vertex_normal = normalize(vertex_copy->normal);
+        assert(fwrite(&vertex_normal.x, sizeof(Real), 1, output_file) == 1);
+        assert(fwrite(&vertex_normal.y, sizeof(Real), 1, output_file) == 1);
+        assert(fwrite(&vertex_normal.z, sizeof(Real), 1, output_file) == 1);
+    }
+
+    assert(fwrite(&indices.length, sizeof(Int32), 1, output_file) == 1);
+    assert(fwrite(indices.data, sizeof(UInt32), indices.length, output_file) == (size_t)indices.length);
 }
