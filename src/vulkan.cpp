@@ -205,10 +205,10 @@ Bool create_vulkan_context(Window window, OUT VulkanContext *context)
 
     VkDescriptorPoolSize descriptor_pool_size = {};
     descriptor_pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptor_pool_size.descriptorCount = 32;
+    descriptor_pool_size.descriptorCount = 48;
 
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    descriptor_pool_create_info.maxSets = 32;
+    descriptor_pool_create_info.maxSets = 48;
     descriptor_pool_create_info.poolSizeCount = 1;
     descriptor_pool_create_info.pPoolSizes = &descriptor_pool_size;
 
@@ -805,6 +805,7 @@ struct Entity
     Str name;
     Vec3 pos;
     Mat4 rotation;
+    Vec3 color;
     Mesh *mesh;
 };
 
@@ -814,6 +815,14 @@ struct Scene
     Mat4 normal_view;
     Mat4 projection;
     Vec4 light_dir[4];
+};
+
+struct Piece
+{
+    Mat4 world;
+    Mat4 normal_world;
+    Vec4 color;
+    Vec4 padding;
 };
 
 Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanPipeline *pipeline, Array<Entity> *entities,
@@ -906,7 +915,7 @@ Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
         total_vertex_data_length += sizeof(Vertex) * entities->data[i].mesh->vertex_count;
         total_index_data_length += sizeof(UInt32) * entities->data[i].mesh->index_count;
     }
-    Int total_uniform_data_length = sizeof(Scene) + sizeof(Mat4) * entities->length;
+    Int total_uniform_data_length = sizeof(Scene) + sizeof(Piece) * entities->length;
 
     if (!create_vulkan_buffer(context, total_vertex_data_length,
                               VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -994,8 +1003,8 @@ Bool create_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
 
         VkDescriptorBufferInfo descriptor_buffer_info = {};
         descriptor_buffer_info.buffer = frame->uniform_buffer.handle;
-        descriptor_buffer_info.offset = i * sizeof(Mat4) + sizeof(Scene);
-        descriptor_buffer_info.range = sizeof(Mat4);
+        descriptor_buffer_info.offset = i * sizeof(Piece) + sizeof(Scene);
+        descriptor_buffer_info.range = sizeof(Piece);
 
         VkWriteDescriptorSet descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
         descriptor_set_write.dstSet = frame->entity_descriptor_sets[i];
@@ -1092,8 +1101,8 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain, Vul
 
     vkCmdPipelineBarrier(frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, NULL, 0, NULL, 1, &color_image_memory_barrier);
 
-    VkClearValue clear_colors[2] = {{1.0f, 1.0f, 1.0f, 1.0f},
-                                    {1.0f, 0}};
+    VkClearValue clear_colors[2] = {{0.7, 0.7, 0.7, 0.7},
+                                    {1.0, 0}};
     VkRenderPassBeginInfo render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     render_pass_begin_info.renderPass = pipeline->render_pass;
     render_pass_begin_info.framebuffer = frame->frame_buffers[image_index];

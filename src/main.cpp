@@ -20,11 +20,13 @@ Bool read_mesh(RawStr filename, OUT Mesh *mesh)
     return true;
 }
 
-Void add_entity(Array<Entity> *entities, Str name, Vec3 pos, Mesh *mesh)
+Void add_entity(Array<Entity> *entities, Str name, Vec3 pos, Mat4 rotation, Vec3 color, Mesh *mesh)
 {
     Entity *entity = entities->push();
     entity->name = name;
     entity->pos = pos;
+    entity->rotation = rotation;
+    entity->color = color;
     entity->mesh = mesh;
 }
 
@@ -46,15 +48,20 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Mesh pawn_mesh;
     assert(read_mesh("../asset/pawn.asset", &pawn_mesh));
 
+    Vec3 black_color = {0.330882340669632, 0.330882340669632, 0.330882340669632};
+    Vec3 white_color = {0.875, 0.82388436794281, 0.759191155433655};
+    Mat4 black_inital_model = get_identity_matrix();
+    Mat4 white_inital_model = get_rotation_matrix_y(PI);
+
     Array<Entity> entities = create_array<Entity>();
-    add_entity(&entities, wrap_str("rook1"), {0, 0, 0}, &rook_mesh);
-    add_entity(&entities, wrap_str("knight1"), {100, 0, 0}, &knight_mesh);
-    add_entity(&entities, wrap_str("bishop1"), {200, 0, 0}, &bishop_mesh);
-    add_entity(&entities, wrap_str("king"), {300, 0, 0}, &king_mesh);
-    add_entity(&entities, wrap_str("queen"), {400, 0, 0}, &queen_mesh);
-    add_entity(&entities, wrap_str("bishop2"), {500, 0, 0}, &bishop_mesh);
-    add_entity(&entities, wrap_str("knight2"), {600, 0, 0}, &knight_mesh);
-    add_entity(&entities, wrap_str("rook2"), {700, 0, 0}, &rook_mesh);
+    add_entity(&entities, wrap_str("black_rook1"), {0, 0, 0}, black_inital_model, black_color, &rook_mesh);
+    add_entity(&entities, wrap_str("black_knight1"), {100, 0, 0}, black_inital_model, black_color, &knight_mesh);
+    add_entity(&entities, wrap_str("black_bishop1"), {200, 0, 0}, black_inital_model, black_color, &bishop_mesh);
+    add_entity(&entities, wrap_str("black_king"), {300, 0, 0}, black_inital_model, black_color, &king_mesh);
+    add_entity(&entities, wrap_str("black_queen"), {400, 0, 0}, black_inital_model, black_color, &queen_mesh);
+    add_entity(&entities, wrap_str("black_bishop2"), {500, 0, 0}, black_inital_model, black_color, &bishop_mesh);
+    add_entity(&entities, wrap_str("black_knight2"), {600, 0, 0}, black_inital_model, black_color, &knight_mesh);
+    add_entity(&entities, wrap_str("black_rook2"), {700, 0, 0}, black_inital_model, black_color, &rook_mesh);
     for (Int i = 0; i < 8; i++)
     {
         UInt8 number_suffix_data[2];
@@ -63,7 +70,26 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         Str number_suffix;
         number_suffix.length = 1;
         number_suffix.data = number_suffix_data;
-        add_entity(&entities, concat_str(wrap_str("pawn"), number_suffix), {i * 100.0f, 0, 100}, &pawn_mesh);
+        add_entity(&entities, concat_str(wrap_str("black_pawn"), number_suffix), {i * 100.0f, 0, 100}, get_identity_matrix(), black_color, &pawn_mesh);
+    }
+
+    add_entity(&entities, wrap_str("white_rook1"), {700, 0, 700}, white_inital_model, white_color, &rook_mesh);
+    add_entity(&entities, wrap_str("white_knight1"), {600, 0, 700}, white_inital_model, white_color, &knight_mesh);
+    add_entity(&entities, wrap_str("white_bishop1"), {500, 0, 700}, white_inital_model, white_color, &bishop_mesh);
+    add_entity(&entities, wrap_str("white_king"), {400, 0, 700}, white_inital_model, white_color, &king_mesh);
+    add_entity(&entities, wrap_str("white_queen"), {300, 0, 700}, white_inital_model, white_color, &queen_mesh);
+    add_entity(&entities, wrap_str("white_bishop2"), {200, 0, 700}, white_inital_model, white_color, &bishop_mesh);
+    add_entity(&entities, wrap_str("white_knight2"), {100, 0, 700}, white_inital_model, white_color, &knight_mesh);
+    add_entity(&entities, wrap_str("white_rook2"), {0, 0, 700}, white_inital_model, white_color, &rook_mesh);
+    for (Int i = 0; i < 8; i++)
+    {
+        UInt8 number_suffix_data[2];
+        number_suffix_data[0] = '0' + i;
+        number_suffix_data[1] = '\0';
+        Str number_suffix;
+        number_suffix.length = 1;
+        number_suffix.data = number_suffix_data;
+        add_entity(&entities, concat_str(wrap_str("white_pawn"), number_suffix), {700 - i * 100.0f, 0, 600}, white_inital_model, white_color, &pawn_mesh);
     }
 
     Int total_vertex_data_length = 0;
@@ -75,13 +101,13 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     }
 
     Entity camera;
-    camera.pos = {350, 1000, -300};
-    camera.rotation = get_rotation_matrix_x(PI / 3) * get_rotation_matrix_z(PI);
+    camera.pos = {350, 1350, -450};
+    camera.rotation = get_rotation_matrix_x(degree_to_radian(60)) * get_rotation_matrix_z(PI);
 
     Scene scene;
     scene.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
     scene.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-    scene.projection = get_perspective_matrix(degree_to_radian(45), (Real)window_width / (Real)window_height, 10, 10000);
+    scene.projection = get_perspective_matrix(degree_to_radian(30), (Real)window_width / (Real)window_height, 10, 10000);
     scene.light_dir[0] = {1, -1, 1};
     scene.light_dir[1] = {1, -1, -1};
     scene.light_dir[2] = {-1, -1, -1};
@@ -117,11 +143,15 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         Int current_index_data_length = mesh->index_count * sizeof(mesh->indices_data[0]);
         memcpy(host_vertex_buffer.data + current_vertex_data_offset, entities[i].mesh->vertices_data, current_vertex_data_length);
         memcpy(host_index_buffer.data + current_index_data_offset, entities[i].mesh->indices_data, current_index_data_length);
-        *(Mat4 *)(host_uniform_buffer.data + current_uniform_data_offset) = get_translate_matrix(entities[i].pos.x, entities[i].pos.y, entities[i].pos.z);
+
+        Piece *piece = (Piece *)(host_uniform_buffer.data + current_uniform_data_offset);
+        piece->world = get_translate_matrix(entities[i].pos.x, entities[i].pos.y, entities[i].pos.z) * entities[i].rotation;
+        piece->normal_world = entities[i].rotation;
+        piece->color = vec4(entities[i].color);
 
         current_vertex_data_offset += current_vertex_data_length;
         current_index_data_offset += current_index_data_length;
-        current_uniform_data_offset += sizeof(Mat4);
+        current_uniform_data_offset += sizeof(Piece);
     }
 
     assert(upload_vulkan_buffer(&vulkan_context, &host_vertex_buffer, &vulkan_frame.vertex_buffer));
