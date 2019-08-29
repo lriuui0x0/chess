@@ -399,7 +399,7 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     vertex_binding_description.stride = sizeof(Vertex);
     vertex_binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkVertexInputAttributeDescription vertex_attribute_description[2];
+    VkVertexInputAttributeDescription vertex_attribute_description[3];
     vertex_attribute_description[0].binding = 0;
     vertex_attribute_description[0].location = 0;
     vertex_attribute_description[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -410,10 +410,15 @@ Bool create_vulkan_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, 
     vertex_attribute_description[1].format = VK_FORMAT_R32G32B32_SFLOAT;
     vertex_attribute_description[1].offset = offsetof(Vertex, normal);
 
+    vertex_attribute_description[2].binding = 0;
+    vertex_attribute_description[2].location = 2;
+    vertex_attribute_description[2].format = VK_FORMAT_R32G32B32_SFLOAT;
+    vertex_attribute_description[2].offset = offsetof(Vertex, color);
+
     VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     vertex_input_state_create_info.vertexBindingDescriptionCount = 1;
     vertex_input_state_create_info.pVertexBindingDescriptions = &vertex_binding_description;
-    vertex_input_state_create_info.vertexAttributeDescriptionCount = 2;
+    vertex_input_state_create_info.vertexAttributeDescriptionCount = 3;
     vertex_input_state_create_info.pVertexAttributeDescriptions = vertex_attribute_description;
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state_create_info = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
@@ -805,7 +810,6 @@ struct Entity
     Str name;
     Vec3 pos;
     Mat4 rotation;
-    Vec3 color;
     Mesh *mesh;
 };
 

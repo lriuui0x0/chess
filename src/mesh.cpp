@@ -7,6 +7,7 @@ struct Vertex
 {
     Vec3 pos;
     Vec3 normal;
+    Vec3 color;
 };
 
 struct Mesh

@@ -15,8 +15,9 @@ layout(set = 1, binding = 0) uniform Piece {
 
 layout(location = 0) in vec3 pos;
 layout(location = 1) in vec3 normal;
+layout(location = 2) in vec3 color;
 
-layout(location = 0) out flat vec3 color;
+layout(location = 0) out flat vec3 shaded_color;
 
 vec3 shade(vec3 light_dir, vec3 normal_dir, vec3 surface_color)
 {
@@ -29,10 +30,10 @@ vec3 shade(vec3 light_dir, vec3 normal_dir, vec3 surface_color)
 void main() {
     vec3 world_pos = vec3(scene.view * piece.world * vec4(pos, 1)); 
     vec3 normal_dir = vec3(scene.normal_view * piece.normal_world * vec4(normal, 1));
-    color = vec3(0);
-    color += 0.3 * shade(-vec3(scene.light_dir[0]), normal_dir, vec3(piece.color));
-    color += 0.3 * shade(-vec3(scene.light_dir[1]), normal_dir, vec3(piece.color));
-    color += 0.2 * shade(-vec3(scene.light_dir[2]), normal_dir, vec3(piece.color));
-    color += 0.2 * shade(-vec3(scene.light_dir[3]), normal_dir, vec3(piece.color));
+    shaded_color = vec3(0);
+    shaded_color += 0.3 * shade(-vec3(scene.light_dir[0]), normal_dir, vec3(color));
+    shaded_color += 0.3 * shade(-vec3(scene.light_dir[1]), normal_dir, vec3(color));
+    shaded_color += 0.2 * shade(-vec3(scene.light_dir[2]), normal_dir, vec3(color));
+    shaded_color += 0.2 * shade(-vec3(scene.light_dir[3]), normal_dir, vec3(color));
     gl_Position = scene.projection * vec4(world_pos.x, world_pos.y, world_pos.z, 1);
 }
