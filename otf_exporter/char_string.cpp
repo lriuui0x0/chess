@@ -51,7 +51,7 @@ struct CharStringAtom
 {
     CharStringAtomType type;
     union {
-        CharStringFixed number;
+        Real number;
         CharStringOpType op;
     };
 };
@@ -61,18 +61,14 @@ struct CharString
     Array<CharStringAtom> atoms;
 };
 
-CharStringFixed operator+(CharStringFixed number, Int16 integer)
+Real min(Real a, Real b)
 {
-    number.integer += integer;
-    return number;
+    return a < b ? a : b;
 }
 
-CharStringFixed operator+(CharStringFixed number, CharStringFixed number2)
+Real max(Real a, Real b)
 {
-    UInt32 fraction = number.fraction + number2.fraction;
-    number.fraction = fraction & 0xffff;
-    number.integer += number2.integer + ((fraction >> 16) & 0xffff);
-    return number;
+    return a > b ? a : b;
 }
 
 void read_char_string_byte(CharStringReader *reader, OUT UInt8 *byte)
@@ -232,9 +228,8 @@ void read_char_string(CharStringReader *reader, OUT CharString *char_string)
             UInt8 byte2;
             read_char_string_byte(reader, &byte2);
 
-            atom->number.integer = (byte1 << 8) | byte2;
-            atom->number.fraction = 0;
-            assert(atom->number.integer >= -32768 && atom->number.integer <= 32767);
+            atom->number = (Int16)(byte1 << 8 | byte2);
+            assert(atom->number >= -32768 && atom->number <= 32767);
         }
         else if (byte0 == 29)
         {
@@ -254,31 +249,28 @@ void read_char_string(CharStringReader *reader, OUT CharString *char_string)
         else if (byte0 >= 32 && byte0 <= 246)
         {
             atom->type = CharStringAtomType::number;
-            atom->number.integer = (Int)byte0 - 139;
-            atom->number.fraction = 0;
-            assert(atom->number.integer >= -107 && atom->number.integer <= 107);
+            atom->number = (Int)byte0 - 139;
+            assert(atom->number >= -107 && atom->number <= 107);
         }
         else if (byte0 >= 247 && byte0 <= 250)
         {
             atom->type = CharStringAtomType::number;
-            atom->number.integer = ((Int)byte0 - 247) * 256;
-            atom->number.fraction = 0;
 
             UInt8 byte1;
             read_char_string_byte(reader, &byte1);
-            atom->number.integer += (Int)byte1 + 108;
-            assert(atom->number.integer >= 108 && atom->number.integer <= 1131);
+
+            atom->number = ((Int)byte0 - 247) * 256 + (Int)byte1 + 108;
+            assert(atom->number >= 108 && atom->number <= 1131);
         }
         else if (byte0 >= 251 && byte0 <= 254)
         {
             atom->type = CharStringAtomType::number;
-            atom->number.integer = -((Int)byte0 - 251) * 256;
-            atom->number.fraction = 0;
 
             UInt8 byte1;
             read_char_string_byte(reader, &byte1);
-            atom->number.integer += -(Int)byte1 - 108;
-            assert(atom->number.integer >= -1131 && atom->number.integer <= -108);
+
+            atom->number = -((Int)byte0 - 251) * 256 - (Int)byte1 - 108;
+            assert(atom->number >= -1131 && atom->number <= -108);
         }
         else if (byte0 == 255)
         {
@@ -293,28 +285,37 @@ void read_char_string(CharStringReader *reader, OUT CharString *char_string)
             UInt8 byte4;
             read_char_string_byte(reader, &byte4);
 
-            atom->number.integer = (byte1 << 8) | byte2;
-            atom->number.fraction = (byte3 << 8) | byte4;
+            atom->number = (Int)((byte1 << 24) | (byte2 << 16) | (byte3 << 8) | byte4) / (Real)0x10000;
         }
     }
 }
+
+struct Line
+{
+    Real x0;
+    Real y0;
+    Real x1;
+    Real y1;
+};
 
 struct CharStringRunner
 {
     Int subr_count;
     CharString *subr_list;
 
-    CharStringFixed stack[50];
+    Real stack[50];
     Int stack_length;
 
-    CharStringFixed x;
-    CharStringFixed y;
-    CharStringFixed min_x;
-    CharStringFixed max_x;
-    CharStringFixed min_y;
-    CharStringFixed max_y;
+    Real x;
+    Real y;
+    Real min_x;
+    Real max_x;
+    Real min_y;
+    Real max_y;
     Int subr_depth;
     Bool end;
+
+    Array<Line> lines;
 };
 
 CharString *get_subr(CharStringRunner *runner, Int subr_i)
@@ -339,109 +340,58 @@ CharString *get_subr(CharStringRunner *runner, Int subr_i)
     return runner->subr_list + subr_index;
 }
 
-void print_fixed(CharStringFixed number)
+void move(CharStringRunner *runner, Real x, Real y)
 {
-    printf("%d.%u", number.integer, number.fraction);
+    runner->x = x;
+    runner->y = y;
 }
 
-void print_state(CharStringOpType op, CharStringRunner *runner)
+void refine_bbox(CharStringRunner *runner, Real x, Real y)
 {
-    if (op == CharStringOpType::rmoveto || op == CharStringOpType::hmoveto || op == CharStringOpType::vmoveto)
+    runner->min_x = min(runner->min_x, x);
+    runner->max_x = max(runner->max_x, x);
+    runner->min_y = min(runner->min_y, y);
+    runner->max_y = max(runner->max_y, y);
+}
+
+void add_line(CharStringRunner *runner, Real x0, Real y0, Real x1, Real y1)
+{
+    Line *line = runner->lines.push();
+    line->x0 = x0;
+    line->y0 = y0;
+    line->x1 = x1;
+    line->y1 = y1;
+}
+
+void add_cubic_curve(CharStringRunner *runner, Real x0, Real y0, Real x1, Real y1, Real x2, Real y2, Real x3, Real y3)
+{
+    Real mx0 = (x0 + x1) / 2;
+    Real my0 = (y0 + y1) / 2;
+    Real mx1 = (x1 + x2) / 2;
+    Real my1 = (y1 + y2) / 2;
+    Real mx2 = (x2 + x3) / 2;
+    Real my2 = (y2 + y3) / 2;
+
+    Real mmx0 = (mx0 + mx1) / 2;
+    Real mmy0 = (my0 + my1) / 2;
+    Real mmx1 = (mx1 + mx2) / 2;
+    Real mmy1 = (my1 + my2) / 2;
+
+    Real mmmx0 = (mmx0 + mmx1) / 2;
+    Real mmmy0 = (mmy0 + mmy1) / 2;
+
+    Real one_dist = hypot(x3 - x0, y3 - y0);
+    Real three_dist = hypot(x1 - x0, y1 - y0) + hypot(x2 - x1, y2 - y1) + hypot(x3 - x2, y3 - y2);
+    Real flatness = three_dist / one_dist - 1;
+
+    if (flatness < 0.01)
     {
-        printf("move  - ");
-    }
-    else if (op == CharStringOpType::rlineto || op == CharStringOpType::hlineto || op == CharStringOpType::vlineto)
-    {
-        printf("line  - ");
-    }
-    else if (op == CharStringOpType::rrcurveto)
-    {
-        printf("curve - ");
+        add_line(runner, x0, y0, x3, y3);
     }
     else
     {
-        return;
-    }
-
-    printf("x = ");
-    print_fixed(runner->x);
-    printf("\t\t\t\ty = ");
-    print_fixed(runner->y);
-    printf("\n");
-}
-
-const Int bitmap_size = 2200;
-Bool bitmap[bitmap_size][bitmap_size];
-
-void write_bitmap(Str filename)
-{
-    FILE *file_handle = fopen((RawStr)filename.data, "wb");
-    assert(file_handle);
-
-    UInt8 bf_type[2] = {'B', 'M'};
-    fwrite(&bf_type, 2, 1, file_handle);
-    UInt32 bf_size = 14 + 40 + 4 * bitmap_size * bitmap_size;
-    fwrite(&bf_size, 4, 1, file_handle);
-    UInt16 bf_reserved1 = 0;
-    fwrite(&bf_reserved1, 2, 1, file_handle);
-    UInt16 bf_reserved2 = 0;
-    fwrite(&bf_reserved2, 2, 1, file_handle);
-    UInt32 bf_off_bits = 14 + 40;
-    fwrite(&bf_off_bits, 4, 1, file_handle);
-
-    UInt32 bi_size = 40;
-    fwrite(&bi_size, 4, 1, file_handle);
-    UInt32 bi_width = bitmap_size;
-    fwrite(&bi_width, 4, 1, file_handle);
-    UInt32 bi_height = bitmap_size;
-    fwrite(&bi_height, 4, 1, file_handle);
-    UInt16 bi_planes = 1;
-    fwrite(&bi_planes, 2, 1, file_handle);
-    UInt16 bi_bit_count = 32;
-    fwrite(&bi_bit_count, 2, 1, file_handle);
-    UInt32 bi_compression = 0;
-    fwrite(&bi_compression, 4, 1, file_handle);
-    UInt32 bi_size_image = 0;
-    fwrite(&bi_size_image, 4, 1, file_handle);
-    UInt32 bi_x_pels_per_meter = 0;
-    fwrite(&bi_x_pels_per_meter, 4, 1, file_handle);
-    UInt32 bi_y_pels_per_meter = 0;
-    fwrite(&bi_y_pels_per_meter, 4, 1, file_handle);
-    UInt32 bi_clr_used = 0;
-    fwrite(&bi_clr_used, 4, 1, file_handle);
-    UInt32 bi_clr_important = 0;
-    fwrite(&bi_clr_important, 4, 1, file_handle);
-
-    for (Int y = 0; y < bitmap_size; y++)
-    {
-        for (Int x = 0; x < bitmap_size; x++)
-        {
-            UInt32 color = bitmap[y][x] ? 0 : 0xffffffff;
-            fwrite(&color, 4, 1, file_handle);
-        }
-    }
-
-    assert(fclose(file_handle) == 0);
-}
-
-void draw_line(CharStringFixed fx0, CharStringFixed fy0, CharStringFixed fx1, CharStringFixed fy1)
-{
-    Int x0 = fx0.integer;
-    Int y0 = fy0.integer;
-    Int x1 = fx1.integer;
-    Int y1 = fy1.integer;
-
-    Real dx = (x1 - x0) / 1000.0f;
-    Real dy = (y1 - y0) / 1000.0f;
-    for (Int i = 0; i < 1000; i++)
-    {
-        Int x = x0 + i * dx;
-        Int y = y0 + i * dy;
-
-        assert(x >= -500 && x < 1700);
-        assert(y >= -500 && y < 1700);
-
-        bitmap[y + 500][x + 500] = true;
+        add_cubic_curve(runner, x0, y0, mx0, my0, mmx0, mmy0, mmmx0, mmmy0);
+        add_cubic_curve(runner, mmmx0, mmmy0, mmx1, mmy1, mx2, my2, x3, y3);
     }
 }
 
@@ -451,12 +401,12 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
     {
         CharStringAtom *atom = &char_string->atoms[atom_i];
 
-        CharStringFixed dx1;
-        CharStringFixed dy1;
-        CharStringFixed dx2;
-        CharStringFixed dy2;
-        CharStringFixed dx3;
-        CharStringFixed dy3;
+        Real dx1;
+        Real dy1;
+        Real dx2;
+        Real dy2;
+        Real dx3;
+        Real dy3;
 
         if (atom->type == CharStringAtomType::number)
         {
@@ -466,29 +416,53 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
         {
             assert(atom->type == CharStringAtomType::op);
 
-            if (atom->op == CharStringOpType::rmoveto)
+            Real x0 = runner->x;
+            Real y0 = runner->y;
+
+            switch (atom->op)
+            {
+            case CharStringOpType::rmoveto:
             {
                 assert(runner->stack_length == 2);
 
-                runner->x = runner->x + runner->stack[0];
-                runner->y = runner->y + runner->stack[1];
+                dx1 = runner->stack[0];
+                dy1 = runner->stack[1];
+                Real x1 = x0 + dx1;
+                Real y1 = y0 + dy1;
+                refine_bbox(runner, x1, y1);
+                move(runner, x1, y1);
+
                 runner->stack_length = 0;
             }
-            else if (atom->op == CharStringOpType::hmoveto)
+            break;
+
+            case CharStringOpType::hmoveto:
             {
                 assert(runner->stack_length == 1);
 
-                runner->x = runner->x + runner->stack[0];
+                dx1 = runner->stack[0];
+                Real x1 = x0 + dx1;
+                refine_bbox(runner, x1, y0);
+                move(runner, x1, y0);
+
                 runner->stack_length = 0;
             }
-            else if (atom->op == CharStringOpType::vmoveto)
+            break;
+
+            case CharStringOpType::vmoveto:
             {
                 assert(runner->stack_length == 1);
 
-                runner->y = runner->y + runner->stack[0];
+                dy1 = runner->stack[0];
+                Real y1 = y0 + dy1;
+                refine_bbox(runner, x0, y1);
+                move(runner, x0, y1);
+
                 runner->stack_length = 0;
             }
-            else if (atom->op == CharStringOpType::rlineto)
+            break;
+
+            case CharStringOpType::rlineto:
             {
                 assert(runner->stack_length > 0);
                 assert(runner->stack_length % 2 == 0);
@@ -498,15 +472,18 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                 {
                     dx1 = runner->stack[arg_i++];
                     dy1 = runner->stack[arg_i++];
-
-                    draw_line(runner->x, runner->y, runner->x + dx1, runner->y + dy1);
-                    runner->x = runner->x + dx1;
-                    runner->y = runner->y + dy1;
+                    Real x1 = x0 + dx1;
+                    Real y1 = y0 + dy1;
+                    refine_bbox(runner, runner->x, runner->y);
+                    add_line(runner, x0, y0, x1, y1);
+                    move(runner, x1, y1);
                 }
                 runner->stack_length = 0;
             }
-            else if (atom->op == CharStringOpType::hlineto ||
-                     atom->op == CharStringOpType::vlineto)
+            break;
+
+            case CharStringOpType::hlineto:
+            case CharStringOpType::vlineto:
             {
                 assert(runner->stack_length > 0);
 
@@ -518,12 +495,14 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
 
                 while (arg_i < runner->stack_length)
                 {
+                start_hlineto:
+                {
                     dx1 = runner->stack[arg_i++];
-                    dy1 = {};
-
-                    draw_line(runner->x, runner->y, runner->x + dx1, runner->y + dy1);
-                    runner->x = runner->x + dx1;
-                    runner->y = runner->y + dy1;
+                    Real x1 = x0 + dx1;
+                    refine_bbox(runner, x1, y0);
+                    add_line(runner, x0, y0, x1, y0);
+                    move(runner, x1, y0);
+                }
 
                     if (arg_i >= runner->stack_length)
                     {
@@ -531,16 +510,19 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                     }
 
                 start_vlineto:
-                    dx1 = {};
+                {
                     dy1 = runner->stack[arg_i++];
-
-                    draw_line(runner->x, runner->y, runner->x + dx1, runner->y + dy1);
-                    runner->x = runner->x + dx1;
-                    runner->y = runner->y + dy1;
+                    Real y1 = y0 + dy1;
+                    refine_bbox(runner, x0, y1);
+                    add_line(runner, x0, y0, x0, y1);
+                    move(runner, x0, y1);
+                }
                 }
                 runner->stack_length = 0;
             }
-            else if (atom->op == CharStringOpType::rrcurveto)
+            break;
+
+            case CharStringOpType::rrcurveto:
             {
                 assert(runner->stack_length > 0);
                 assert(runner->stack_length % 6 == 0);
@@ -555,13 +537,26 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                     dx3 = runner->stack[arg_i++];
                     dy3 = runner->stack[arg_i++];
 
-                    draw_line(runner->x, runner->y, runner->x + dx1 + dx2 + dx3, runner->y + dy1 + dy2 + dy3);
-                    runner->x = runner->x + dx1 + dx2 + dx3;
-                    runner->y = runner->y + dy1 + dy2 + dy3;
+                    Real x1 = x0 + dx1;
+                    Real y1 = y0 + dy1;
+                    refine_bbox(runner, x1, y1);
+
+                    Real x2 = x1 + dx2;
+                    Real y2 = y1 + dy2;
+                    refine_bbox(runner, x2, y2);
+
+                    Real x3 = x2 + dx3;
+                    Real y3 = y2 + dy3;
+                    refine_bbox(runner, x3, y3);
+
+                    add_cubic_curve(runner, x0, y0, x1, y1, x2, y2, x3, y3);
+                    move(runner, x3, y3);
                 }
                 runner->stack_length = 0;
             }
-            else if (atom->op == CharStringOpType::hhcurveto)
+            break;
+
+            case CharStringOpType::hhcurveto:
             {
                 assert(runner->stack_length > 0);
                 assert(runner->stack_length % 4 == 0 || runner->stack_length % 4 == 1);
@@ -573,7 +568,7 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                 }
                 else
                 {
-                    dy1 = {};
+                    dy1 = 0;
                 }
 
                 while (arg_i < runner->stack_length)
@@ -582,17 +577,30 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                     dx2 = runner->stack[arg_i++];
                     dy2 = runner->stack[arg_i++];
                     dx3 = runner->stack[arg_i++];
-                    dy3 = {};
+                    dy3 = 0;
 
-                    draw_line(runner->x, runner->y, runner->x + dx1 + dx2 + dx3, runner->y + dy1 + dy2 + dy3);
-                    runner->x = runner->x + dx1 + dx2 + dx3;
-                    runner->y = runner->y + dy1 + dy2 + dy3;
+                    Real x1 = x0 + dx1;
+                    Real y1 = y0 + dy1;
+                    refine_bbox(runner, x1, y1);
 
-                    dy1 = {};
+                    Real x2 = x1 + dx2;
+                    Real y2 = y1 + dy2;
+                    refine_bbox(runner, x2, y2);
+
+                    Real x3 = x2 + dx3;
+                    Real y3 = y2 + dy3;
+                    refine_bbox(runner, x3, y3);
+
+                    add_cubic_curve(runner, x0, y0, x1, y1, x2, y2, x3, y3);
+                    move(runner, x3, y3);
+
+                    dy1 = 0;
                 }
                 runner->stack_length = 0;
             }
-            else if (atom->op == CharStringOpType::vvcurveto)
+            break;
+
+            case CharStringOpType::vvcurveto:
             {
                 assert(runner->stack_length > 0);
                 assert(runner->stack_length % 4 == 0 || runner->stack_length % 4 == 1);
@@ -604,7 +612,7 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                 }
                 else
                 {
-                    dx1 = {};
+                    dx1 = 0;
                 }
 
                 while (arg_i < runner->stack_length)
@@ -612,19 +620,32 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                     dy1 = runner->stack[arg_i++];
                     dx2 = runner->stack[arg_i++];
                     dy2 = runner->stack[arg_i++];
-                    dx3 = {};
+                    dx3 = 0;
                     dy3 = runner->stack[arg_i++];
 
-                    draw_line(runner->x, runner->y, runner->x + dx1 + dx2 + dx3, runner->y + dy1 + dy2 + dy3);
-                    runner->x = runner->x + dx1 + dx2 + dx3;
-                    runner->y = runner->y + dy1 + dy2 + dy3;
+                    Real x1 = x0 + dx1;
+                    Real y1 = y0 + dy1;
+                    refine_bbox(runner, x1, y1);
 
-                    dx1 = {};
+                    Real x2 = x1 + dx2;
+                    Real y2 = y1 + dy2;
+                    refine_bbox(runner, x2, y2);
+
+                    Real x3 = x2 + dx3;
+                    Real y3 = y2 + dy3;
+                    refine_bbox(runner, x3, y3);
+
+                    add_cubic_curve(runner, x0, y0, x1, y1, x2, y2, x3, y3);
+                    move(runner, x3, y3);
+
+                    dx1 = 0;
                 }
                 runner->stack_length = 0;
             }
-            else if (atom->op == CharStringOpType::hvcurveto ||
-                     atom->op == CharStringOpType::vhcurveto)
+            break;
+
+            case CharStringOpType::hvcurveto:
+            case CharStringOpType::vhcurveto:
             {
                 assert(runner->stack_length > 0);
                 assert(runner->stack_length % 8 == 0 || runner->stack_length % 8 == 1 ||
@@ -638,20 +659,34 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
 
                 while (arg_i < runner->stack_length)
                 {
+                start_hvcurveto:
+                {
                     dx1 = runner->stack[arg_i++];
-                    dy1 = {};
+                    dy1 = 0;
                     dx2 = runner->stack[arg_i++];
                     dy2 = runner->stack[arg_i++];
-                    dx3 = {};
+                    dx3 = 0;
                     dy3 = runner->stack[arg_i++];
                     if (arg_i == runner->stack_length - 1)
                     {
                         dx3 = runner->stack[arg_i++];
                     }
 
-                    draw_line(runner->x, runner->y, runner->x + dx1 + dx2 + dx3, runner->y + dy1 + dy2 + dy3);
-                    runner->x = runner->x + dx1 + dx2 + dx3;
-                    runner->y = runner->y + dy1 + dy2 + dy3;
+                    Real x1 = x0 + dx1;
+                    Real y1 = y0 + dy1;
+                    refine_bbox(runner, x1, y1);
+
+                    Real x2 = x1 + dx2;
+                    Real y2 = y1 + dy2;
+                    refine_bbox(runner, x2, y2);
+
+                    Real x3 = x2 + dx3;
+                    Real y3 = y2 + dy3;
+                    refine_bbox(runner, x3, y3);
+
+                    add_cubic_curve(runner, x0, y0, x1, y1, x2, y2, x3, y3);
+                    move(runner, x3, y3);
+                }
 
                     if (arg_i >= runner->stack_length)
                     {
@@ -659,46 +694,68 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                     }
 
                 start_vhcurveto:
-                    dx1 = {};
+                {
+                    dx1 = 0;
                     dy1 = runner->stack[arg_i++];
                     dx2 = runner->stack[arg_i++];
                     dy2 = runner->stack[arg_i++];
                     dx3 = runner->stack[arg_i++];
-                    dy3 = {};
+                    dy3 = 0;
                     if (arg_i == runner->stack_length - 1)
                     {
                         dy3 = runner->stack[arg_i++];
                     }
 
-                    draw_line(runner->x, runner->y, runner->x + dx1 + dx2 + dx3, runner->y + dy1 + dy2 + dy3);
-                    runner->x = runner->x + dx1 + dx2 + dx3;
-                    runner->y = runner->y + dy1 + dy2 + dy3;
+                    Real x1 = x0 + dx1;
+                    Real y1 = y0 + dy1;
+                    refine_bbox(runner, x1, y1);
+
+                    Real x2 = x1 + dx2;
+                    Real y2 = y1 + dy2;
+                    refine_bbox(runner, x2, y2);
+
+                    Real x3 = x2 + dx3;
+                    Real y3 = y2 + dy3;
+                    refine_bbox(runner, x3, y3);
+
+                    add_cubic_curve(runner, x0, y0, x1, y1, x2, y2, x3, y3);
+                    move(runner, x3, y3);
+                }
                 }
                 runner->stack_length = 0;
             }
-            else if (atom->op == CharStringOpType::callsubr)
+            break;
+
+            case CharStringOpType::callsubr:
             {
                 assert(runner->stack_length > 0);
-                assert(runner->stack[runner->stack_length - 1].fraction == 0);
 
-                CharString *subr_char_string = get_subr(runner, runner->stack[--runner->stack_length].integer);
+                CharString *subr_char_string = get_subr(runner, (Int)runner->stack[--runner->stack_length]);
                 runner->subr_depth++;
                 run_char_string(runner, subr_char_string);
             }
-            else if (atom->op == CharStringOpType::return_)
+            break;
+
+            case CharStringOpType::return_:
             {
                 assert(runner->subr_depth > 0);
                 runner->subr_depth--;
                 return;
             }
-            else if (atom->op == CharStringOpType::endchar)
+            break;
+
+            case CharStringOpType::endchar:
             {
                 runner->stack_length = 0;
                 runner->end = true;
             }
-            else
+            break;
+
+            default:
             {
                 assert(false);
+            }
+            break;
             }
         }
 

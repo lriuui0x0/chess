@@ -1,6 +1,7 @@
 #include "../src/util.cpp"
 
 #include "char_string.cpp"
+#include "bitmap.cpp"
 
 struct Reader
 {
@@ -682,7 +683,7 @@ Int main(Int argc, RawStr *argv)
     if (encoding_table)
     {
         assert(encoding_table->format == 4);
-        for (UInt16 character = 0x21; character <= 0x7e; character++)
+        for (UInt16 character = 'a'; character <= 'a'; character++)
         {
             Int found_segment_index = -1;
             for (Int segment_index = 0; segment_index < encoding_table->segment_count_x2 / 2; segment_index++)
@@ -726,14 +727,14 @@ Int main(Int argc, RawStr *argv)
                 runner.stack_length = 0;
                 runner.x = {0};
                 runner.y = {0};
-                runner.min_x.integer = INT16_MAX;
-                runner.max_x.integer = INT16_MIN;
-                runner.min_y.integer = INT16_MAX;
-                runner.max_y.integer = INT16_MIN;
+                runner.min_x = INT16_MAX;
+                runner.max_x = INT16_MIN;
+                runner.min_y = INT16_MAX;
+                runner.max_y = INT16_MIN;
                 runner.subr_depth = 0;
                 runner.end = false;
+                runner.lines = create_array<Line>();
 
-                memset(bitmap, 0, sizeof(bitmap));
                 run_char_string(&runner, char_string);
 
                 UInt8 filename_data[8] = {' ', ' ', ' ', '.', 'b', 'm', 'p', '\0'};
@@ -743,7 +744,21 @@ Int main(Int argc, RawStr *argv)
                 Str filename;
                 filename.length = 7;
                 filename.data = filename_data;
-                write_bitmap(filename);
+
+                Bitmap bitmap;
+                bitmap.width = round(runner.max_x);
+                bitmap.height = round(runner.max_y);
+                Int bitmap_data_length = sizeof(UInt32) * bitmap.width * bitmap.height;
+                bitmap.data = (UInt32 *)malloc(bitmap_data_length);
+                memset(bitmap.data, -1, bitmap_data_length);
+
+                for (Int line_i = 0; line_i < runner.lines.length; line_i++)
+                {
+                    Line *line = &runner.lines[line_i];
+                    draw_line(&bitmap, line->x0, line->y0, line->x1, line->y1, 0);
+                }
+
+                write_bitmap(filename, &bitmap);
             }
             else
             {
