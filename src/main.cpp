@@ -162,7 +162,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     VulkanDebugUIFrame vulkan_debug_ui_frame;
     VulkanBuffer debug_ui_vertex_buffer;
-    assert(create_vulkan_debug_ui_frame(&vulkan_context, &vulkan_swapchain, &vulkan_debug_ui_pipeline, &vulkan_debug_ui_frame, &debug_ui_vertex_buffer));
+    assert(create_vulkan_debug_ui_frame(&vulkan_context, &vulkan_swapchain, &vulkan_debug_ui_pipeline, &debug_font, &vulkan_debug_ui_frame, &debug_ui_vertex_buffer));
 
     Int current_vertex_data_offset = 0;
     Int current_index_data_offset = 0;
@@ -190,14 +190,40 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     assert(upload_vulkan_buffer(&vulkan_context, &scene_index_buffer, &vulkan_scene_frame.index_buffer));
     assert(upload_vulkan_buffer(&vulkan_context, &scene_uniform_buffer, &vulkan_scene_frame.uniform_buffer));
 
-    DebugUIVertex *debug_ui_vertex = (DebugUIVertex *)debug_ui_vertex_buffer.data;
-    debug_ui_vertex++->pos = {0.5, 0.5};
-    debug_ui_vertex++->pos = {0.5, -0.5};
-    debug_ui_vertex++->pos = {-0.5, 0.5};
+    Vec2 pos = {-0.8, -0.8};
+    Str text_message = wrap_str("Hello!");
+    Real height = (Real)debug_font.height / window_height;
+    for (Int i = 0; i < text_message.length; i++)
+    {
+        Int8 char_index = text_message[i] - debug_font.start_char;
+        FontCharPos char_pos = debug_font.pos[char_index];
+        Real width = (Real)char_pos.width / window_width;
 
-    debug_ui_vertex++->pos = {-0.5, -0.5};
-    debug_ui_vertex++->pos = {-0.5, 0.5};
-    debug_ui_vertex++->pos = {0.5, -0.5};
+        Real texture_coord_x_min = (Real)char_pos.offset / debug_font.width;
+        Real texture_coord_x_max = (Real)(char_pos.offset + char_pos.width) / debug_font.width;
+
+        DebugUIVertex *debug_ui_vertex = (DebugUIVertex *)debug_ui_vertex_buffer.data + i * 6;
+        debug_ui_vertex[0].pos = pos;
+        debug_ui_vertex[0].texture_coord = {texture_coord_x_min, 0};
+
+        debug_ui_vertex[1].pos = {pos.x, pos.y + height};
+        debug_ui_vertex[1].texture_coord = {texture_coord_x_min, 1};
+
+        debug_ui_vertex[2].pos = {pos.x + width, pos.y};
+        debug_ui_vertex[2].texture_coord = {texture_coord_x_max, 0};
+
+        debug_ui_vertex[3].pos = {pos.x + width, pos.y + height};
+        debug_ui_vertex[3].texture_coord = {texture_coord_x_max, 1};
+
+        debug_ui_vertex[4].pos = {pos.x + width, pos.y};
+        debug_ui_vertex[4].texture_coord = {texture_coord_x_max, 0};
+
+        debug_ui_vertex[5].pos = {pos.x, pos.y + height};
+        debug_ui_vertex[4].texture_coord = {texture_coord_x_min, 1};
+
+        pos.x += width;
+    }
+
     assert(upload_vulkan_buffer(&vulkan_context, &debug_ui_vertex_buffer, &vulkan_debug_ui_frame.vertex_buffer));
 
     show_window(window);
@@ -382,7 +408,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
         assert(render_vulkan_frame(&vulkan_context, &vulkan_swapchain,
                                    &vulkan_scene_pipeline, &vulkan_scene_frame, &entities, &scene_uniform_buffer,
-                                   &vulkan_debug_ui_pipeline, &vulkan_debug_ui_frame, 1));
+                                   &vulkan_debug_ui_pipeline, &vulkan_debug_ui_frame, text_message.length));
     }
 
     return 0;

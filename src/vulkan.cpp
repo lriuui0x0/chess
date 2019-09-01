@@ -203,14 +203,17 @@ Bool create_vulkan_context(Window window, OUT VulkanContext *context)
         return false;
     }
 
-    VkDescriptorPoolSize descriptor_pool_size = {};
-    descriptor_pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptor_pool_size.descriptorCount = 48;
+    VkDescriptorPoolSize descriptor_pool_size[2];
+    descriptor_pool_size[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptor_pool_size[0].descriptorCount = 48;
+
+    descriptor_pool_size[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptor_pool_size[1].descriptorCount = 1;
 
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    descriptor_pool_create_info.maxSets = 48;
-    descriptor_pool_create_info.poolSizeCount = 1;
-    descriptor_pool_create_info.pPoolSizes = &descriptor_pool_size;
+    descriptor_pool_create_info.maxSets = 49;
+    descriptor_pool_create_info.poolSizeCount = 2;
+    descriptor_pool_create_info.pPoolSizes = descriptor_pool_size;
 
     result_code = vkCreateDescriptorPool(context->device_handle, &descriptor_pool_create_info, NULL, &context->descriptor_pool);
     if (result_code != VK_SUCCESS)
@@ -337,7 +340,7 @@ Bool create_vulkan_scene_pipeline(VulkanContext *context, VulkanSwapchain *swapc
     framebuffer_description[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     framebuffer_description[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     framebuffer_description[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    framebuffer_description[2].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    framebuffer_description[2].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference color_framebuffer_reference = {};
     color_framebuffer_reference.attachment = 0;
@@ -558,11 +561,13 @@ struct VulkanDebugUIPipeline
     VkPipeline handle;
     VkRenderPass render_pass;
     VkPipelineLayout pipeline_layout;
+    VkDescriptorSetLayout font_texture_descriptor_set_layout;
 };
 
 struct DebugUIVertex
 {
     Vec2 pos;
+    Vec2 texture_coord;
 };
 
 Bool create_vulkan_debug_ui_pipeline(VulkanContext *context, VulkanSwapchain *swapchain, OUT VulkanDebugUIPipeline *debug_ui_pipeline)
@@ -576,7 +581,7 @@ Bool create_vulkan_debug_ui_pipeline(VulkanContext *context, VulkanSwapchain *sw
     framebuffer_description[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     framebuffer_description[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     framebuffer_description[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    framebuffer_description[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    framebuffer_description[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     framebuffer_description[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     VkAttachmentReference color_framebuffer_reference = {};
@@ -629,16 +634,21 @@ Bool create_vulkan_debug_ui_pipeline(VulkanContext *context, VulkanSwapchain *sw
     vertex_binding_description.stride = sizeof(DebugUIVertex);
     vertex_binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkVertexInputAttributeDescription vertex_attribute_description[1];
+    VkVertexInputAttributeDescription vertex_attribute_description[2];
     vertex_attribute_description[0].binding = 0;
     vertex_attribute_description[0].location = 0;
-    vertex_attribute_description[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    vertex_attribute_description[0].offset = offsetof(Vertex, pos);
+    vertex_attribute_description[0].format = VK_FORMAT_R32G32_SFLOAT;
+    vertex_attribute_description[0].offset = offsetof(DebugUIVertex, pos);
+
+    vertex_attribute_description[1].binding = 0;
+    vertex_attribute_description[1].location = 1;
+    vertex_attribute_description[1].format = VK_FORMAT_R32G32_SFLOAT;
+    vertex_attribute_description[1].offset = offsetof(DebugUIVertex, texture_coord);
 
     VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     vertex_input_state_create_info.vertexBindingDescriptionCount = 1;
     vertex_input_state_create_info.pVertexBindingDescriptions = &vertex_binding_description;
-    vertex_input_state_create_info.vertexAttributeDescriptionCount = 1;
+    vertex_input_state_create_info.vertexAttributeDescriptionCount = 2;
     vertex_input_state_create_info.pVertexAttributeDescriptions = vertex_attribute_description;
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state_create_info = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
@@ -716,17 +726,26 @@ Bool create_vulkan_debug_ui_pipeline(VulkanContext *context, VulkanSwapchain *sw
 
     VkDescriptorSetLayoutBinding descriptor_set_binding = {};
     descriptor_set_binding.binding = 0;
-    descriptor_set_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptor_set_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descriptor_set_binding.descriptorCount = 1;
-    descriptor_set_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    descriptor_set_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     descriptor_set_layout_create_info.bindingCount = 1;
     descriptor_set_layout_create_info.pBindings = &descriptor_set_binding;
 
+    result_code = vkCreateDescriptorSetLayout(context->device_handle, &descriptor_set_layout_create_info, NULL, &debug_ui_pipeline->font_texture_descriptor_set_layout);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkDescriptorSetLayout descriptor_set_layout[1];
+    descriptor_set_layout[0] = debug_ui_pipeline->font_texture_descriptor_set_layout;
+
     VkPipelineLayoutCreateInfo pipeline_layout_create_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-    pipeline_layout_create_info.setLayoutCount = 0;
-    pipeline_layout_create_info.pSetLayouts = NULL;
+    pipeline_layout_create_info.setLayoutCount = 1;
+    pipeline_layout_create_info.pSetLayouts = descriptor_set_layout;
 
     result_code = vkCreatePipelineLayout(context->device_handle, &pipeline_layout_create_info, NULL, &debug_ui_pipeline->pipeline_layout);
 
@@ -962,6 +981,91 @@ Bool upload_vulkan_buffer(VulkanContext *context, VulkanBuffer *host_buffer, Vul
     buffer_copy.dstOffset = 0;
     buffer_copy.size = host_buffer->length;
     vkCmdCopyBuffer(context->temp_command_buffer, host_buffer->handle, device_buffer->handle, 1, &buffer_copy);
+
+    result_code = vkEndCommandBuffer(context->temp_command_buffer);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkSubmitInfo submit_info = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submit_info.waitSemaphoreCount = 0;
+    submit_info.pWaitSemaphores = NULL;
+    submit_info.pWaitDstStageMask = NULL;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &context->temp_command_buffer;
+    submit_info.signalSemaphoreCount = 0;
+    submit_info.pSignalSemaphores = NULL;
+
+    result_code = vkQueueSubmit(context->graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    result_code = vkDeviceWaitIdle(context->device_handle);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+Bool upload_vulkan_texture(VulkanContext *context, VulkanBuffer *host_buffer, VkImage image, Int width, Int height)
+{
+    VkResult result_code;
+
+    VkCommandBufferBeginInfo command_buffer_begin_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    result_code = vkBeginCommandBuffer(context->temp_command_buffer, &command_buffer_begin_info);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkImageMemoryBarrier image_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    image_barrier.image = image;
+    image_barrier.srcAccessMask = 0;
+    image_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    image_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    image_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    image_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    image_barrier.subresourceRange.baseMipLevel = 0;
+    image_barrier.subresourceRange.levelCount = 1;
+    image_barrier.subresourceRange.baseArrayLayer = 0;
+    image_barrier.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(context->temp_command_buffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &image_barrier);
+
+    VkBufferImageCopy image_copy;
+    image_copy.bufferOffset = 0;
+    image_copy.bufferRowLength = 0;
+    image_copy.bufferImageHeight = 0;
+    image_copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    image_copy.imageSubresource.mipLevel = 0;
+    image_copy.imageSubresource.baseArrayLayer = 0;
+    image_copy.imageSubresource.layerCount = 1;
+    image_copy.imageOffset.x = 0;
+    image_copy.imageOffset.y = 0;
+    image_copy.imageOffset.z = 0;
+    image_copy.imageExtent.width = width;
+    image_copy.imageExtent.height = height;
+    image_copy.imageExtent.depth = 1;
+
+    vkCmdCopyBufferToImage(context->temp_command_buffer, host_buffer->handle, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_copy);
+
+    image_barrier.image = image;
+    image_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    image_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    image_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    image_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    image_barrier.subresourceRange.baseMipLevel = 0;
+    image_barrier.subresourceRange.levelCount = 1;
+    image_barrier.subresourceRange.baseArrayLayer = 0;
+    image_barrier.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(context->temp_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &image_barrier);
 
     result_code = vkEndCommandBuffer(context->temp_command_buffer);
     if (result_code != VK_SUCCESS)
@@ -1232,10 +1336,13 @@ struct VulkanDebugUIFrame
 {
     VulkanBuffer vertex_buffer;
     Array<VkFramebuffer> frame_buffers;
+    VkImage font_texture;
+    VkSampler font_texture_sampler;
+    VkDescriptorSet font_texture_descriptor_set;
 };
 
-Bool create_vulkan_debug_ui_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanDebugUIPipeline *debug_ui_pipeline, OUT VulkanDebugUIFrame *debug_ui_frame,
-                                  OUT VulkanBuffer *host_vertex_buffer)
+Bool create_vulkan_debug_ui_frame(VulkanContext *context, VulkanSwapchain *swapchain, VulkanDebugUIPipeline *debug_ui_pipeline, Font *debug_font,
+                                  OUT VulkanDebugUIFrame *debug_ui_frame, OUT VulkanBuffer *host_vertex_buffer)
 {
     VkResult result_code;
 
@@ -1270,7 +1377,7 @@ Bool create_vulkan_debug_ui_frame(VulkanContext *context, VulkanSwapchain *swapc
         }
     }
 
-    Int const max_letter_count = 1024;
+    Int max_letter_count = 1024;
     Int vertex_buffer_length = sizeof(DebugUIVertex) * max_letter_count;
 
     if (!create_vulkan_buffer(context, vertex_buffer_length,
@@ -1286,6 +1393,83 @@ Bool create_vulkan_debug_ui_frame(VulkanContext *context, VulkanSwapchain *swapc
     {
         return false;
     }
+
+    if (!create_vulkan_image(context, debug_font->width, debug_font->height,
+                             VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &debug_ui_frame->font_texture))
+    {
+        return false;
+    }
+
+    Int image_buffer_length = sizeof(debug_font->data[0]) * debug_font->width * debug_font->height;
+    VulkanBuffer host_image_buffer;
+    if (!create_vulkan_buffer(context, image_buffer_length,
+                              VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &host_image_buffer))
+    {
+        return false;
+    }
+
+    memcpy(host_image_buffer.data, debug_font->data, image_buffer_length);
+
+    if (!upload_vulkan_texture(context, &host_image_buffer, debug_ui_frame->font_texture, debug_font->width, debug_font->height))
+    {
+        return false;
+    }
+
+    VkImageView font_texture_view;
+    if (!create_image_view(context, debug_ui_frame->font_texture, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, &font_texture_view))
+    {
+        return false;
+    }
+
+    VkSamplerCreateInfo sampler_create_info = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    sampler_create_info.magFilter = VK_FILTER_NEAREST;
+    sampler_create_info.minFilter = VK_FILTER_NEAREST;
+    sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler_create_info.anisotropyEnable = VK_FALSE;
+    sampler_create_info.maxAnisotropy = 16;
+    sampler_create_info.compareEnable = VK_FALSE;
+    sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
+    sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    sampler_create_info.mipLodBias = 0.0f;
+    sampler_create_info.minLod = 0.0f;
+    sampler_create_info.maxLod = 0.0f;
+    sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    sampler_create_info.unnormalizedCoordinates = VK_FALSE;
+
+    result_code = vkCreateSampler(context->device_handle, &sampler_create_info, NULL, &debug_ui_frame->font_texture_sampler);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkDescriptorSetAllocateInfo debug_font_texture_descriptor_set_alloc_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    debug_font_texture_descriptor_set_alloc_info.descriptorPool = context->descriptor_pool;
+    debug_font_texture_descriptor_set_alloc_info.descriptorSetCount = 1;
+    debug_font_texture_descriptor_set_alloc_info.pSetLayouts = &debug_ui_pipeline->font_texture_descriptor_set_layout;
+
+    result_code = vkAllocateDescriptorSets(context->device_handle, &debug_font_texture_descriptor_set_alloc_info, &debug_ui_frame->font_texture_descriptor_set);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkDescriptorImageInfo descriptor_image_info;
+    descriptor_image_info.sampler = debug_ui_frame->font_texture_sampler;
+    descriptor_image_info.imageView = font_texture_view;
+    descriptor_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    descriptor_set_write.dstSet = debug_ui_frame->font_texture_descriptor_set;
+    descriptor_set_write.dstBinding = 0;
+    descriptor_set_write.dstArrayElement = 0;
+    descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptor_set_write.descriptorCount = 1;
+    descriptor_set_write.pImageInfo = &descriptor_image_info;
+
+    vkUpdateDescriptorSets(context->device_handle, 1, &descriptor_set_write, 0, NULL);
 
     return true;
 }
@@ -1372,17 +1556,18 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain,
 
     vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, NULL, 0, NULL, 1, &color_image_memory_barrier);
 
+    // NOTE: Scene
     VkClearValue clear_colors[2] = {{0.7, 0.7, 0.7, 0.7},
                                     {1.0, 0}};
-    VkRenderPassBeginInfo render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-    render_pass_begin_info.renderPass = scene_pipeline->render_pass;
-    render_pass_begin_info.framebuffer = scene_frame->frame_buffers[image_index];
-    render_pass_begin_info.renderArea.offset = {0, 0};
-    render_pass_begin_info.renderArea.extent = {(UInt32)swapchain->width, (UInt32)swapchain->height};
-    render_pass_begin_info.clearValueCount = 2;
-    render_pass_begin_info.pClearValues = clear_colors;
+    VkRenderPassBeginInfo scene_render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    scene_render_pass_begin_info.renderPass = scene_pipeline->render_pass;
+    scene_render_pass_begin_info.framebuffer = scene_frame->frame_buffers[image_index];
+    scene_render_pass_begin_info.renderArea.offset = {0, 0};
+    scene_render_pass_begin_info.renderArea.extent = {(UInt32)swapchain->width, (UInt32)swapchain->height};
+    scene_render_pass_begin_info.clearValueCount = 2;
+    scene_render_pass_begin_info.pClearValues = clear_colors;
 
-    vkCmdBeginRenderPass(scene_frame->command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(scene_frame->command_buffer, &scene_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->handle);
 
     VkDeviceSize offset = 0;
@@ -1402,25 +1587,26 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain,
 
     vkCmdEndRenderPass(scene_frame->command_buffer);
 
-    // {
-    //     VkRenderPassBeginInfo render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-    //     render_pass_begin_info.renderPass = debug_ui_pipeline->render_pass;
-    //     render_pass_begin_info.framebuffer = debug_ui_frame->frame_buffers[image_index];
-    //     render_pass_begin_info.renderArea.offset = {0, 0};
-    //     render_pass_begin_info.renderArea.extent = {(UInt32)swapchain->width, (UInt32)swapchain->height};
-    //     render_pass_begin_info.clearValueCount = 0;
-    //     render_pass_begin_info.pClearValues = NULL;
+    // NOTE: Debug UI
+    VkRenderPassBeginInfo debug_ui_render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    debug_ui_render_pass_begin_info.renderPass = debug_ui_pipeline->render_pass;
+    debug_ui_render_pass_begin_info.framebuffer = debug_ui_frame->frame_buffers[image_index];
+    debug_ui_render_pass_begin_info.renderArea.offset = {0, 0};
+    debug_ui_render_pass_begin_info.renderArea.extent = {(UInt32)swapchain->width, (UInt32)swapchain->height};
+    debug_ui_render_pass_begin_info.clearValueCount = 0;
+    debug_ui_render_pass_begin_info.pClearValues = NULL;
 
-    //     vkCmdBeginRenderPass(scene_frame->command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-    //     vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_ui_pipeline->handle);
+    vkCmdBeginRenderPass(scene_frame->command_buffer, &debug_ui_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_ui_pipeline->handle);
 
-    //     VkDeviceSize offset = 0;
-    //     vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &debug_ui_frame->vertex_buffer.handle, &offset);
+    offset = 0;
+    vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &debug_ui_frame->vertex_buffer.handle, &offset);
 
-    //     vkCmdDraw(scene_frame->command_buffer, debug_ui_letter_count * 2, 1, 0, 0);
+    vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_ui_pipeline->pipeline_layout, 0, 1, &debug_ui_frame->font_texture_descriptor_set, 0, NULL);
 
-    //     vkCmdEndRenderPass(scene_frame->command_buffer);
-    // }
+    vkCmdDraw(scene_frame->command_buffer, debug_ui_letter_count * 2 * 3, 1, 0, 0);
+
+    vkCmdEndRenderPass(scene_frame->command_buffer);
 
     result_code = vkEndCommandBuffer(scene_frame->command_buffer);
     if (result_code != VK_SUCCESS)

@@ -55,24 +55,26 @@ Bool deserialise_mesh(Str buffer, OUT Mesh *mesh)
     return true;
 }
 
-struct FontChar
+struct FontCharPos
 {
+    Int16 offset;
     Int16 width;
-    UInt8 *data;
 };
 
 struct Font
 {
     Int8 start_char;
     Int8 num_char;
+    Int16 width;
     Int16 height;
     Int16 line_height;
-    FontChar *characters;
+    FontCharPos *pos;
+    UInt32 *data;
 };
 
 Bool deserialise_font(Str buffer, OUT Font *font)
 {
-    if (buffer.length < 6)
+    if (buffer.length < 8)
     {
         return false;
     }
@@ -82,38 +84,26 @@ Bool deserialise_font(Str buffer, OUT Font *font)
     pos++;
     font->num_char = *(Int8 *)(buffer.data + pos);
     pos++;
+    font->width = *(Int16 *)(buffer.data + pos);
+    pos += 2;
     font->height = *(Int16 *)(buffer.data + pos);
     pos += 2;
     font->line_height = *(Int16 *)(buffer.data + pos);
     pos += 2;
 
-    font->characters = (FontChar *)malloc(sizeof(FontChar) * font->num_char);
-    for (Int i = 0; i < font->num_char; i++)
-    {
-        if (buffer.length < pos + 2)
-        {
-            return false;
-        }
-
-        FontChar *font_char = &font->characters[i];
-        font_char->width = *(Int16 *)(buffer.data + pos);
-        pos += 2;
-
-        Int font_char_data_length = sizeof(UInt8) * font->height * font_char->width;
-        if (buffer.length < pos + font_char_data_length)
-        {
-            return false;
-        }
-
-        font_char->data = (UInt8 *)malloc(font_char_data_length);
-        memcpy(font_char->data, buffer.data + pos, font_char_data_length);
-        pos += font_char_data_length;
-    }
-
-    if (pos != buffer.length)
+    Int pos_data_length = sizeof(FontCharPos) * font->num_char;
+    Int image_data_length = sizeof(UInt32) * font->width * font->height;
+    if (buffer.length != pos + pos_data_length + image_data_length)
     {
         return false;
     }
+
+    font->pos = (FontCharPos *) malloc(pos_data_length);
+    memcpy(font->pos, buffer.data + pos, pos_data_length);
+    pos += pos_data_length;
+
+    font->data = (UInt32 *) malloc(image_data_length);
+    memcpy(font->data, buffer.data + pos, image_data_length);
 
     return true;
 }

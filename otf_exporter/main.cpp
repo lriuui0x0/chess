@@ -783,8 +783,6 @@ Int main(Int argc, RawStr *argv)
 
                 assert(glyph_id < cff_table->char_string_index.count);
 
-                printf("%c - %d\n", character, glyph_id);
-
                 CharString *char_string = (CharString *)cff_table->char_string_index.objects + glyph_id;
 
                 CharStringRunner runner;
@@ -844,7 +842,7 @@ Int main(Int argc, RawStr *argv)
         output_bitmap.data = (UInt32 *)malloc(output_bitmap_data_length);
         memset(output_bitmap.data, -1, output_bitmap_data_length);
 
-        Int bitmap_offset_x = 0;
+        Int16 bitmap_offset_x = 0;
         for (Int8 character = start_char; character <= end_char; character++)
         {
             Bitmap *bitmap = &bitmaps[character];
@@ -872,32 +870,32 @@ Int main(Int argc, RawStr *argv)
         Int8 num_char = end_char - start_char + 1;
         fwrite(&num_char, sizeof(Int8), 1, output_file);
 
-        Int16 height = max_bitmap_height;
+        Int16 width = output_bitmap.width;
+        Int16 height = output_bitmap.height;
         Int16 line_spacing = round((max_y - min_y + hhea_table->line_gap) * scale);
+        fwrite(&width, sizeof(width), 1, output_file);
         fwrite(&height, sizeof(height), 1, output_file);
         fwrite(&line_spacing, sizeof(line_spacing), 1, output_file);
 
         bitmap_offset_x = 0;
         for (Int8 character = start_char; character <= end_char; character++)
         {
-            Bitmap *bitmap = &bitmaps[character];
-
-            Int16 width = bitmap->width;
+            Int16 width = bitmaps[character].width;
+            fwrite(&bitmap_offset_x, sizeof(bitmap_offset_x), 1, output_file);
             fwrite(&width, sizeof(width), 1, output_file);
+            bitmap_offset_x += width;
+        }
 
-            UInt32 *row = output_bitmap.data;
-            for (Int y = 0; y < output_bitmap.height; y++)
+        UInt32 *row = output_bitmap.data + output_bitmap.width * (output_bitmap.height - 1);
+        for (Int y = output_bitmap.height - 1; y >= 0; y--)
+        {
+            UInt32 *pixel = row;
+            for (Int x = 0; x < output_bitmap.width; x++)
             {
-                UInt32 *pixel = row + bitmap_offset_x;
-                for (Int x = 0; x < bitmap->width; x++)
-                {
-                    UInt32 color = *pixel++;
-                    UInt8 color8 = color == 0 ? 0 : 0xff;
-                    fwrite(&color8, sizeof(color8), 1, output_file);
-                }
-                row += output_bitmap.width;
+                UInt32 color = *pixel++ == 0 ? 0xff000000 : 0x00ffffff;
+                fwrite(&color, sizeof(color), 1, output_file);
             }
-            bitmap_offset_x += bitmap->width;
+            row -= output_bitmap.width;
         }
         fclose(output_file);
     }

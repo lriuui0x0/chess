@@ -13,3 +13,5 @@ bin/fbx_exporter.exe asset/raw/BishopLight.fbx asset/bishop_white.asset
 bin/fbx_exporter.exe asset/raw/KnightLight.fbx asset/knight_white.asset
 bin/fbx_exporter.exe asset/raw/RookLight.fbx asset/rook_white.asset
 bin/fbx_exporter.exe asset/raw/PawnLight.fbx asset/pawn_white.asset
+
+bin/otf_exporter.exe asset/raw/consola.otf asset/debug_font.asset 36
