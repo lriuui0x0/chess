@@ -42,6 +42,14 @@ Bool has_flag(UInt64 value, UInt64 flag)
     return (value & flag) == flag;
 }
 
+template <typename T>
+Void swap(T *x, T *y)
+{
+    T tmp = *x; 
+    *x = *y;
+    *y = tmp;
+}
+
 typedef char *RawStr;
 
 struct Str

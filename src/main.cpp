@@ -2,7 +2,7 @@
 #include "math.cpp"
 #include "window.cpp"
 #include "vulkan.cpp"
-#include "mesh.cpp"
+#include "asset.cpp"
 
 Bool read_mesh(RawStr filename, OUT Mesh *mesh)
 {
@@ -13,6 +13,22 @@ Bool read_mesh(RawStr filename, OUT Mesh *mesh)
     }
 
     if (!deserialise_mesh(file_contents, mesh))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+Bool read_font(RawStr filename, OUT Font *font)
+{
+    Str file_contents;
+    if (!read_file(filename, &file_contents))
+    {
+        return false;
+    }
+
+    if (!deserialise_font(file_contents, font))
     {
         return false;
     }
@@ -62,6 +78,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     assert(read_mesh("../asset/rook_white.asset", &white_rook_mesh));
     Mesh white_pawn_mesh;
     assert(read_mesh("../asset/pawn_white.asset", &white_pawn_mesh));
+
+    Font debug_font;
+    assert(read_font("../asset/debug_font.asset", &debug_font));
 
     Mat4 black_inital_model = get_identity_matrix();
     Mat4 white_inital_model = get_rotation_matrix_y(PI);
@@ -129,29 +148,36 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanSwapchain vulkan_swapchain;
     assert(create_vulkan_swapchain(&vulkan_context, 800, 600, &vulkan_swapchain));
 
-    VulkanPipeline vulkan_pipeline;
-    assert(create_vulkan_pipeline(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline));
+    VulkanScenePipeline vulkan_scene_pipeline;
+    assert(create_vulkan_scene_pipeline(&vulkan_context, &vulkan_swapchain, &vulkan_scene_pipeline));
 
-    VulkanFrame vulkan_frame;
-    VulkanBuffer host_vertex_buffer;
-    VulkanBuffer host_index_buffer;
-    VulkanBuffer host_uniform_buffer;
-    assert(create_vulkan_frame(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline, &entities, &vulkan_frame, &host_vertex_buffer, &host_index_buffer, &host_uniform_buffer));
+    VulkanDebugUIPipeline vulkan_debug_ui_pipeline;
+    assert(create_vulkan_debug_ui_pipeline(&vulkan_context, &vulkan_swapchain, &vulkan_debug_ui_pipeline));
+
+    VulkanSceneFrame vulkan_scene_frame;
+    VulkanBuffer scene_vertex_buffer;
+    VulkanBuffer scene_index_buffer;
+    VulkanBuffer scene_uniform_buffer;
+    assert(create_vulkan_scene_frame(&vulkan_context, &vulkan_swapchain, &vulkan_scene_pipeline, &entities, &vulkan_scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
+
+    VulkanDebugUIFrame vulkan_debug_ui_frame;
+    VulkanBuffer debug_ui_vertex_buffer;
+    assert(create_vulkan_debug_ui_frame(&vulkan_context, &vulkan_swapchain, &vulkan_debug_ui_pipeline, &vulkan_debug_ui_frame, &debug_ui_vertex_buffer));
 
     Int current_vertex_data_offset = 0;
     Int current_index_data_offset = 0;
     Int current_uniform_data_offset = 0;
-    memcpy(host_uniform_buffer.data, &scene, sizeof(scene));
+    memcpy(scene_uniform_buffer.data, &scene, sizeof(scene));
     current_uniform_data_offset += sizeof(scene);
     for (Int i = 0; i < entities.length; i++)
     {
         Mesh *mesh = entities[i].mesh;
         Int current_vertex_data_length = mesh->vertex_count * sizeof(mesh->vertices_data[0]);
         Int current_index_data_length = mesh->index_count * sizeof(mesh->indices_data[0]);
-        memcpy(host_vertex_buffer.data + current_vertex_data_offset, entities[i].mesh->vertices_data, current_vertex_data_length);
-        memcpy(host_index_buffer.data + current_index_data_offset, entities[i].mesh->indices_data, current_index_data_length);
+        memcpy(scene_vertex_buffer.data + current_vertex_data_offset, entities[i].mesh->vertices_data, current_vertex_data_length);
+        memcpy(scene_index_buffer.data + current_index_data_offset, entities[i].mesh->indices_data, current_index_data_length);
 
-        Piece *piece = (Piece *)(host_uniform_buffer.data + current_uniform_data_offset);
+        Piece *piece = (Piece *)(scene_uniform_buffer.data + current_uniform_data_offset);
         piece->world = get_translate_matrix(entities[i].pos.x, entities[i].pos.y, entities[i].pos.z) * entities[i].rotation;
         piece->normal_world = entities[i].rotation;
 
@@ -160,9 +186,19 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         current_uniform_data_offset += sizeof(Piece);
     }
 
-    assert(upload_vulkan_buffer(&vulkan_context, &host_vertex_buffer, &vulkan_frame.vertex_buffer));
-    assert(upload_vulkan_buffer(&vulkan_context, &host_index_buffer, &vulkan_frame.index_buffer));
-    assert(upload_vulkan_buffer(&vulkan_context, &host_uniform_buffer, &vulkan_frame.uniform_buffer));
+    assert(upload_vulkan_buffer(&vulkan_context, &scene_vertex_buffer, &vulkan_scene_frame.vertex_buffer));
+    assert(upload_vulkan_buffer(&vulkan_context, &scene_index_buffer, &vulkan_scene_frame.index_buffer));
+    assert(upload_vulkan_buffer(&vulkan_context, &scene_uniform_buffer, &vulkan_scene_frame.uniform_buffer));
+
+    DebugUIVertex *debug_ui_vertex = (DebugUIVertex *)debug_ui_vertex_buffer.data;
+    debug_ui_vertex++->pos = {0.5, 0.5};
+    debug_ui_vertex++->pos = {0.5, -0.5};
+    debug_ui_vertex++->pos = {-0.5, 0.5};
+
+    debug_ui_vertex++->pos = {-0.5, -0.5};
+    debug_ui_vertex++->pos = {-0.5, 0.5};
+    debug_ui_vertex++->pos = {0.5, -0.5};
+    assert(upload_vulkan_buffer(&vulkan_context, &debug_ui_vertex_buffer, &vulkan_debug_ui_frame.vertex_buffer));
 
     show_window(window);
 
@@ -342,9 +378,11 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
         scene.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
         scene.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-        memcpy(host_uniform_buffer.data, &scene, sizeof(scene));
+        memcpy(scene_uniform_buffer.data, &scene, sizeof(scene));
 
-        assert(render_vulkan_frame(&vulkan_context, &vulkan_swapchain, &vulkan_pipeline, &vulkan_frame, &entities, &host_uniform_buffer));
+        assert(render_vulkan_frame(&vulkan_context, &vulkan_swapchain,
+                                   &vulkan_scene_pipeline, &vulkan_scene_frame, &entities, &scene_uniform_buffer,
+                                   &vulkan_debug_ui_pipeline, &vulkan_debug_ui_frame, 1));
     }
 
     return 0;

@@ -298,6 +298,11 @@ struct Line
     Real y1;
 };
 
+struct Path
+{
+    Array<Line> lines;
+};
+
 struct CharStringRunner
 {
     Int subr_count;
@@ -312,10 +317,14 @@ struct CharStringRunner
     Real max_x;
     Real min_y;
     Real max_y;
+    Real first_x;
+    Real first_y;
     Int subr_depth;
-    Bool end;
 
-    Array<Line> lines;
+    Bool started;
+    Bool ended;
+
+    Array<Path> paths;
 };
 
 CharString *get_subr(CharStringRunner *runner, Int subr_i)
@@ -356,11 +365,22 @@ void refine_bbox(CharStringRunner *runner, Real x, Real y)
 
 void add_line(CharStringRunner *runner, Real x0, Real y0, Real x1, Real y1)
 {
-    Line *line = runner->lines.push();
+    Line *line = runner->paths[runner->paths.length - 1].lines.push();
     line->x0 = x0;
     line->y0 = y0;
     line->x1 = x1;
     line->y1 = y1;
+}
+
+void close_path(CharStringRunner *runner)
+{
+    if (runner->started)
+    {
+        if (runner->x != runner->first_x || runner->y != runner->first_y)
+        {
+            add_line(runner, runner->x, runner->y, runner->first_x, runner->first_y);
+        }
+    }
 }
 
 void add_cubic_curve(CharStringRunner *runner, Real x0, Real y0, Real x1, Real y1, Real x2, Real y2, Real x3, Real y3)
@@ -382,9 +402,9 @@ void add_cubic_curve(CharStringRunner *runner, Real x0, Real y0, Real x1, Real y
 
     Real one_dist = hypot(x3 - x0, y3 - y0);
     Real three_dist = hypot(x1 - x0, y1 - y0) + hypot(x2 - x1, y2 - y1) + hypot(x3 - x2, y3 - y2);
-    Real flatness = three_dist / one_dist - 1;
+    Real flatness = three_dist - one_dist;
 
-    if (flatness < 0.01)
+    if (flatness < 0.1)
     {
         add_line(runner, x0, y0, x3, y3);
     }
@@ -399,6 +419,11 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
 {
     for (Int atom_i = 0; atom_i < char_string->atoms.length; atom_i++)
     {
+        if (runner->ended)
+        {
+            return;
+        }
+
         CharStringAtom *atom = &char_string->atoms[atom_i];
 
         Real dx1;
@@ -416,21 +441,25 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
         {
             assert(atom->type == CharStringAtomType::op);
 
-            Real x0 = runner->x;
-            Real y0 = runner->y;
-
             switch (atom->op)
             {
             case CharStringOpType::rmoveto:
             {
                 assert(runner->stack_length == 2);
 
+                close_path(runner);
+                runner->paths.push()->lines = create_array<Line>();
+
                 dx1 = runner->stack[0];
                 dy1 = runner->stack[1];
-                Real x1 = x0 + dx1;
-                Real y1 = y0 + dy1;
+                Real x1 = runner->x + dx1;
+                Real y1 = runner->y + dy1;
                 refine_bbox(runner, x1, y1);
                 move(runner, x1, y1);
+
+                runner->started = true;
+                runner->first_x = runner->x;
+                runner->first_y = runner->y;
 
                 runner->stack_length = 0;
             }
@@ -440,10 +469,17 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
             {
                 assert(runner->stack_length == 1);
 
+                close_path(runner);
+                runner->paths.push()->lines = create_array<Line>();
+
                 dx1 = runner->stack[0];
-                Real x1 = x0 + dx1;
-                refine_bbox(runner, x1, y0);
-                move(runner, x1, y0);
+                Real x1 = runner->x + dx1;
+                refine_bbox(runner, x1, runner->y);
+                move(runner, x1, runner->y);
+
+                runner->started = true;
+                runner->first_x = runner->x;
+                runner->first_y = runner->y;
 
                 runner->stack_length = 0;
             }
@@ -453,10 +489,17 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
             {
                 assert(runner->stack_length == 1);
 
+                close_path(runner);
+                runner->paths.push()->lines = create_array<Line>();
+
                 dy1 = runner->stack[0];
-                Real y1 = y0 + dy1;
-                refine_bbox(runner, x0, y1);
-                move(runner, x0, y1);
+                Real y1 = runner->y + dy1;
+                refine_bbox(runner, runner->x, y1);
+                move(runner, runner->x, y1);
+
+                runner->started = true;
+                runner->first_x = runner->x;
+                runner->first_y = runner->y;
 
                 runner->stack_length = 0;
             }
@@ -472,10 +515,10 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                 {
                     dx1 = runner->stack[arg_i++];
                     dy1 = runner->stack[arg_i++];
-                    Real x1 = x0 + dx1;
-                    Real y1 = y0 + dy1;
-                    refine_bbox(runner, runner->x, runner->y);
-                    add_line(runner, x0, y0, x1, y1);
+                    Real x1 = runner->x + dx1;
+                    Real y1 = runner->y + dy1;
+                    refine_bbox(runner, x1, y1);
+                    add_line(runner, runner->x, runner->y, x1, y1);
                     move(runner, x1, y1);
                 }
                 runner->stack_length = 0;
@@ -498,10 +541,10 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                 start_hlineto:
                 {
                     dx1 = runner->stack[arg_i++];
-                    Real x1 = x0 + dx1;
-                    refine_bbox(runner, x1, y0);
-                    add_line(runner, x0, y0, x1, y0);
-                    move(runner, x1, y0);
+                    Real x1 = runner->x + dx1;
+                    refine_bbox(runner, x1, runner->y);
+                    add_line(runner, runner->x, runner->y, x1, runner->y);
+                    move(runner, x1, runner->y);
                 }
 
                     if (arg_i >= runner->stack_length)
@@ -512,10 +555,10 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                 start_vlineto:
                 {
                     dy1 = runner->stack[arg_i++];
-                    Real y1 = y0 + dy1;
-                    refine_bbox(runner, x0, y1);
-                    add_line(runner, x0, y0, x0, y1);
-                    move(runner, x0, y1);
+                    Real y1 = runner->y + dy1;
+                    refine_bbox(runner, runner->x, y1);
+                    add_line(runner, runner->x, runner->y, runner->x, y1);
+                    move(runner, runner->x, y1);
                 }
                 }
                 runner->stack_length = 0;
@@ -537,8 +580,8 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                     dx3 = runner->stack[arg_i++];
                     dy3 = runner->stack[arg_i++];
 
-                    Real x1 = x0 + dx1;
-                    Real y1 = y0 + dy1;
+                    Real x1 = runner->x + dx1;
+                    Real y1 = runner->y + dy1;
                     refine_bbox(runner, x1, y1);
 
                     Real x2 = x1 + dx2;
@@ -549,7 +592,7 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                     Real y3 = y2 + dy3;
                     refine_bbox(runner, x3, y3);
 
-                    add_cubic_curve(runner, x0, y0, x1, y1, x2, y2, x3, y3);
+                    add_cubic_curve(runner, runner->x, runner->y, x1, y1, x2, y2, x3, y3);
                     move(runner, x3, y3);
                 }
                 runner->stack_length = 0;
@@ -579,8 +622,8 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                     dx3 = runner->stack[arg_i++];
                     dy3 = 0;
 
-                    Real x1 = x0 + dx1;
-                    Real y1 = y0 + dy1;
+                    Real x1 = runner->x + dx1;
+                    Real y1 = runner->y + dy1;
                     refine_bbox(runner, x1, y1);
 
                     Real x2 = x1 + dx2;
@@ -591,7 +634,7 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                     Real y3 = y2 + dy3;
                     refine_bbox(runner, x3, y3);
 
-                    add_cubic_curve(runner, x0, y0, x1, y1, x2, y2, x3, y3);
+                    add_cubic_curve(runner, runner->x, runner->y, x1, y1, x2, y2, x3, y3);
                     move(runner, x3, y3);
 
                     dy1 = 0;
@@ -623,8 +666,8 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                     dx3 = 0;
                     dy3 = runner->stack[arg_i++];
 
-                    Real x1 = x0 + dx1;
-                    Real y1 = y0 + dy1;
+                    Real x1 = runner->x + dx1;
+                    Real y1 = runner->y + dy1;
                     refine_bbox(runner, x1, y1);
 
                     Real x2 = x1 + dx2;
@@ -635,7 +678,7 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                     Real y3 = y2 + dy3;
                     refine_bbox(runner, x3, y3);
 
-                    add_cubic_curve(runner, x0, y0, x1, y1, x2, y2, x3, y3);
+                    add_cubic_curve(runner, runner->x, runner->y, x1, y1, x2, y2, x3, y3);
                     move(runner, x3, y3);
 
                     dx1 = 0;
@@ -672,8 +715,8 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                         dx3 = runner->stack[arg_i++];
                     }
 
-                    Real x1 = x0 + dx1;
-                    Real y1 = y0 + dy1;
+                    Real x1 = runner->x + dx1;
+                    Real y1 = runner->y + dy1;
                     refine_bbox(runner, x1, y1);
 
                     Real x2 = x1 + dx2;
@@ -684,7 +727,7 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                     Real y3 = y2 + dy3;
                     refine_bbox(runner, x3, y3);
 
-                    add_cubic_curve(runner, x0, y0, x1, y1, x2, y2, x3, y3);
+                    add_cubic_curve(runner, runner->x, runner->y, x1, y1, x2, y2, x3, y3);
                     move(runner, x3, y3);
                 }
 
@@ -706,8 +749,8 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                         dy3 = runner->stack[arg_i++];
                     }
 
-                    Real x1 = x0 + dx1;
-                    Real y1 = y0 + dy1;
+                    Real x1 = runner->x + dx1;
+                    Real y1 = runner->y + dy1;
                     refine_bbox(runner, x1, y1);
 
                     Real x2 = x1 + dx2;
@@ -718,7 +761,7 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
                     Real y3 = y2 + dy3;
                     refine_bbox(runner, x3, y3);
 
-                    add_cubic_curve(runner, x0, y0, x1, y1, x2, y2, x3, y3);
+                    add_cubic_curve(runner, runner->x, runner->y, x1, y1, x2, y2, x3, y3);
                     move(runner, x3, y3);
                 }
                 }
@@ -746,8 +789,9 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
 
             case CharStringOpType::endchar:
             {
+                close_path(runner);
                 runner->stack_length = 0;
-                runner->end = true;
+                runner->ended = true;
             }
             break;
 
@@ -757,11 +801,6 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
             }
             break;
             }
-        }
-
-        if (runner->end)
-        {
-            return;
         }
     }
 }

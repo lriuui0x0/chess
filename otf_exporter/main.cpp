@@ -13,6 +13,9 @@ typedef Int8 OtfTag[4];
 
 OtfTag otf_tag_cmap = {'c', 'm', 'a', 'p'};
 OtfTag otf_tag_cff = {'C', 'F', 'F', ' '};
+OtfTag otf_tag_hhea = {'h', 'h', 'e', 'a'};
+OtfTag otf_tag_hmtx = {'h', 'm', 't', 'x'};
+OtfTag otf_tag_head = {'h', 'e', 'a', 'd'};
 
 struct OtfOffsetTable
 {
@@ -119,6 +122,25 @@ struct CffTable
     CffIndex char_string_index;
     CffDict private_dict;
     CffIndex subr_index;
+};
+
+struct HheaTable
+{
+    UInt16 major_version;
+    UInt16 minor_version;
+    Int16 ascender;
+    Int16 descender;
+    Int16 line_gap;
+};
+
+struct HeadTable
+{
+    UInt16 major_version;
+    UInt16 minor_version;
+    Int16 x_min;
+    Int16 y_min;
+    Int16 x_max;
+    Int16 y_max;
 };
 
 struct OtfFont
@@ -464,8 +486,12 @@ Int main(Int argc, RawStr *argv)
     argc--;
     argv++;
 
+    RawStr filename = argv[0];
+    RawStr output_filename = argv[1];
+    Real vertical_extent = atof(argv[2]);
+
     Reader reader;
-    assert(read_file("../asset/raw/consola.otf", &reader.buffer));
+    assert(read_file(filename, &reader.buffer));
     reader.pos = 0;
 
     OtfFont font;
@@ -653,10 +679,35 @@ Int main(Int argc, RawStr *argv)
                 }
             }
         }
+        else if (tag_equal(table_record->tag, otf_tag_hhea))
+        {
+            table_record->table = malloc(sizeof(HheaTable));
+
+            HheaTable *hhea_table = (HheaTable *)table_record->table;
+            read16(&reader, &hhea_table->major_version);
+            read16(&reader, &hhea_table->minor_version);
+
+            read16(&reader, (UInt16 *)&hhea_table->ascender);
+            read16(&reader, (UInt16 *)&hhea_table->descender);
+            read16(&reader, (UInt16 *)&hhea_table->line_gap);
+        }
+        else if (tag_equal(table_record->tag, otf_tag_head))
+        {
+            table_record->table = malloc(sizeof(HeadTable));
+
+            reader.pos += 36;
+
+            HeadTable *head_table = (HeadTable *)table_record->table;
+            read16(&reader, (UInt16 *)&head_table->x_min);
+            read16(&reader, (UInt16 *)&head_table->y_min);
+            read16(&reader, (UInt16 *)&head_table->x_max);
+            read16(&reader, (UInt16 *)&head_table->y_max);
+        }
     }
 
     OtfCmapTable *cmap_table = NULL;
     CffTable *cff_table = NULL;
+    HheaTable *hhea_table = NULL;
     for (Int table_index = 0; table_index < font.offset_table.table_count; table_index++)
     {
         if (tag_equal(font.table_records[table_index].tag, otf_tag_cmap))
@@ -667,8 +718,12 @@ Int main(Int argc, RawStr *argv)
         {
             cff_table = (CffTable *)font.table_records[table_index].table;
         }
+        else if (tag_equal(font.table_records[table_index].tag, otf_tag_hhea))
+        {
+            hhea_table = (HheaTable *)font.table_records[table_index].table;
+        }
     }
-    assert(cmap_table && cff_table);
+    assert(cmap_table && cff_table && hhea_table);
 
     OtfEncodingFormat4 *encoding_table = NULL;
     for (Int encoding_table_index = 0; encoding_table_index < cmap_table->encoding_table_count; encoding_table_index++)
@@ -683,7 +738,18 @@ Int main(Int argc, RawStr *argv)
     if (encoding_table)
     {
         assert(encoding_table->format == 4);
-        for (UInt16 character = 'a'; character <= 'a'; character++)
+
+        Real scale = vertical_extent / (hhea_table->ascender - hhea_table->descender);
+        Int8 start_char = 0x21;
+        Int8 end_char = 0x7e;
+
+        Bitmap bitmaps[128];
+        Int sum_bitmap_width = 0;
+        Int max_bitmap_height = 0;
+        Real min_y = INT16_MAX;
+        Real max_y = INT16_MIN;
+        Real char_min_y[128];
+        for (Int8 character = start_char; character <= end_char; character++)
         {
             Int found_segment_index = -1;
             for (Int segment_index = 0; segment_index < encoding_table->segment_count_x2 / 2; segment_index++)
@@ -732,38 +798,107 @@ Int main(Int argc, RawStr *argv)
                 runner.min_y = INT16_MAX;
                 runner.max_y = INT16_MIN;
                 runner.subr_depth = 0;
-                runner.end = false;
-                runner.lines = create_array<Line>();
+                runner.started = false;
+                runner.ended = false;
+                runner.paths = create_array<Path>();
 
                 run_char_string(&runner, char_string);
 
-                UInt8 filename_data[8] = {' ', ' ', ' ', '.', 'b', 'm', 'p', '\0'};
-                filename_data[0] = character / 100 + '0';
-                filename_data[1] = character / 10 % 10 + '0';
-                filename_data[2] = character % 10 + '0';
-                Str filename;
-                filename.length = 7;
-                filename.data = filename_data;
+                Bitmap *bitmap = &bitmaps[character];
+                bitmap->width = round((runner.max_x - runner.min_x) * scale) + 1;
+                bitmap->height = round((runner.max_y - runner.min_y) * scale) + 1;
+                Int bitmap_data_length = sizeof(UInt32) * bitmap->width * bitmap->height;
+                bitmap->data = (UInt32 *)malloc(bitmap_data_length);
+                memset(bitmap->data, -1, bitmap_data_length);
 
-                Bitmap bitmap;
-                bitmap.width = round(runner.max_x);
-                bitmap.height = round(runner.max_y);
-                Int bitmap_data_length = sizeof(UInt32) * bitmap.width * bitmap.height;
-                bitmap.data = (UInt32 *)malloc(bitmap_data_length);
-                memset(bitmap.data, -1, bitmap_data_length);
-
-                for (Int line_i = 0; line_i < runner.lines.length; line_i++)
+                for (Int path_i = 0; path_i < runner.paths.length; path_i++)
                 {
-                    Line *line = &runner.lines[line_i];
-                    draw_line(&bitmap, line->x0, line->y0, line->x1, line->y1, 0);
+                    Path *path = &runner.paths[path_i];
+                    for (Int line_i = 0; line_i < path->lines.length; line_i++)
+                    {
+                        Line *line = &path->lines[line_i];
+                        draw_line(bitmap, (line->x0 - runner.min_x) * scale, (line->y0 - runner.min_y) * scale,
+                                  (line->x1 - runner.min_x) * scale, (line->y1 - runner.min_y) * scale);
+                    }
                 }
 
-                write_bitmap(filename, &bitmap);
+                fill_shape(bitmap);
+
+                sum_bitmap_width += bitmap->width;
+                max_bitmap_height = max(max_bitmap_height, bitmap->height);
+                char_min_y[character] = runner.min_y;
+                min_y = min(min_y, runner.min_y);
+                max_y = max(max_y, runner.max_y);
             }
             else
             {
                 assert(false);
             }
         }
+
+
+        Bitmap output_bitmap;
+        output_bitmap.width = sum_bitmap_width;
+        output_bitmap.height = max_bitmap_height;
+        Int output_bitmap_data_length = sizeof(UInt32) * output_bitmap.width * output_bitmap.height;
+        output_bitmap.data = (UInt32 *)malloc(output_bitmap_data_length);
+        memset(output_bitmap.data, -1, output_bitmap_data_length);
+
+        Int bitmap_offset_x = 0;
+        for (Int8 character = start_char; character <= end_char; character++)
+        {
+            Bitmap *bitmap = &bitmaps[character];
+
+            Int y_offset = round((char_min_y[character] - min_y) * scale);
+            UInt32 *output_row = output_bitmap.data + y_offset * output_bitmap.width;
+            UInt32 *row = bitmap->data;
+            for (Int y = 0; y < bitmap->height; y++)
+            {
+                for (Int x = 0; x < bitmap->width; x++)
+                {
+                    output_row[x + bitmap_offset_x] = row[x];
+                }
+                row += bitmap->width;
+                output_row += output_bitmap.width;
+            }
+            bitmap_offset_x += bitmap->width;
+        }
+        write_bitmap(concat_str(wrap_str(output_filename), wrap_str(".bmp")), &output_bitmap);
+
+        FILE *output_file = fopen(output_filename, "wb");
+        assert(fseek(output_file, 0, SEEK_SET) == 0);
+
+        fwrite(&start_char, sizeof(Int8), 1, output_file);
+        Int8 num_char = end_char - start_char + 1;
+        fwrite(&num_char, sizeof(Int8), 1, output_file);
+
+        Int16 height = max_bitmap_height;
+        Int16 line_spacing = round((max_y - min_y + hhea_table->line_gap) * scale);
+        fwrite(&height, sizeof(height), 1, output_file);
+        fwrite(&line_spacing, sizeof(line_spacing), 1, output_file);
+
+        bitmap_offset_x = 0;
+        for (Int8 character = start_char; character <= end_char; character++)
+        {
+            Bitmap *bitmap = &bitmaps[character];
+
+            Int16 width = bitmap->width;
+            fwrite(&width, sizeof(width), 1, output_file);
+
+            UInt32 *row = output_bitmap.data;
+            for (Int y = 0; y < output_bitmap.height; y++)
+            {
+                UInt32 *pixel = row + bitmap_offset_x;
+                for (Int x = 0; x < bitmap->width; x++)
+                {
+                    UInt32 color = *pixel++;
+                    UInt8 color8 = color == 0 ? 0 : 0xff;
+                    fwrite(&color8, sizeof(color8), 1, output_file);
+                }
+                row += output_bitmap.width;
+            }
+            bitmap_offset_x += bitmap->width;
+        }
+        fclose(output_file);
     }
 }
