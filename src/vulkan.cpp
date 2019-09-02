@@ -340,7 +340,7 @@ Bool create_vulkan_scene_pipeline(VulkanContext *context, VulkanSwapchain *swapc
     framebuffer_description[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     framebuffer_description[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     framebuffer_description[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    framebuffer_description[2].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    framebuffer_description[2].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     VkAttachmentReference color_framebuffer_reference = {};
     color_framebuffer_reference.attachment = 0;
@@ -581,7 +581,7 @@ Bool create_vulkan_debug_ui_pipeline(VulkanContext *context, VulkanSwapchain *sw
     framebuffer_description[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     framebuffer_description[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     framebuffer_description[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    framebuffer_description[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    framebuffer_description[0].initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     framebuffer_description[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     VkAttachmentReference color_framebuffer_reference = {};
@@ -1121,7 +1121,7 @@ struct Entity
     Mesh *mesh;
 };
 
-struct Scene
+struct SceneData
 {
     Mat4 view;
     Mat4 normal_view;
@@ -1129,7 +1129,7 @@ struct Scene
     Vec4 light_dir[4];
 };
 
-struct Piece
+struct EntityData
 {
     Mat4 world;
     Mat4 normal_world;
@@ -1227,7 +1227,7 @@ Bool create_vulkan_scene_frame(VulkanContext *context, VulkanSwapchain *swapchai
         total_vertex_data_length += sizeof(Vertex) * entities->data[i].mesh->vertex_count;
         total_index_data_length += sizeof(UInt32) * entities->data[i].mesh->index_count;
     }
-    Int total_uniform_data_length = sizeof(Scene) + sizeof(Piece) * entities->length;
+    Int total_uniform_data_length = sizeof(SceneData) + sizeof(EntityData) * entities->length;
 
     if (!create_vulkan_buffer(context, total_vertex_data_length,
                               VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -1285,7 +1285,7 @@ Bool create_vulkan_scene_frame(VulkanContext *context, VulkanSwapchain *swapchai
     VkDescriptorBufferInfo descriptor_buffer_info = {};
     descriptor_buffer_info.buffer = scene_frame->uniform_buffer.handle;
     descriptor_buffer_info.offset = 0;
-    descriptor_buffer_info.range = sizeof(Scene);
+    descriptor_buffer_info.range = sizeof(SceneData);
 
     VkWriteDescriptorSet descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
     descriptor_set_write.dstSet = scene_frame->scene_descriptor_set;
@@ -1315,8 +1315,8 @@ Bool create_vulkan_scene_frame(VulkanContext *context, VulkanSwapchain *swapchai
 
         VkDescriptorBufferInfo descriptor_buffer_info = {};
         descriptor_buffer_info.buffer = scene_frame->uniform_buffer.handle;
-        descriptor_buffer_info.offset = i * sizeof(Piece) + sizeof(Scene);
-        descriptor_buffer_info.range = sizeof(Piece);
+        descriptor_buffer_info.offset = i * sizeof(EntityData) + sizeof(SceneData);
+        descriptor_buffer_info.range = sizeof(EntityData);
 
         VkWriteDescriptorSet descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
         descriptor_set_write.dstSet = scene_frame->entity_descriptor_sets[i];
@@ -1423,8 +1423,8 @@ Bool create_vulkan_debug_ui_frame(VulkanContext *context, VulkanSwapchain *swapc
     }
 
     VkSamplerCreateInfo sampler_create_info = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-    sampler_create_info.magFilter = VK_FILTER_NEAREST;
-    sampler_create_info.minFilter = VK_FILTER_NEAREST;
+    sampler_create_info.magFilter = VK_FILTER_LINEAR;
+    sampler_create_info.minFilter = VK_FILTER_LINEAR;
     sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
@@ -1475,8 +1475,8 @@ Bool create_vulkan_debug_ui_frame(VulkanContext *context, VulkanSwapchain *swapc
 }
 
 Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain,
-                         VulkanScenePipeline *scene_pipeline, VulkanSceneFrame *scene_frame, Array<Entity> *entities, VulkanBuffer *host_uniform_buffer,
-                         VulkanDebugUIPipeline *debug_ui_pipeline, VulkanDebugUIFrame *debug_ui_frame, Int debug_ui_letter_count)
+                         VulkanScenePipeline *scene_pipeline, VulkanSceneFrame *scene_frame, VulkanBuffer *scene_uniform_buffer, Array<Entity> *entities,
+                         VulkanDebugUIPipeline *debug_ui_pipeline, VulkanDebugUIFrame *debug_ui_frame, VulkanBuffer *debug_ui_vertex_buffer, Int debug_ui_character_count)
 {
     VkResult result_code;
     result_code = vkWaitForFences(context->device_handle, 1, &scene_frame->frame_finished_fence, false, UINT64_MAX);
@@ -1507,22 +1507,37 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain,
         return false;
     }
 
-    VkBufferCopy uniform_buffer_copy = {};
-    uniform_buffer_copy.srcOffset = 0;
-    uniform_buffer_copy.dstOffset = 0;
-    uniform_buffer_copy.size = sizeof(Scene);
-    vkCmdCopyBuffer(scene_frame->command_buffer, host_uniform_buffer->handle, scene_frame->uniform_buffer.handle, 1, &uniform_buffer_copy);
+    VkBufferCopy scene_uniform_buffer_copy = {};
+    scene_uniform_buffer_copy.srcOffset = 0;
+    scene_uniform_buffer_copy.dstOffset = 0;
+    scene_uniform_buffer_copy.size = sizeof(SceneData);
+    vkCmdCopyBuffer(scene_frame->command_buffer, scene_uniform_buffer->handle, scene_frame->uniform_buffer.handle, 1, &scene_uniform_buffer_copy);
 
-    VkBufferMemoryBarrier uniform_buffer_memory_barrier = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-    uniform_buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    uniform_buffer_memory_barrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
-    uniform_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    uniform_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    uniform_buffer_memory_barrier.buffer = scene_frame->uniform_buffer.handle;
-    uniform_buffer_memory_barrier.offset = 0;
-    uniform_buffer_memory_barrier.size = sizeof(Scene);
+    VkBufferCopy debug_ui_vertex_buffer_copy = {};
+    debug_ui_vertex_buffer_copy.srcOffset = 0;
+    debug_ui_vertex_buffer_copy.dstOffset = 0;
+    debug_ui_vertex_buffer_copy.size = sizeof(DebugUIVertex) * debug_ui_character_count * 6;
+    vkCmdCopyBuffer(scene_frame->command_buffer, debug_ui_vertex_buffer->handle, debug_ui_frame->vertex_buffer.handle, 1, &debug_ui_vertex_buffer_copy);
 
-    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, NULL, 1, &uniform_buffer_memory_barrier, 0, NULL);
+    VkBufferMemoryBarrier scene_uniform_buffer_memory_barrier = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+    scene_uniform_buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    scene_uniform_buffer_memory_barrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
+    scene_uniform_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    scene_uniform_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    scene_uniform_buffer_memory_barrier.buffer = scene_frame->uniform_buffer.handle;
+    scene_uniform_buffer_memory_barrier.offset = 0;
+    scene_uniform_buffer_memory_barrier.size = sizeof(SceneData);
+    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, NULL, 1, &scene_uniform_buffer_memory_barrier, 0, NULL);
+
+    VkBufferMemoryBarrier debug_ui_vertex_buffer_memory_barrier = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+    debug_ui_vertex_buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    debug_ui_vertex_buffer_memory_barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+    debug_ui_vertex_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    debug_ui_vertex_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    debug_ui_vertex_buffer_memory_barrier.buffer = debug_ui_frame->vertex_buffer.handle;
+    debug_ui_vertex_buffer_memory_barrier.offset = 0;
+    debug_ui_vertex_buffer_memory_barrier.size = sizeof(DebugUIVertex) * debug_ui_character_count * 6;
+    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, NULL, 1, &debug_ui_vertex_buffer_memory_barrier, 0, NULL);
 
     VkImageMemoryBarrier depth_image_memory_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     depth_image_memory_barrier.srcAccessMask = 0;
@@ -1588,25 +1603,28 @@ Bool render_vulkan_frame(VulkanContext *context, VulkanSwapchain *swapchain,
     vkCmdEndRenderPass(scene_frame->command_buffer);
 
     // NOTE: Debug UI
-    VkRenderPassBeginInfo debug_ui_render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-    debug_ui_render_pass_begin_info.renderPass = debug_ui_pipeline->render_pass;
-    debug_ui_render_pass_begin_info.framebuffer = debug_ui_frame->frame_buffers[image_index];
-    debug_ui_render_pass_begin_info.renderArea.offset = {0, 0};
-    debug_ui_render_pass_begin_info.renderArea.extent = {(UInt32)swapchain->width, (UInt32)swapchain->height};
-    debug_ui_render_pass_begin_info.clearValueCount = 0;
-    debug_ui_render_pass_begin_info.pClearValues = NULL;
+    if (debug_ui_character_count > 0)
+    {
+        VkRenderPassBeginInfo debug_ui_render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+        debug_ui_render_pass_begin_info.renderPass = debug_ui_pipeline->render_pass;
+        debug_ui_render_pass_begin_info.framebuffer = debug_ui_frame->frame_buffers[image_index];
+        debug_ui_render_pass_begin_info.renderArea.offset = {0, 0};
+        debug_ui_render_pass_begin_info.renderArea.extent = {(UInt32)swapchain->width, (UInt32)swapchain->height};
+        debug_ui_render_pass_begin_info.clearValueCount = 0;
+        debug_ui_render_pass_begin_info.pClearValues = NULL;
 
-    vkCmdBeginRenderPass(scene_frame->command_buffer, &debug_ui_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_ui_pipeline->handle);
+        vkCmdBeginRenderPass(scene_frame->command_buffer, &debug_ui_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_ui_pipeline->handle);
 
-    offset = 0;
-    vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &debug_ui_frame->vertex_buffer.handle, &offset);
+        offset = 0;
+        vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &debug_ui_frame->vertex_buffer.handle, &offset);
 
-    vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_ui_pipeline->pipeline_layout, 0, 1, &debug_ui_frame->font_texture_descriptor_set, 0, NULL);
+        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_ui_pipeline->pipeline_layout, 0, 1, &debug_ui_frame->font_texture_descriptor_set, 0, NULL);
 
-    vkCmdDraw(scene_frame->command_buffer, debug_ui_letter_count * 2 * 3, 1, 0, 0);
+        vkCmdDraw(scene_frame->command_buffer, debug_ui_character_count * 2 * 3, 1, 0, 0);
 
-    vkCmdEndRenderPass(scene_frame->command_buffer);
+        vkCmdEndRenderPass(scene_frame->command_buffer);
+    }
 
     result_code = vkEndCommandBuffer(scene_frame->command_buffer);
     if (result_code != VK_SUCCESS)

@@ -61,7 +61,7 @@ struct OtfEncodingRecord
     Void *table;
 };
 
-struct OtfCmapTable
+struct CmapTable
 {
     UInt16 version;
     UInt16 encoding_table_count;
@@ -131,6 +131,26 @@ struct HheaTable
     Int16 ascender;
     Int16 descender;
     Int16 line_gap;
+    UInt16 advance_width_max;
+    Int16 min_left_bearing;
+    Int16 min_right_bearing;
+    Int16 x_max_extent;
+    Int16 caret_slope_rise;
+    Int16 caret_slope_run;
+    Int16 caret_offset;
+    Int16 metric_format;
+    UInt16 metric_count;
+};
+
+struct HorizontalMetric
+{
+    UInt16 advance;
+    Int16 left_bearing;
+};
+
+struct HmtxTable
+{
+    Array<HorizontalMetric> metrics;
 };
 
 struct HeadTable
@@ -481,6 +501,59 @@ void read_cff_dict(Reader *reader, Int end_pos, OUT CffDict *dict)
     }
 }
 
+Int get_glyph_id(CmapTable *cmap_table, CffTable *cff_table, Int8 character)
+{
+    OtfEncodingFormat4 *encoding_table = NULL;
+    for (Int encoding_table_index = 0; encoding_table_index < cmap_table->encoding_table_count; encoding_table_index++)
+    {
+        if (cmap_table->encoding_records[encoding_table_index].table)
+        {
+            encoding_table = (OtfEncodingFormat4 *)cmap_table->encoding_records[encoding_table_index].table;
+            break;
+        }
+    }
+    assert(encoding_table);
+    assert(encoding_table->format == 4);
+
+    Int found_segment_index = -1;
+    for (Int segment_index = 0; segment_index < encoding_table->segment_count_x2 / 2; segment_index++)
+    {
+        UInt16 end_code = to_little_endian16(encoding_table->end_code[segment_index]);
+
+        if (end_code >= character)
+        {
+            found_segment_index = segment_index;
+            break;
+        }
+    }
+    assert(found_segment_index != -1);
+
+    UInt16 start_code = to_little_endian16(encoding_table->start_code[found_segment_index]);
+    if (start_code <= character)
+    {
+        Int16 id_delta = to_little_endian16(encoding_table->id_delta[found_segment_index]);
+        UInt16 id_range_offset = to_little_endian16(encoding_table->id_range_offset[found_segment_index]);
+        Int glyph_id;
+        if (id_range_offset)
+        {
+            glyph_id = *(id_range_offset / 2 + (character - start_code) + &id_range_offset);
+        }
+        else
+        {
+            glyph_id = id_delta + character;
+        }
+
+        assert(glyph_id < cff_table->char_string_index.count);
+        return glyph_id;
+    }
+    else
+    {
+        assert(false);
+    }
+
+    return -1;
+}
+
 Int main(Int argc, RawStr *argv)
 {
     argc--;
@@ -513,6 +586,12 @@ Int main(Int argc, RawStr *argv)
         table_record->table = NULL;
     }
 
+    CmapTable *cmap_table = NULL;
+    CffTable *cff_table = NULL;
+    HeadTable *head_table = NULL;
+    HheaTable *hhea_table = NULL;
+    HmtxTable *hmtx_table = NULL;
+
     for (Int table_index = 0; table_index < font.offset_table.table_count; table_index++)
     {
         OtfTableRecord *table_record = &font.table_records[table_index];
@@ -522,9 +601,9 @@ Int main(Int argc, RawStr *argv)
 
         if (tag_equal(table_record->tag, otf_tag_cmap))
         {
-            table_record->table = malloc(sizeof(OtfCmapTable));
+            table_record->table = malloc(sizeof(CmapTable));
 
-            OtfCmapTable *cmap_table = (OtfCmapTable *)table_record->table;
+            cmap_table = (CmapTable *)table_record->table;
             read16(&reader, &cmap_table->version);
             read16(&reader, &cmap_table->encoding_table_count);
 
@@ -583,7 +662,7 @@ Int main(Int argc, RawStr *argv)
         {
             table_record->table = malloc(sizeof(CffTable));
 
-            CffTable *cff_table = (CffTable *)table_record->table;
+            cff_table = (CffTable *)table_record->table;
             Int cff_table_start = reader.pos;
             read8(&reader, &cff_table->header.major);
             read8(&reader, &cff_table->header.minor);
@@ -683,220 +762,190 @@ Int main(Int argc, RawStr *argv)
         {
             table_record->table = malloc(sizeof(HheaTable));
 
-            HheaTable *hhea_table = (HheaTable *)table_record->table;
+            hhea_table = (HheaTable *)table_record->table;
             read16(&reader, &hhea_table->major_version);
             read16(&reader, &hhea_table->minor_version);
 
             read16(&reader, (UInt16 *)&hhea_table->ascender);
             read16(&reader, (UInt16 *)&hhea_table->descender);
             read16(&reader, (UInt16 *)&hhea_table->line_gap);
+            read16(&reader, &hhea_table->advance_width_max);
+            read16(&reader, (UInt16 *)&hhea_table->min_left_bearing);
+            read16(&reader, (UInt16 *)&hhea_table->min_right_bearing);
+            read16(&reader, (UInt16 *)&hhea_table->x_max_extent);
+            read16(&reader, (UInt16 *)&hhea_table->caret_slope_rise);
+            read16(&reader, (UInt16 *)&hhea_table->caret_slope_run);
+            read16(&reader, (UInt16 *)&hhea_table->caret_offset);
+
+            reader.pos += 8;
+
+            read16(&reader, (UInt16 *)&hhea_table->metric_format);
+            read16(&reader, &hhea_table->metric_count);
         }
-        else if (tag_equal(table_record->tag, otf_tag_head))
+        else if (tag_equal(table_record->tag, otf_tag_hhea))
         {
             table_record->table = malloc(sizeof(HeadTable));
 
             reader.pos += 36;
 
-            HeadTable *head_table = (HeadTable *)table_record->table;
+            head_table = (HeadTable *)table_record->table;
             read16(&reader, (UInt16 *)&head_table->x_min);
             read16(&reader, (UInt16 *)&head_table->y_min);
             read16(&reader, (UInt16 *)&head_table->x_max);
             read16(&reader, (UInt16 *)&head_table->y_max);
         }
-    }
+        else if (tag_equal(table_record->tag, otf_tag_hmtx))
+        {
+            table_record->table = malloc(sizeof(HmtxTable));
 
-    OtfCmapTable *cmap_table = NULL;
-    CffTable *cff_table = NULL;
-    HheaTable *hhea_table = NULL;
-    for (Int table_index = 0; table_index < font.offset_table.table_count; table_index++)
-    {
-        if (tag_equal(font.table_records[table_index].tag, otf_tag_cmap))
-        {
-            cmap_table = (OtfCmapTable *)font.table_records[table_index].table;
-        }
-        else if (tag_equal(font.table_records[table_index].tag, otf_tag_cff))
-        {
-            cff_table = (CffTable *)font.table_records[table_index].table;
-        }
-        else if (tag_equal(font.table_records[table_index].tag, otf_tag_hhea))
-        {
-            hhea_table = (HheaTable *)font.table_records[table_index].table;
-        }
-    }
-    assert(cmap_table && cff_table && hhea_table);
+            hmtx_table = (HmtxTable *)table_record->table;
+            hmtx_table->metrics = create_array<HorizontalMetric>();
 
-    OtfEncodingFormat4 *encoding_table = NULL;
-    for (Int encoding_table_index = 0; encoding_table_index < cmap_table->encoding_table_count; encoding_table_index++)
-    {
-        if (cmap_table->encoding_records[encoding_table_index].table)
-        {
-            encoding_table = (OtfEncodingFormat4 *)cmap_table->encoding_records[encoding_table_index].table;
-            break;
+            for (Int i = 0; i < hhea_table->metric_count; i++)
+            {
+                HorizontalMetric *metric = hmtx_table->metrics.push();
+                read16(&reader, &metric->advance);
+                read16(&reader, (UInt16 *)&metric->left_bearing);
+            }
         }
     }
 
-    if (encoding_table)
+    assert(cmap_table && cff_table && hhea_table && hmtx_table);
+
+    Real scale = vertical_extent / (hhea_table->ascender - hhea_table->descender);
+    Int8 start_char = 0x21;
+    Int8 end_char = 0x7e;
+
+    Bitmap bitmaps[128];
+    HorizontalMetric metrics[128];
+    Int sum_bitmap_width = 0;
+    Int max_bitmap_height = 0;
+    Real min_y = INT16_MAX;
+    Real max_y = INT16_MIN;
+    Real char_min_y[128];
+    for (Int8 character = start_char; character <= end_char; character++)
     {
-        assert(encoding_table->format == 4);
+        Int glyph_id = get_glyph_id(cmap_table, cff_table, character);
+        CharString *char_string = (CharString *)cff_table->char_string_index.objects + glyph_id;
 
-        Real scale = vertical_extent / (hhea_table->ascender - hhea_table->descender);
-        Int8 start_char = 0x21;
-        Int8 end_char = 0x7e;
+        CharStringRunner runner;
+        runner.subr_count = cff_table->subr_index.count;
+        runner.subr_list = (CharString *)cff_table->subr_index.objects;
+        runner.stack_length = 0;
+        runner.x = {0};
+        runner.y = {0};
+        runner.min_x = INT16_MAX;
+        runner.max_x = INT16_MIN;
+        runner.min_y = INT16_MAX;
+        runner.max_y = INT16_MIN;
+        runner.subr_depth = 0;
+        runner.started = false;
+        runner.ended = false;
+        runner.paths = create_array<Path>();
 
-        Bitmap bitmaps[128];
-        Int sum_bitmap_width = 0;
-        Int max_bitmap_height = 0;
-        Real min_y = INT16_MAX;
-        Real max_y = INT16_MIN;
-        Real char_min_y[128];
-        for (Int8 character = start_char; character <= end_char; character++)
+        run_char_string(&runner, char_string);
+
+        Bitmap *bitmap = &bitmaps[character];
+        bitmap->width = round((runner.max_x - runner.min_x) * scale) + 1;
+        bitmap->height = round((runner.max_y - runner.min_y) * scale) + 1;
+        Int bitmap_data_length = sizeof(UInt32) * bitmap->width * bitmap->height;
+        bitmap->data = (UInt32 *)malloc(bitmap_data_length);
+        memset(bitmap->data, -1, bitmap_data_length);
+
+        for (Int path_i = 0; path_i < runner.paths.length; path_i++)
         {
-            Int found_segment_index = -1;
-            for (Int segment_index = 0; segment_index < encoding_table->segment_count_x2 / 2; segment_index++)
+            Path *path = &runner.paths[path_i];
+            for (Int line_i = 0; line_i < path->lines.length; line_i++)
             {
-                UInt16 end_code = to_little_endian16(encoding_table->end_code[segment_index]);
-
-                if (end_code >= character)
-                {
-                    found_segment_index = segment_index;
-                    break;
-                }
-            }
-
-            assert(found_segment_index != -1);
-
-            UInt16 start_code = to_little_endian16(encoding_table->start_code[found_segment_index]);
-            if (start_code <= character)
-            {
-                Int16 id_delta = to_little_endian16(encoding_table->id_delta[found_segment_index]);
-                UInt16 id_range_offset = to_little_endian16(encoding_table->id_range_offset[found_segment_index]);
-                Int glyph_id;
-                if (id_range_offset)
-                {
-                    glyph_id = *(id_range_offset / 2 +
-                                 (character - start_code) + &id_range_offset);
-                }
-                else
-                {
-                    glyph_id = id_delta + character;
-                }
-
-                assert(glyph_id < cff_table->char_string_index.count);
-
-                CharString *char_string = (CharString *)cff_table->char_string_index.objects + glyph_id;
-
-                CharStringRunner runner;
-                runner.subr_count = cff_table->subr_index.count;
-                runner.subr_list = (CharString *)cff_table->subr_index.objects;
-                runner.stack_length = 0;
-                runner.x = {0};
-                runner.y = {0};
-                runner.min_x = INT16_MAX;
-                runner.max_x = INT16_MIN;
-                runner.min_y = INT16_MAX;
-                runner.max_y = INT16_MIN;
-                runner.subr_depth = 0;
-                runner.started = false;
-                runner.ended = false;
-                runner.paths = create_array<Path>();
-
-                run_char_string(&runner, char_string);
-
-                Bitmap *bitmap = &bitmaps[character];
-                bitmap->width = round((runner.max_x - runner.min_x) * scale) + 1;
-                bitmap->height = round((runner.max_y - runner.min_y) * scale) + 1;
-                Int bitmap_data_length = sizeof(UInt32) * bitmap->width * bitmap->height;
-                bitmap->data = (UInt32 *)malloc(bitmap_data_length);
-                memset(bitmap->data, -1, bitmap_data_length);
-
-                for (Int path_i = 0; path_i < runner.paths.length; path_i++)
-                {
-                    Path *path = &runner.paths[path_i];
-                    for (Int line_i = 0; line_i < path->lines.length; line_i++)
-                    {
-                        Line *line = &path->lines[line_i];
-                        draw_line(bitmap, (line->x0 - runner.min_x) * scale, (line->y0 - runner.min_y) * scale,
-                                  (line->x1 - runner.min_x) * scale, (line->y1 - runner.min_y) * scale);
-                    }
-                }
-
-                fill_shape(bitmap);
-
-                sum_bitmap_width += bitmap->width;
-                max_bitmap_height = max(max_bitmap_height, bitmap->height);
-                char_min_y[character] = runner.min_y;
-                min_y = min(min_y, runner.min_y);
-                max_y = max(max_y, runner.max_y);
-            }
-            else
-            {
-                assert(false);
+                Line *line = &path->lines[line_i];
+                draw_line(bitmap, (line->x0 - runner.min_x) * scale, (line->y0 - runner.min_y) * scale,
+                          (line->x1 - runner.min_x) * scale, (line->y1 - runner.min_y) * scale);
             }
         }
 
+        fill_shape(bitmap);
 
-        Bitmap output_bitmap;
-        output_bitmap.width = sum_bitmap_width;
-        output_bitmap.height = max_bitmap_height;
-        Int output_bitmap_data_length = sizeof(UInt32) * output_bitmap.width * output_bitmap.height;
-        output_bitmap.data = (UInt32 *)malloc(output_bitmap_data_length);
-        memset(output_bitmap.data, -1, output_bitmap_data_length);
+        sum_bitmap_width += bitmap->width;
+        max_bitmap_height = max(max_bitmap_height, bitmap->height);
+        char_min_y[character] = runner.min_y;
+        min_y = min(min_y, runner.min_y);
+        max_y = max(max_y, runner.max_y);
 
-        Int16 bitmap_offset_x = 0;
-        for (Int8 character = start_char; character <= end_char; character++)
+        assert(glyph_id < hmtx_table->metrics.length);
+        metrics[character] = hmtx_table->metrics[glyph_id];
+    }
+
+    Bitmap output_bitmap;
+    output_bitmap.width = sum_bitmap_width;
+    output_bitmap.height = max_bitmap_height;
+    Int output_bitmap_data_length = sizeof(UInt32) * output_bitmap.width * output_bitmap.height;
+    output_bitmap.data = (UInt32 *)malloc(output_bitmap_data_length);
+    memset(output_bitmap.data, -1, output_bitmap_data_length);
+
+    Int16 bitmap_offset_x = 0;
+    for (Int8 character = start_char; character <= end_char; character++)
+    {
+        Bitmap *bitmap = &bitmaps[character];
+
+        Int y_offset = round((char_min_y[character] - min_y) * scale);
+        UInt32 *output_row = output_bitmap.data + y_offset * output_bitmap.width;
+        UInt32 *row = bitmap->data;
+        for (Int y = 0; y < bitmap->height; y++)
         {
-            Bitmap *bitmap = &bitmaps[character];
-
-            Int y_offset = round((char_min_y[character] - min_y) * scale);
-            UInt32 *output_row = output_bitmap.data + y_offset * output_bitmap.width;
-            UInt32 *row = bitmap->data;
-            for (Int y = 0; y < bitmap->height; y++)
+            for (Int x = 0; x < bitmap->width; x++)
             {
-                for (Int x = 0; x < bitmap->width; x++)
-                {
-                    output_row[x + bitmap_offset_x] = row[x];
-                }
-                row += bitmap->width;
-                output_row += output_bitmap.width;
+                output_row[x + bitmap_offset_x] = row[x];
             }
-            bitmap_offset_x += bitmap->width;
+            row += bitmap->width;
+            output_row += output_bitmap.width;
         }
-        write_bitmap(concat_str(wrap_str(output_filename), wrap_str(".bmp")), &output_bitmap);
+        bitmap_offset_x += bitmap->width;
+    }
+    write_bitmap(concat_str(wrap_str(output_filename), wrap_str(".bmp")), &output_bitmap);
 
-        FILE *output_file = fopen(output_filename, "wb");
-        assert(fseek(output_file, 0, SEEK_SET) == 0);
+    FILE *output_file = fopen(output_filename, "wb");
+    assert(fseek(output_file, 0, SEEK_SET) == 0);
 
-        fwrite(&start_char, sizeof(Int8), 1, output_file);
-        Int8 num_char = end_char - start_char + 1;
-        fwrite(&num_char, sizeof(Int8), 1, output_file);
+    fwrite(&start_char, sizeof(Int8), 1, output_file);
+    Int8 num_char = end_char - start_char + 1;
+    fwrite(&num_char, sizeof(Int8), 1, output_file);
 
-        Int16 width = output_bitmap.width;
-        Int16 height = output_bitmap.height;
-        Int16 line_spacing = round((max_y - min_y + hhea_table->line_gap) * scale);
+    Int16 width = output_bitmap.width;
+    Int16 height = output_bitmap.height;
+    Int16 line_advance = round((max_y - min_y + hhea_table->line_gap) * scale);
+    Int whitespace_glyph_id = get_glyph_id(cmap_table, cff_table, ' ');
+    assert(whitespace_glyph_id < hmtx_table->metrics.length);
+    Int16 whitespace_advance = round(hmtx_table->metrics[whitespace_glyph_id].advance * scale);
+
+    fwrite(&width, sizeof(width), 1, output_file);
+    fwrite(&height, sizeof(height), 1, output_file);
+    fwrite(&line_advance, sizeof(line_advance), 1, output_file);
+    fwrite(&whitespace_advance, sizeof(whitespace_advance), 1, output_file);
+
+    bitmap_offset_x = 0;
+    for (Int8 character = start_char; character <= end_char; character++)
+    {
+        Int16 width = bitmaps[character].width;
+        fwrite(&bitmap_offset_x, sizeof(bitmap_offset_x), 1, output_file);
         fwrite(&width, sizeof(width), 1, output_file);
-        fwrite(&height, sizeof(height), 1, output_file);
-        fwrite(&line_spacing, sizeof(line_spacing), 1, output_file);
+        bitmap_offset_x += width;
 
-        bitmap_offset_x = 0;
-        for (Int8 character = start_char; character <= end_char; character++)
-        {
-            Int16 width = bitmaps[character].width;
-            fwrite(&bitmap_offset_x, sizeof(bitmap_offset_x), 1, output_file);
-            fwrite(&width, sizeof(width), 1, output_file);
-            bitmap_offset_x += width;
-        }
-
-        UInt32 *row = output_bitmap.data + output_bitmap.width * (output_bitmap.height - 1);
-        for (Int y = output_bitmap.height - 1; y >= 0; y--)
-        {
-            UInt32 *pixel = row;
-            for (Int x = 0; x < output_bitmap.width; x++)
-            {
-                UInt32 color = *pixel++ == 0 ? 0xff000000 : 0x00ffffff;
-                fwrite(&color, sizeof(color), 1, output_file);
-            }
-            row -= output_bitmap.width;
-        }
-        fclose(output_file);
+        Int16 advance = round(metrics[character].advance * scale);
+        fwrite(&advance, sizeof(advance), 1, output_file);
+        Int16 left_bearing = round(metrics[character].left_bearing * scale);
+        fwrite(&left_bearing, sizeof(left_bearing), 1, output_file);
     }
+
+    UInt32 *row = output_bitmap.data + output_bitmap.width * (output_bitmap.height - 1);
+    for (Int y = output_bitmap.height - 1; y >= 0; y--)
+    {
+        UInt32 *pixel = row;
+        for (Int x = 0; x < output_bitmap.width; x++)
+        {
+            UInt32 color = *pixel++ == 0 ? 0xffffffff : 0x00000000;
+            fwrite(&color, sizeof(color), 1, output_file);
+        }
+        row -= output_bitmap.width;
+    }
+    fclose(output_file);
 }

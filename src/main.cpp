@@ -3,6 +3,7 @@
 #include "window.cpp"
 #include "vulkan.cpp"
 #include "asset.cpp"
+#include "debug_ui.cpp"
 
 Bool read_mesh(RawStr filename, OUT Mesh *mesh)
 {
@@ -130,14 +131,14 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     camera.pos = {-350, 1600, -450};
     camera.rotation = get_rotation_matrix_x(degree_to_radian(65)) * get_rotation_matrix_z(PI);
 
-    Scene scene;
-    scene.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-    scene.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-    scene.projection = get_perspective_matrix(degree_to_radian(30), (Real)window_width / (Real)window_height, 10, 10000);
-    scene.light_dir[0] = {1, -1, 1};
-    scene.light_dir[1] = {1, -1, -1};
-    scene.light_dir[2] = {-1, -1, -1};
-    scene.light_dir[3] = {-1, -1, 1};
+    SceneData scene_data;
+    scene_data.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+    scene_data.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+    scene_data.projection = get_perspective_matrix(degree_to_radian(30), (Real)window_width / (Real)window_height, 10, 10000);
+    scene_data.light_dir[0] = {1, -1, 1};
+    scene_data.light_dir[1] = {1, -1, -1};
+    scene_data.light_dir[2] = {-1, -1, -1};
+    scene_data.light_dir[3] = {-1, -1, 1};
 
     Window window = create_window(wrap_str("Chess"), window_width, window_height, 50, 50);
     assert(window);
@@ -167,8 +168,8 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Int current_vertex_data_offset = 0;
     Int current_index_data_offset = 0;
     Int current_uniform_data_offset = 0;
-    memcpy(scene_uniform_buffer.data, &scene, sizeof(scene));
-    current_uniform_data_offset += sizeof(scene);
+    memcpy(scene_uniform_buffer.data, &scene_data, sizeof(scene_data));
+    current_uniform_data_offset += sizeof(scene_data);
     for (Int i = 0; i < entities.length; i++)
     {
         Mesh *mesh = entities[i].mesh;
@@ -177,52 +178,18 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         memcpy(scene_vertex_buffer.data + current_vertex_data_offset, entities[i].mesh->vertices_data, current_vertex_data_length);
         memcpy(scene_index_buffer.data + current_index_data_offset, entities[i].mesh->indices_data, current_index_data_length);
 
-        Piece *piece = (Piece *)(scene_uniform_buffer.data + current_uniform_data_offset);
-        piece->world = get_translate_matrix(entities[i].pos.x, entities[i].pos.y, entities[i].pos.z) * entities[i].rotation;
-        piece->normal_world = entities[i].rotation;
+        EntityData *entity_data = (EntityData *)(scene_uniform_buffer.data + current_uniform_data_offset);
+        entity_data->world = get_translate_matrix(entities[i].pos.x, entities[i].pos.y, entities[i].pos.z) * entities[i].rotation;
+        entity_data->normal_world = entities[i].rotation;
 
         current_vertex_data_offset += current_vertex_data_length;
         current_index_data_offset += current_index_data_length;
-        current_uniform_data_offset += sizeof(Piece);
+        current_uniform_data_offset += sizeof(EntityData);
     }
 
     assert(upload_vulkan_buffer(&vulkan_context, &scene_vertex_buffer, &vulkan_scene_frame.vertex_buffer));
     assert(upload_vulkan_buffer(&vulkan_context, &scene_index_buffer, &vulkan_scene_frame.index_buffer));
     assert(upload_vulkan_buffer(&vulkan_context, &scene_uniform_buffer, &vulkan_scene_frame.uniform_buffer));
-
-    Vec2 pos = {-0.8, -0.8};
-    Str text_message = wrap_str("Hello!");
-    Real height = (Real)debug_font.height / window_height;
-    for (Int i = 0; i < text_message.length; i++)
-    {
-        Int8 char_index = text_message[i] - debug_font.start_char;
-        FontCharPos char_pos = debug_font.pos[char_index];
-        Real width = (Real)char_pos.width / window_width;
-
-        Real texture_coord_x_min = (Real)char_pos.offset / debug_font.width;
-        Real texture_coord_x_max = (Real)(char_pos.offset + char_pos.width) / debug_font.width;
-
-        DebugUIVertex *debug_ui_vertex = (DebugUIVertex *)debug_ui_vertex_buffer.data + i * 6;
-        debug_ui_vertex[0].pos = pos;
-        debug_ui_vertex[0].texture_coord = {texture_coord_x_min, 0};
-
-        debug_ui_vertex[1].pos = {pos.x, pos.y + height};
-        debug_ui_vertex[1].texture_coord = {texture_coord_x_min, 1};
-
-        debug_ui_vertex[2].pos = {pos.x + width, pos.y};
-        debug_ui_vertex[2].texture_coord = {texture_coord_x_max, 0};
-
-        debug_ui_vertex[3].pos = {pos.x + width, pos.y + height};
-        debug_ui_vertex[3].texture_coord = {texture_coord_x_max, 1};
-
-        debug_ui_vertex[4].pos = {pos.x + width, pos.y};
-        debug_ui_vertex[4].texture_coord = {texture_coord_x_max, 0};
-
-        debug_ui_vertex[5].pos = {pos.x, pos.y + height};
-        debug_ui_vertex[4].texture_coord = {texture_coord_x_min, 1};
-
-        pos.x += width;
-    }
 
     assert(upload_vulkan_buffer(&vulkan_context, &debug_ui_vertex_buffer, &vulkan_debug_ui_frame.vertex_buffer));
 
@@ -235,12 +202,20 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Bool moving_z_pos = false;
     Bool moving_z_neg = false;
 
+    Bool rotating_x_pos = false;
+    Bool rotating_x_neg = false;
+    Bool rotating_y_pos = false;
+    Bool rotating_y_neg = false;
+    Bool rotating_z_pos = false;
+    Bool rotating_z_neg = false;
+
     Bool is_mouse_left_dragging = false;
     Bool is_mouse_right_dragging = false;
     Int last_mouse_x;
     Int last_mouse_y;
 
     Bool is_running = true;
+    Bool show_debug_ui = false;
     while (is_running)
     {
         Int mouse_increment_x = 0;
@@ -282,6 +257,34 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 {
                     moving_z_neg = true;
                 }
+                else if (key_code == WindowMessageKeyCode::key_i)
+                {
+                    rotating_x_pos = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_k)
+                {
+                    rotating_x_neg = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_l)
+                {
+                    rotating_y_pos = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_j)
+                {
+                    rotating_y_neg = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_o)
+                {
+                    rotating_z_pos = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_u)
+                {
+                    rotating_z_neg = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_g)
+                {
+                    show_debug_ui = !show_debug_ui;
+                }
             }
             else if (message.type == WindowMessageType::key_up)
             {
@@ -310,6 +313,30 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 else if (key_code == WindowMessageKeyCode::key_s)
                 {
                     moving_z_neg = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_i)
+                {
+                    rotating_x_pos = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_k)
+                {
+                    rotating_x_neg = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_l)
+                {
+                    rotating_y_pos = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_j)
+                {
+                    rotating_y_neg = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_o)
+                {
+                    rotating_z_pos = false;
+                }
+                else if (key_code == WindowMessageKeyCode::key_u)
+                {
+                    rotating_z_neg = false;
                 }
             }
             else if (message.type == WindowMessageType::mouse_down)
@@ -379,9 +406,34 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             camera.pos = camera.pos - speed * vec3(camera.rotation.z);
         }
 
-        Real rotating_speed = PI / 1800;
-
+        Real rotating_speed = degree_to_radian(0.2);
         Mat4 local_transform = get_identity_matrix();
+        if (rotating_x_pos)
+        {
+            local_transform = get_rotation_matrix_x(rotating_speed) * local_transform;
+        }
+        else if (rotating_x_neg)
+        {
+            local_transform = get_rotation_matrix_x(-rotating_speed) * local_transform;
+        }
+        else if (rotating_y_pos)
+        {
+            local_transform = get_rotation_matrix_y(rotating_speed) * local_transform;
+        }
+        else if (rotating_y_neg)
+        {
+            local_transform = get_rotation_matrix_y(-rotating_speed) * local_transform;
+        }
+        else if (rotating_z_pos)
+        {
+            local_transform = get_rotation_matrix_z(rotating_speed) * local_transform;
+        }
+        else if (rotating_z_neg)
+        {
+            local_transform = get_rotation_matrix_z(-rotating_speed) * local_transform;
+        }
+
+#if 0
         if (is_mouse_left_dragging)
         {
             assert(!is_mouse_right_dragging);
@@ -394,21 +446,45 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 local_transform = get_rotation_matrix_x(rotating_speed * -mouse_increment_y) * local_transform;
             }
         }
-
-        if (is_mouse_right_dragging)
-        {
-            assert(!is_mouse_left_dragging);
-        }
+#endif
 
         camera.rotation = camera.rotation * local_transform;
 
-        scene.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-        scene.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-        memcpy(scene_uniform_buffer.data, &scene, sizeof(scene));
+        DebugUIDrawState debug_ui_draw_state;
+        debug_ui_draw_state.character_count = 0;
+        if (show_debug_ui)
+        {
+            Vec2 debug_ui_start_pos = {-0.95, -0.95};
+            debug_ui_draw_state = create_debug_ui_draw_state(&debug_font, window_width, window_height, &debug_ui_vertex_buffer, debug_ui_start_pos);
+
+            debug_ui_draw_str(&debug_ui_draw_state, wrap_str("camera"));
+            debug_ui_draw_newline(&debug_ui_draw_state);
+            debug_ui_draw_indent(&debug_ui_draw_state, 1);
+
+            debug_ui_draw_str(&debug_ui_draw_state, wrap_str("position: "));
+            debug_ui_draw_vec3(&debug_ui_draw_state, camera.pos);
+            debug_ui_draw_newline(&debug_ui_draw_state);
+
+            debug_ui_draw_str(&debug_ui_draw_state, wrap_str("rotation x: "));
+            debug_ui_draw_vec3(&debug_ui_draw_state, vec3(camera.rotation.x));
+            debug_ui_draw_newline(&debug_ui_draw_state);
+
+            debug_ui_draw_str(&debug_ui_draw_state, wrap_str("rotation y: "));
+            debug_ui_draw_vec3(&debug_ui_draw_state, vec3(camera.rotation.y));
+            debug_ui_draw_newline(&debug_ui_draw_state);
+
+            debug_ui_draw_str(&debug_ui_draw_state, wrap_str("rotation z: "));
+            debug_ui_draw_vec3(&debug_ui_draw_state, vec3(camera.rotation.z));
+            debug_ui_draw_newline(&debug_ui_draw_state);
+        }
+
+        scene_data.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+        scene_data.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+        memcpy(scene_uniform_buffer.data, &scene_data, sizeof(scene_data));
 
         assert(render_vulkan_frame(&vulkan_context, &vulkan_swapchain,
-                                   &vulkan_scene_pipeline, &vulkan_scene_frame, &entities, &scene_uniform_buffer,
-                                   &vulkan_debug_ui_pipeline, &vulkan_debug_ui_frame, text_message.length));
+                                   &vulkan_scene_pipeline, &vulkan_scene_frame, &scene_uniform_buffer, &entities,
+                                   &vulkan_debug_ui_pipeline, &vulkan_debug_ui_frame, &debug_ui_vertex_buffer, debug_ui_draw_state.character_count));
     }
 
     return 0;
