@@ -104,17 +104,13 @@ void debug_ui_draw_str(DebugUIDrawState *draw_state, Str string)
     }
 }
 
-void debug_ui_draw_real(DebugUIDrawState *draw_state, Real real)
+void debug_ui_draw_int(DebugUIDrawState *draw_state, Int integer)
 {
-    Bool is_negative = false;
-    if (real < 0)
+    if (integer < 0)
     {
-        is_negative = true;
-        real = -real;
+        debug_ui_draw_char(draw_state, '-');
+        integer = -integer;
     }
-
-    Int integer = real;
-    Real fraction = real - integer;
 
     Int8 integer_char_count = 0;
     Int8 integer_chars[16];
@@ -123,6 +119,19 @@ void debug_ui_draw_real(DebugUIDrawState *draw_state, Real real)
         integer_chars[integer_char_count++] = integer % 10 + '0';
         integer /= 10;
     } while (integer);
+
+    for (Int i = integer_char_count - 1; i >= 0; i--)
+    {
+        debug_ui_draw_char(draw_state, integer_chars[i]);
+    }
+}
+
+void debug_ui_draw_real(DebugUIDrawState *draw_state, Real real)
+{
+    Int integer = (Int)real;
+    Real fraction = ABS(real) - ABS(integer);
+
+    debug_ui_draw_int(draw_state, integer);
 
     Int8 fraction_chars[6];
     for (Int i = 0; i < 6; i++)
@@ -133,14 +142,6 @@ void debug_ui_draw_real(DebugUIDrawState *draw_state, Real real)
         fraction -= digit;
     }
 
-    if (is_negative)
-    {
-        debug_ui_draw_char(draw_state, '-');
-    }
-    for (Int i = integer_char_count - 1; i >= 0; i--)
-    {
-        debug_ui_draw_char(draw_state, integer_chars[i]);
-    }
     debug_ui_draw_char(draw_state, '.');
     for (Int i = 0; i < 6; i++)
     {
@@ -273,7 +274,7 @@ Bool create_debug_ui_frame(VulkanDevice *device, VulkanPipeline *pipeline, Font 
     }
 
     Int max_letter_count = 1024;
-    Int vertex_buffer_length = sizeof(DebugUIVertex) * max_letter_count;
+    Int vertex_buffer_length = sizeof(DebugUIVertex) * max_letter_count * 6;
 
     if (!create_buffer(device, vertex_buffer_length,
                        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,

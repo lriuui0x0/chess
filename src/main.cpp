@@ -190,31 +190,6 @@ Bool render_vulkan_frame(VulkanDevice *device,
 
     vkCmdEndRenderPass(scene_frame->command_buffer);
 
-    // NOTE: Debug UI
-    if (debug_ui_character_count > 0)
-    {
-        VkRenderPassBeginInfo debug_ui_render_pass_begin_info = {};
-        debug_ui_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        debug_ui_render_pass_begin_info.renderPass = debug_ui_pipeline->render_pass;
-        debug_ui_render_pass_begin_info.framebuffer = debug_ui_frame->frame_buffers[image_index];
-        debug_ui_render_pass_begin_info.renderArea.offset = {0, 0};
-        debug_ui_render_pass_begin_info.renderArea.extent = {(UInt32)device->swapchain.width, (UInt32)device->swapchain.height};
-        debug_ui_render_pass_begin_info.clearValueCount = 0;
-        debug_ui_render_pass_begin_info.pClearValues = null;
-
-        vkCmdBeginRenderPass(scene_frame->command_buffer, &debug_ui_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_ui_pipeline->handle);
-
-        offset = 0;
-        vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &debug_ui_frame->vertex_buffer.handle, &offset);
-
-        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_ui_pipeline->layout, 0, 1, &debug_ui_frame->font_texture_descriptor_set, 0, null);
-
-        vkCmdDraw(scene_frame->command_buffer, debug_ui_character_count * 2 * 3, 1, 0, 0);
-
-        vkCmdEndRenderPass(scene_frame->command_buffer);
-    }
-
     // NOTE: Debug collision
     if (debug_ui_character_count > 0)
     {
@@ -243,6 +218,31 @@ Bool render_vulkan_frame(VulkanDevice *device,
             vkCmdDraw(scene_frame->command_buffer, 12 * 2, 1, vertex_offset, 0);
             vertex_offset += 12 * 2;
         }
+
+        vkCmdEndRenderPass(scene_frame->command_buffer);
+    }
+
+    // NOTE: Debug UI
+    if (debug_ui_character_count > 0)
+    {
+        VkRenderPassBeginInfo debug_ui_render_pass_begin_info = {};
+        debug_ui_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        debug_ui_render_pass_begin_info.renderPass = debug_ui_pipeline->render_pass;
+        debug_ui_render_pass_begin_info.framebuffer = debug_ui_frame->frame_buffers[image_index];
+        debug_ui_render_pass_begin_info.renderArea.offset = {0, 0};
+        debug_ui_render_pass_begin_info.renderArea.extent = {(UInt32)device->swapchain.width, (UInt32)device->swapchain.height};
+        debug_ui_render_pass_begin_info.clearValueCount = 0;
+        debug_ui_render_pass_begin_info.pClearValues = null;
+
+        vkCmdBeginRenderPass(scene_frame->command_buffer, &debug_ui_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_ui_pipeline->handle);
+
+        offset = 0;
+        vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &debug_ui_frame->vertex_buffer.handle, &offset);
+
+        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_ui_pipeline->layout, 0, 1, &debug_ui_frame->font_texture_descriptor_set, 0, null);
+
+        vkCmdDraw(scene_frame->command_buffer, debug_ui_character_count * 2 * 3, 1, 0, 0);
 
         vkCmdEndRenderPass(scene_frame->command_buffer);
     }
@@ -772,11 +772,11 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
             else if (message.type == WindowMessageType::mouse_down)
             {
-                if (message.mouse_down_data.button_type == WindowMessageMouseButtonType::left)
-                {
-                    mouse_x = message.mouse_down_data.x;
-                    mouse_y = message.mouse_down_data.y;
-                }
+                // if (message.mouse_down_data.button_type == WindowMessageMouseButtonType::left)
+                // {
+                //     mouse_x = message.mouse_down_data.x;
+                //     mouse_y = message.mouse_down_data.y;
+                // }
             }
             else if (message.type == WindowMessageType::mouse_move)
             {
@@ -840,6 +840,42 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
         camera.rotation = camera.rotation * local_transform;
 
+        scene_uniform_data.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+    
+        memcpy(scene_uniform_buffer.data, &scene_uniform_data, sizeof(scene_uniform_data));
+
+        Mat4 inverse_projection;
+        ASSERT(inverse(scene_uniform_data.projection, &inverse_projection));
+
+        Mat4 inverse_view;
+        ASSERT(inverse(scene_uniform_data.view, &inverse_view));
+
+        Vec4 mouse_pos_clip = {(Real)mouse_x * 2 / window_width - 1, (Real)mouse_y * 2 / window_height - 1, 0, 1};
+        Vec3 mouse_pos = vec3(perspective_divide(inverse_view * inverse_projection * mouse_pos_clip));
+        Vec3 dir = normalize(mouse_pos - camera.pos);
+        Ray ray;
+        ray.pos = camera.pos;
+        ray.dir = dir;
+    
+        Real min_dist = 10000000;
+        Int selected_entity_index = -1;
+        for (Int entity_i = 1; entity_i < entities.count; entity_i++)
+        {
+            Entity *entity = &entities[entity_i];
+            CollisionBox collision_box;
+            collision_box.center = entity->collision_box.center + entity->pos;
+            collision_box.radius = entity->collision_box.radius;
+
+            Real dist = check_collision(&ray, &collision_box);
+            if (dist > 0 && dist < min_dist)
+            {
+                selected_entity_index = entity_i;
+            }
+        }
+
+        debug_collision_uniform_data.view = scene_uniform_data.view;
+        memcpy(debug_collision_uniform_buffer.data, &debug_collision_uniform_data, sizeof(debug_collision_uniform_data));
+
         DebugUIDrawState debug_ui_draw_state;
         debug_ui_draw_state.character_count = 0;
         if (show_debug_ui)
@@ -866,14 +902,24 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             debug_ui_draw_str(&debug_ui_draw_state, str("rotation z: "));
             debug_ui_draw_vec3(&debug_ui_draw_state, vec3(camera.rotation.z));
             debug_ui_draw_newline(&debug_ui_draw_state);
+
+            debug_ui_draw_indent(&debug_ui_draw_state, -1);
+
+            debug_ui_draw_str(&debug_ui_draw_state, str("ray"));
+            debug_ui_draw_newline(&debug_ui_draw_state);
+            debug_ui_draw_indent(&debug_ui_draw_state, 1);
+
+            debug_ui_draw_str(&debug_ui_draw_state, str("position: "));
+            debug_ui_draw_vec3(&debug_ui_draw_state, ray.pos);
+            debug_ui_draw_newline(&debug_ui_draw_state);
+
+            debug_ui_draw_str(&debug_ui_draw_state, str("dir: "));
+            debug_ui_draw_vec3(&debug_ui_draw_state, ray.dir);
+            debug_ui_draw_newline(&debug_ui_draw_state);
+
+            debug_ui_draw_str(&debug_ui_draw_state, str("selected piece: "));
+            debug_ui_draw_int(&debug_ui_draw_state, selected_entity_index);
         }
-
-        scene_uniform_data.view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-        scene_uniform_data.normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-        memcpy(scene_uniform_buffer.data, &scene_uniform_data, sizeof(scene_uniform_data));
-
-        debug_collision_uniform_data.view = scene_uniform_data.view;
-        memcpy(debug_collision_uniform_buffer.data, &debug_collision_uniform_data, sizeof(debug_collision_uniform_data));
 
         ASSERT(render_vulkan_frame(&device,
                                    &scene_pipeline, &scene_frame, &scene_uniform_buffer, &entities,

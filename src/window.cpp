@@ -210,7 +210,7 @@ struct WindowMessage
     };
 };
 
-Bool get_window_message(Window window, OUT WindowMessage *message)
+Bool get_window_message(Window window, WindowMessage *message)
 {
     Bool got_message = false;
 
