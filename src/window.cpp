@@ -1,10 +1,11 @@
 #pragma once
 
-#include "util.cpp"
+#include "../lib/util.hpp"
 
 #include "windows.h"
 #include "windowsx.h"
 
+// TODO: Change this to a library
 typedef Void *Window;
 
 enum WindowProcedureRelayMessage
@@ -20,13 +21,13 @@ LRESULT window_procedure(HWND window, UINT message_type, WPARAM wparam, LPARAM l
     case WM_CLOSE:
     {
         Bool result = PostMessageA(window, WM_USER_CLOSE, wparam, lparam);
-        assert(result);
+        ASSERT(result);
         return 0;
     }
     case WM_SIZE:
     {
         Bool result = PostMessageA(window, WM_USER_SIZE, wparam, lparam);
-        assert(result);
+        ASSERT(result);
         return 0;
     }
     break;

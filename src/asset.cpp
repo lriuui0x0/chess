@@ -1,6 +1,6 @@
 #pragma once
 
-#include "util.cpp"
+#include "../lib/util.hpp"
 #include "math.cpp"
 
 struct Vertex
@@ -18,9 +18,9 @@ struct Mesh
     Int32 *indices_data;
 };
 
-Bool deserialise_mesh(Str buffer, OUT Mesh *mesh)
+Bool deserialise_mesh(Str buffer, Mesh *mesh)
 {
-    if (buffer.length < 4)
+    if (buffer.count < 4)
     {
         return false;
     }
@@ -28,13 +28,13 @@ Bool deserialise_mesh(Str buffer, OUT Mesh *mesh)
 
     Int vertex_data_start = 4;
     Int vertex_data_length = sizeof(Vertex) * mesh->vertex_count;
-    if (buffer.length < vertex_data_start + vertex_data_length)
+    if (buffer.count < vertex_data_start + vertex_data_length)
     {
         return false;
     }
 
     Int index_count_start = vertex_data_start + vertex_data_length;
-    if (buffer.length < index_count_start + 4)
+    if (buffer.count < index_count_start + 4)
     {
         return false;
     }
@@ -42,7 +42,7 @@ Bool deserialise_mesh(Str buffer, OUT Mesh *mesh)
 
     Int index_data_start = index_count_start + 4;
     Int index_data_length = sizeof(Int32) * mesh->index_count;
-    if (buffer.length != index_data_start + index_data_length)
+    if (buffer.count != index_data_start + index_data_length)
     {
         return false;
     }
@@ -75,9 +75,9 @@ struct Font
     UInt32 *data;
 };
 
-Bool deserialise_font(Str buffer, OUT Font *font)
+Bool deserialise_font(Str buffer, Font *font)
 {
-    if (buffer.length < 10)
+    if (buffer.count < 10)
     {
         return false;
     }
@@ -98,7 +98,7 @@ Bool deserialise_font(Str buffer, OUT Font *font)
 
     Int pos_data_length = sizeof(FontCharHeader) * font->num_char;
     Int image_data_length = sizeof(UInt32) * font->width * font->height;
-    if (buffer.length != pos + pos_data_length + image_data_length)
+    if (buffer.count != pos + pos_data_length + image_data_length)
     {
         return false;
     }

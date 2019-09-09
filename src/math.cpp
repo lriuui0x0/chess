@@ -1,7 +1,7 @@
 #pragma once
 
+#include "../lib/util.hpp"
 #include <cmath>
-#include "util.cpp"
 
 #define PI (3.141592653589793238462643383279502884l)
 
@@ -22,7 +22,7 @@ union Vec2 {
 
 Real &Vec2::operator[](Int index)
 {
-    assert(index >= 0 && index < 2);
+    ASSERT(index >= 0 && index < 2);
     return this->entries[index];
 }
 
@@ -39,7 +39,7 @@ union Vec3 {
 
 Real &Vec3::operator[](Int index)
 {
-    assert(index >= 0 && index < 3);
+    ASSERT(index >= 0 && index < 3);
     return this->entries[index];
 }
 
@@ -117,7 +117,7 @@ union Vec4 {
 
 Real &Vec4::operator[](Int index)
 {
-    assert(index >= 0 && index < 4);
+    ASSERT(index >= 0 && index < 4);
     return this->entries[index];
 }
 
@@ -154,13 +154,13 @@ union Mat2 {
 
 Vec2 &Mat2::operator[](Int index)
 {
-    assert(index >= 0 && index < 2);
+    ASSERT(index >= 0 && index < 2);
     return this->columns[index];
 }
 
 Vec2 Mat2::row(Int index)
 {
-    assert(index >= 0 && index < 2);
+    ASSERT(index >= 0 && index < 2);
     return {this->columns[0][index], this->columns[1][index]};
 }
 
@@ -178,13 +178,13 @@ union Mat3 {
 
 Vec3 &Mat3::operator[](Int index)
 {
-    assert(index >= 0 && index < 3);
+    ASSERT(index >= 0 && index < 3);
     return this->columns[index];
 }
 
 Vec3 Mat3::row(Int index)
 {
-    assert(index >= 0 && index < 3);
+    ASSERT(index >= 0 && index < 3);
     return {this->columns[0][index], this->columns[1][index], this->columns[2][index]};
 }
 
@@ -203,13 +203,13 @@ union Mat4 {
 
 Vec4 &Mat4::operator[](Int index)
 {
-    assert(index >= 0 && index < 4);
+    ASSERT(index >= 0 && index < 4);
     return this->columns[index];
 }
 
 Vec4 Mat4::row(Int index)
 {
-    assert(index >= 0 && index < 4);
+    ASSERT(index >= 0 && index < 4);
     return {this->columns[0][index], this->columns[1][index], this->columns[2][index], this->columns[3][index]};
 }
 
@@ -253,6 +253,92 @@ Mat4 transpose(Mat4 transform)
     result[2] = transform.row(2);
     result[3] = transform.row(3);
     return result;
+}
+
+Bool inverse(Mat4 transform, Mat4 *result)
+{
+    Mat4 adjoint;
+    adjoint[0][0] = +(transform[1][1] * (transform[2][2] * transform[3][3] - transform[3][2] * transform[2][3]) -
+                     transform[2][1] * (transform[1][2] * transform[3][3] - transform[3][2] * transform[1][3]) +
+                     transform[3][1] * (transform[1][2] * transform[2][3] - transform[2][2] * transform[1][3]));
+
+    adjoint[0][1] = -(transform[0][1] * (transform[2][2] * transform[3][3] - transform[3][2] * transform[2][3]) -
+                     transform[2][1] * (transform[0][2] * transform[3][3] - transform[3][2] * transform[0][3]) +
+                     transform[3][1] * (transform[0][2] * transform[2][3] - transform[2][2] * transform[0][3]));
+
+    adjoint[0][2] = +(transform[0][1] * (transform[1][2] * transform[3][3] - transform[3][2] * transform[1][3]) -
+                     transform[1][1] * (transform[0][2] * transform[3][3] - transform[3][2] * transform[0][3]) +
+                     transform[3][1] * (transform[0][2] * transform[1][3] - transform[1][2] * transform[0][3]));
+
+    adjoint[0][3] = -(transform[0][1] * (transform[1][2] * transform[2][3] - transform[2][2] * transform[1][3]) -
+                     transform[1][1] * (transform[0][2] * transform[2][3] - transform[2][2] * transform[0][3]) +
+                     transform[2][1] * (transform[0][2] * transform[1][3] - transform[1][2] * transform[0][3]));
+
+    adjoint[1][0] = -(transform[1][0] * (transform[2][2] * transform[3][3] - transform[3][2] * transform[2][3]) -
+                     transform[2][0] * (transform[1][2] * transform[3][3] - transform[3][2] * transform[1][3]) +
+                     transform[3][0] * (transform[1][2] * transform[2][3] - transform[2][2] * transform[1][3]));
+
+    adjoint[1][1] = +(transform[0][0] * (transform[2][2] * transform[3][3] - transform[3][2] * transform[2][3]) -
+                     transform[2][0] * (transform[0][2] * transform[3][3] - transform[3][2] * transform[0][3]) +
+                     transform[3][0] * (transform[0][2] * transform[2][3] - transform[2][2] * transform[0][3]));
+
+    adjoint[1][2] = -(transform[0][0] * (transform[1][2] * transform[3][3] - transform[3][2] * transform[1][3]) -
+                     transform[1][0] * (transform[0][2] * transform[3][3] - transform[3][2] * transform[0][3]) +
+                     transform[3][0] * (transform[0][2] * transform[1][3] - transform[1][2] * transform[0][3]));
+
+    adjoint[1][3] = +(transform[0][0] * (transform[1][2] * transform[2][3] - transform[2][2] * transform[1][3]) -
+                     transform[1][0] * (transform[0][2] * transform[2][3] - transform[2][2] * transform[0][3]) +
+                     transform[2][0] * (transform[0][2] * transform[1][3] - transform[1][2] * transform[0][3]));
+
+    adjoint[2][0] = +(transform[1][0] * (transform[2][1] * transform[3][3] - transform[3][2] * transform[2][3]) -
+                     transform[2][0] * (transform[1][1] * transform[3][3] - transform[3][2] * transform[1][3]) +
+                     transform[3][0] * (transform[1][1] * transform[2][3] - transform[2][1] * transform[1][3]));
+
+    adjoint[2][1] = -(transform[0][0] * (transform[2][1] * transform[3][3] - transform[3][1] * transform[2][3]) -
+                     transform[2][0] * (transform[0][1] * transform[3][3] - transform[3][1] * transform[0][3]) +
+                     transform[3][0] * (transform[0][1] * transform[2][3] - transform[2][1] * transform[0][3]));
+
+    adjoint[2][2] = +(transform[0][0] * (transform[1][1] * transform[3][3] - transform[3][1] * transform[1][3]) -
+                     transform[1][0] * (transform[0][1] * transform[3][3] - transform[3][1] * transform[0][3]) +
+                     transform[3][0] * (transform[0][1] * transform[1][3] - transform[1][1] * transform[0][3]));
+
+    adjoint[2][3] = -(transform[0][0] * (transform[1][1] * transform[2][3] - transform[2][1] * transform[1][3]) -
+                     transform[1][0] * (transform[0][1] * transform[2][3] - transform[2][1] * transform[0][3]) +
+                     transform[2][0] * (transform[0][1] * transform[1][3] - transform[1][1] * transform[0][3]));
+
+    adjoint[3][0] = -(transform[1][0] * (transform[2][1] * transform[3][2] - transform[3][1] * transform[2][2]) -
+                     transform[2][0] * (transform[1][1] * transform[3][2] - transform[3][1] * transform[1][2]) +
+                     transform[3][0] * (transform[1][1] * transform[2][2] - transform[2][1] * transform[1][2]));
+
+    adjoint[3][1] = +(transform[0][0] * (transform[2][1] * transform[3][2] - transform[3][1] * transform[2][2]) -
+                     transform[2][0] * (transform[0][1] * transform[3][2] - transform[3][1] * transform[0][2]) +
+                     transform[3][0] * (transform[0][1] * transform[2][2] - transform[2][1] * transform[0][2]));
+
+    adjoint[3][2] = -(transform[0][0] * (transform[1][1] * transform[3][2] - transform[3][1] * transform[1][2]) -
+                     transform[1][0] * (transform[0][1] * transform[3][2] - transform[3][1] * transform[0][2]) +
+                     transform[3][0] * (transform[0][1] * transform[1][2] - transform[1][1] * transform[0][2]));
+
+    adjoint[3][3] = +(transform[0][0] * (transform[1][1] * transform[2][2] - transform[2][1] * transform[1][2]) -
+                     transform[1][0] * (transform[0][1] * transform[2][2] - transform[2][1] * transform[0][2]) +
+                     transform[2][0] * (transform[0][1] * transform[1][2] - transform[1][1] * transform[0][2]));
+
+    Real determinant = transform[0][0] * adjoint[0][0] + transform[0][1] * adjoint[1][0] + transform[0][2] * adjoint[2][0] + transform[0][3] * adjoint[3][0];
+    if (determinant == 0)
+    {
+        return false;
+    }
+
+    Real reciprocal_determinate = 1 / determinant;
+
+    for (Int i = 0; i < 4; i++)
+    {
+        for (Int j = 0; j < 4; j++)
+        {
+            result->columns[i][j] = adjoint[i][j] * reciprocal_determinate;
+        }
+    }
+
+    return true;
 }
 
 Mat4 get_identity_matrix()
@@ -331,13 +417,13 @@ Mat4 get_normal_view_matrix(Vec3 pos, Vec3 dir, Vec3 up)
     return result;
 }
 
-Mat4 get_perspective_matrix(Real view_angle, Real aspect_ratio, Real near, Real far)
+Mat4 get_perspective_matrix(Real view_angle, Real aspect_ratio, Real near_plane, Real far_plane)
 {
     Mat4 result;
     Real c = 1 / tanf(view_angle / 2);
     result[0] = {c / aspect_ratio, 0, 0, 0};
     result[1] = {0, c, 0, 0};
-    result[2] = {0, 0, far / (far - near), 1};
-    result[3] = {0, 0, -far * near / (far - near), 0};
+    result[2] = {0, 0, far_plane / (far_plane - near_plane), 1};
+    result[3] = {0, 0, -far_plane * near_plane / (far_plane - near_plane), 0};
     return result;
 }
