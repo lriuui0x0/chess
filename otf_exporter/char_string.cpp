@@ -1,6 +1,7 @@
 #pragma once
 
-#include "../src/util.cpp"
+#include "../lib/util.hpp"
+#include <cmath>
 
 struct CharStringReader
 {
@@ -71,17 +72,17 @@ Real max(Real a, Real b)
     return a > b ? a : b;
 }
 
-void read_char_string_byte(CharStringReader *reader, OUT UInt8 *byte)
+void read_char_string_byte(CharStringReader *reader, UInt8 *byte)
 {
-    assert(reader->pos + 1 <= reader->buffer.length);
+    ASSERT(reader->pos + 1 <= reader->buffer.count);
     *byte = reader->buffer[reader->pos++];
 }
 
-void read_char_string(CharStringReader *reader, OUT CharString *char_string)
+void read_char_string(CharStringReader *reader, CharString *char_string)
 {
     char_string->atoms = create_array<CharStringAtom>();
 
-    while (reader->pos < reader->buffer.length)
+    while (reader->pos < reader->buffer.count)
     {
         UInt8 byte0;
         read_char_string_byte(reader, &byte0);
@@ -89,7 +90,7 @@ void read_char_string(CharStringReader *reader, OUT CharString *char_string)
         CharStringAtom *atom = char_string->atoms.push();
         if (byte0 == 0)
         {
-            assert(false);
+            ASSERT(false);
         }
         else if (byte0 == 1)
         {
@@ -98,7 +99,7 @@ void read_char_string(CharStringReader *reader, OUT CharString *char_string)
         }
         else if (byte0 == 2)
         {
-            assert(false);
+            ASSERT(false);
         }
         else if (byte0 == 3)
         {
@@ -132,7 +133,7 @@ void read_char_string(CharStringReader *reader, OUT CharString *char_string)
         }
         else if (byte0 == 9)
         {
-            assert(false);
+            ASSERT(false);
         }
         else if (byte0 == 10)
         {
@@ -146,11 +147,11 @@ void read_char_string(CharStringReader *reader, OUT CharString *char_string)
         }
         else if (byte0 == 12)
         {
-            assert(false);
+            ASSERT(false);
         }
         else if (byte0 == 13)
         {
-            assert(false);
+            ASSERT(false);
         }
         else if (byte0 == 14)
         {
@@ -159,15 +160,15 @@ void read_char_string(CharStringReader *reader, OUT CharString *char_string)
         }
         else if (byte0 == 15)
         {
-            assert(false);
+            ASSERT(false);
         }
         else if (byte0 == 16)
         {
-            assert(false);
+            ASSERT(false);
         }
         else if (byte0 == 17)
         {
-            assert(false);
+            ASSERT(false);
         }
         else if (byte0 == 18)
         {
@@ -229,7 +230,7 @@ void read_char_string(CharStringReader *reader, OUT CharString *char_string)
             read_char_string_byte(reader, &byte2);
 
             atom->number = (Int16)(byte1 << 8 | byte2);
-            assert(atom->number >= -32768 && atom->number <= 32767);
+            ASSERT(atom->number >= -32768 && atom->number <= 32767);
         }
         else if (byte0 == 29)
         {
@@ -250,7 +251,7 @@ void read_char_string(CharStringReader *reader, OUT CharString *char_string)
         {
             atom->type = CharStringAtomType::number;
             atom->number = (Int)byte0 - 139;
-            assert(atom->number >= -107 && atom->number <= 107);
+            ASSERT(atom->number >= -107 && atom->number <= 107);
         }
         else if (byte0 >= 247 && byte0 <= 250)
         {
@@ -260,7 +261,7 @@ void read_char_string(CharStringReader *reader, OUT CharString *char_string)
             read_char_string_byte(reader, &byte1);
 
             atom->number = ((Int)byte0 - 247) * 256 + (Int)byte1 + 108;
-            assert(atom->number >= 108 && atom->number <= 1131);
+            ASSERT(atom->number >= 108 && atom->number <= 1131);
         }
         else if (byte0 >= 251 && byte0 <= 254)
         {
@@ -270,7 +271,7 @@ void read_char_string(CharStringReader *reader, OUT CharString *char_string)
             read_char_string_byte(reader, &byte1);
 
             atom->number = -((Int)byte0 - 251) * 256 - (Int)byte1 - 108;
-            assert(atom->number >= -1131 && atom->number <= -108);
+            ASSERT(atom->number >= -1131 && atom->number <= -108);
         }
         else if (byte0 == 255)
         {
@@ -344,7 +345,7 @@ CharString *get_subr(CharStringRunner *runner, Int subr_i)
     }
 
     Int subr_index = subr_i + bias;
-    assert(subr_index >= 0 && subr_index < runner->subr_count);
+    ASSERT(subr_index >= 0 && subr_index < runner->subr_count);
 
     return runner->subr_list + subr_index;
 }
@@ -365,7 +366,7 @@ void refine_bbox(CharStringRunner *runner, Real x, Real y)
 
 void add_line(CharStringRunner *runner, Real x0, Real y0, Real x1, Real y1)
 {
-    Line *line = runner->paths[runner->paths.length - 1].lines.push();
+    Line *line = runner->paths[runner->paths.count - 1].lines.push();
     line->x0 = x0;
     line->y0 = y0;
     line->x1 = x1;
@@ -417,7 +418,7 @@ void add_cubic_curve(CharStringRunner *runner, Real x0, Real y0, Real x1, Real y
 
 void run_char_string(CharStringRunner *runner, CharString *char_string)
 {
-    for (Int atom_i = 0; atom_i < char_string->atoms.length; atom_i++)
+    for (Int atom_i = 0; atom_i < char_string->atoms.count; atom_i++)
     {
         if (runner->ended)
         {
@@ -439,13 +440,13 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
         }
         else
         {
-            assert(atom->type == CharStringAtomType::op);
+            ASSERT(atom->type == CharStringAtomType::op);
 
             switch (atom->op)
             {
             case CharStringOpType::rmoveto:
             {
-                assert(runner->stack_length == 2);
+                ASSERT(runner->stack_length == 2);
 
                 close_path(runner);
                 runner->paths.push()->lines = create_array<Line>();
@@ -467,7 +468,7 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
 
             case CharStringOpType::hmoveto:
             {
-                assert(runner->stack_length == 1);
+                ASSERT(runner->stack_length == 1);
 
                 close_path(runner);
                 runner->paths.push()->lines = create_array<Line>();
@@ -487,7 +488,7 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
 
             case CharStringOpType::vmoveto:
             {
-                assert(runner->stack_length == 1);
+                ASSERT(runner->stack_length == 1);
 
                 close_path(runner);
                 runner->paths.push()->lines = create_array<Line>();
@@ -507,8 +508,8 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
 
             case CharStringOpType::rlineto:
             {
-                assert(runner->stack_length > 0);
-                assert(runner->stack_length % 2 == 0);
+                ASSERT(runner->stack_length > 0);
+                ASSERT(runner->stack_length % 2 == 0);
 
                 Int arg_i = 0;
                 while (arg_i < runner->stack_length)
@@ -528,7 +529,7 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
             case CharStringOpType::hlineto:
             case CharStringOpType::vlineto:
             {
-                assert(runner->stack_length > 0);
+                ASSERT(runner->stack_length > 0);
 
                 Int arg_i = 0;
                 if (atom->op == CharStringOpType::vlineto)
@@ -567,8 +568,8 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
 
             case CharStringOpType::rrcurveto:
             {
-                assert(runner->stack_length > 0);
-                assert(runner->stack_length % 6 == 0);
+                ASSERT(runner->stack_length > 0);
+                ASSERT(runner->stack_length % 6 == 0);
 
                 Int arg_i = 0;
                 while (arg_i < runner->stack_length)
@@ -601,8 +602,8 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
 
             case CharStringOpType::hhcurveto:
             {
-                assert(runner->stack_length > 0);
-                assert(runner->stack_length % 4 == 0 || runner->stack_length % 4 == 1);
+                ASSERT(runner->stack_length > 0);
+                ASSERT(runner->stack_length % 4 == 0 || runner->stack_length % 4 == 1);
 
                 Int arg_i = 0;
                 if (runner->stack_length % 2 == 1)
@@ -645,8 +646,8 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
 
             case CharStringOpType::vvcurveto:
             {
-                assert(runner->stack_length > 0);
-                assert(runner->stack_length % 4 == 0 || runner->stack_length % 4 == 1);
+                ASSERT(runner->stack_length > 0);
+                ASSERT(runner->stack_length % 4 == 0 || runner->stack_length % 4 == 1);
 
                 Int arg_i = 0;
                 if (runner->stack_length % 2 == 1)
@@ -690,8 +691,8 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
             case CharStringOpType::hvcurveto:
             case CharStringOpType::vhcurveto:
             {
-                assert(runner->stack_length > 0);
-                assert(runner->stack_length % 8 == 0 || runner->stack_length % 8 == 1 ||
+                ASSERT(runner->stack_length > 0);
+                ASSERT(runner->stack_length % 8 == 0 || runner->stack_length % 8 == 1 ||
                        runner->stack_length % 8 == 4 || runner->stack_length % 8 == 5);
 
                 Int arg_i = 0;
@@ -771,7 +772,7 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
 
             case CharStringOpType::callsubr:
             {
-                assert(runner->stack_length > 0);
+                ASSERT(runner->stack_length > 0);
 
                 CharString *subr_char_string = get_subr(runner, (Int)runner->stack[--runner->stack_length]);
                 runner->subr_depth++;
@@ -781,7 +782,7 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
 
             case CharStringOpType::return_:
             {
-                assert(runner->subr_depth > 0);
+                ASSERT(runner->subr_depth > 0);
                 runner->subr_depth--;
                 return;
             }
@@ -797,7 +798,7 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
 
             default:
             {
-                assert(false);
+                ASSERT(false);
             }
             break;
             }

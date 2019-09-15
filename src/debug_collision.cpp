@@ -86,22 +86,13 @@ Bool create_debug_collision_pipeline(VulkanDevice *device, VulkanPipeline *pipel
     return true;
 }
 
-struct DebugCollisionUniformData
-{
-    Mat4 view;
-    Mat4 projection;
-};
-
 struct DebugCollisionFrame
 {
     VulkanBuffer vertex_buffer;
-    VulkanBuffer uniform_buffer;
     Array<VkFramebuffer> frame_buffers;
-    VkDescriptorSet uniform_descriptor_set;
 };
 
-Bool create_debug_collision_frame(VulkanDevice *device, VulkanPipeline *pipeline, Array<Entity> *entities, DebugCollisionFrame *frame,
-                                  VulkanBuffer *host_vertex_buffer, VulkanBuffer *host_uniform_buffer)
+Bool create_debug_collision_frame(VulkanDevice *device, VulkanPipeline *pipeline, Array<Piece> *pieces, DebugCollisionFrame *frame, VulkanBuffer *host_vertex_buffer)
 {
     VkResult result_code;
 
@@ -133,11 +124,11 @@ Bool create_debug_collision_frame(VulkanDevice *device, VulkanPipeline *pipeline
     }
 
     Int total_vertex_data_length = 0;
-    for (Int entity_i = 1; entity_i < entities->count; entity_i++)
+    Int line_count = 12;
+    for (Int piece_i = 0; piece_i < pieces->count; piece_i++)
     {
-        total_vertex_data_length += sizeof(DebugCollisionVertex) * 12 * 2;
+        total_vertex_data_length += sizeof(DebugCollisionVertex) * line_count * 2;
     }
-    Int total_uniform_data_length = sizeof(DebugCollisionUniformData);
 
     if (!create_buffer(device, total_vertex_data_length,
                        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -153,47 +144,160 @@ Bool create_debug_collision_frame(VulkanDevice *device, VulkanPipeline *pipeline
         return false;
     }
 
-    if (!create_buffer(device, total_uniform_data_length,
-                       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                       &frame->uniform_buffer))
-    {
-        return false;
-    }
-
-    if (!create_buffer(device, total_uniform_data_length,
-                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                       host_uniform_buffer))
-    {
-        return false;
-    }
-
-    VkDescriptorSetAllocateInfo common_descriptor_set_alloc_info = {};
-    common_descriptor_set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    common_descriptor_set_alloc_info.descriptorPool = device->descriptor_pool;
-    common_descriptor_set_alloc_info.descriptorSetCount = 1;
-    common_descriptor_set_alloc_info.pSetLayouts = &pipeline->descriptor_set_layouts[0];
-
-    result_code = vkAllocateDescriptorSets(device->handle, &common_descriptor_set_alloc_info, &frame->uniform_descriptor_set);
-    if (result_code != VK_SUCCESS)
-    {
-        return false;
-    }
-
-    VkDescriptorBufferInfo descriptor_buffer_info = {};
-    descriptor_buffer_info.buffer = frame->uniform_buffer.handle;
-    descriptor_buffer_info.offset = 0;
-    descriptor_buffer_info.range = sizeof(DebugCollisionUniformData);
-
-    VkWriteDescriptorSet descriptor_set_write = {};
-    descriptor_set_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptor_set_write.dstSet = frame->uniform_descriptor_set;
-    descriptor_set_write.dstBinding = 0;
-    descriptor_set_write.dstArrayElement = 0;
-    descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptor_set_write.descriptorCount = 1;
-    descriptor_set_write.pBufferInfo = &descriptor_buffer_info;
-
-    vkUpdateDescriptorSets(device->handle, 1, &descriptor_set_write, 0, null);
-
     return true;
+}
+
+Void write_collision_box_vertex_data(CollisionBox *collision_box, DebugCollisionVertex *vertex)
+{
+    {
+        vertex->pos.x = collision_box->center.x + collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y + collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z + collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x + collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y + collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z - collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x + collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y - collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z + collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x + collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y - collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z - collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x + collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y + collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z + collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x + collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y - collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z + collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+    }
+
+    {
+        vertex->pos.x = collision_box->center.x + collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y + collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z - collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x - collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y + collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z - collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x + collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y - collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z - collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x - collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y - collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z - collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x + collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y + collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z - collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x + collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y - collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z - collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+    }
+
+    {
+        vertex->pos.x = collision_box->center.x - collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y + collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z - collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x - collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y + collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z + collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x - collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y - collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z - collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x - collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y - collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z + collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x - collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y + collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z - collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x - collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y - collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z - collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+    }
+
+    {
+        vertex->pos.x = collision_box->center.x - collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y + collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z + collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x + collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y + collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z + collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x - collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y - collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z + collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x + collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y - collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z + collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x - collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y + collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z + collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+
+        vertex->pos.x = collision_box->center.x - collision_box->radius.x;
+        vertex->pos.y = collision_box->center.y - collision_box->radius.y;
+        vertex->pos.z = collision_box->center.z + collision_box->radius.z;
+        vertex->color = {1, 0, 0};
+        vertex++;
+    }
 }

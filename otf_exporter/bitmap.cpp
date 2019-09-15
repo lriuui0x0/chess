@@ -1,6 +1,8 @@
 #pragma once
 
-#include "../src/util.cpp"
+#include "../lib/util.hpp"
+#include <cstring>
+#include <cstdio>
 
 // The algorithm in this file is horrible. Should use proper scanline fill instead.
 
@@ -110,7 +112,7 @@ void fill_black(Bitmap *bitmap, Int x, Int y, Bool *visited)
     *queue.push() = {x, y};
     *(visited + bitmap->width * y + x) = true;
 
-    while (queue.length - head > 0)
+    while (queue.count - head > 0)
     {
         Int x = queue[head].x;
         Int y = queue[head].y;
@@ -153,7 +155,7 @@ void fill_white(Bitmap *bitmap, Int x, Int y, Bool *visited, Array<Point> *borde
     *queue.push() = {x, y};
     *(visited + bitmap->width * y + x) = true;
 
-    while (queue.length - head > 0)
+    while (queue.count - head > 0)
     {
         Int x = queue[head].x;
         Int y = queue[head].y;
@@ -272,7 +274,7 @@ void fill_shape(Bitmap *bitmap)
         }
     }
 
-    for (Int i = 0; i < border.length; i++)
+    for (Int i = 0; i < border.count; i++)
     {
         Point *border_point = &border[i];
         Bool pixel_visited = get_visited(bitmap, visited, border_point->x, border_point->y);
@@ -289,8 +291,8 @@ void fill_shape(Bitmap *bitmap)
 
 void write_bitmap(Str filename, Bitmap *bitmap)
 {
-    FILE *file_handle = fopen((RawStr)filename.data, "wb");
-    assert(file_handle);
+    FILE *file_handle = fopen((CStr)filename.data, "wb");
+    ASSERT(file_handle);
 
     UInt8 bf_type[2] = {'B', 'M'};
     fwrite(&bf_type, 2, 1, file_handle);
@@ -337,5 +339,5 @@ void write_bitmap(Str filename, Bitmap *bitmap)
         row += bitmap->width;
     }
 
-    assert(fclose(file_handle) == 0);
+    ASSERT(fclose(file_handle) == 0);
 }

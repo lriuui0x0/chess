@@ -3,6 +3,7 @@
 #include "../lib/util.hpp"
 #include "math.cpp"
 #include "asset.cpp"
+#include "game.cpp"
 
 struct Ray
 {
@@ -14,15 +15,6 @@ struct CollisionBox
 {
     Vec3 center;
     Vec3 radius;
-};
-
-struct Entity
-{
-    Str name;
-    Vec3 pos;
-    Mat4 rotation;
-    Mesh *mesh;
-    CollisionBox collision_box;
 };
 
 Real check_collision(Ray *ray, CollisionBox *collision_box)
@@ -48,4 +40,39 @@ Real check_collision(Ray *ray, CollisionBox *collision_box)
     }
 
     return t_min;
+}
+
+struct Entity
+{
+    Vec3 pos;
+    Mat4 rotation;
+    Mesh *mesh;
+};
+
+struct MoveAnimation
+{
+    Real t;
+    Vec3 pos_from;
+    Vec3 pos_to;
+};
+
+struct Piece : Entity
+{
+    Str name;
+    CollisionBox collision_box;
+
+    Bool is_moving;
+    MoveAnimation move_animation;
+};
+
+struct Board : Entity
+{
+    CollisionBox collision_box[BOARD_SQUARE_COUNT];
+};
+
+Vec3 get_square_pos(Int row, Int column)
+{
+    ASSERT(row >= 0 && row < BOARD_ROW_COUNT);
+    ASSERT(column >= 0 && column < BOARD_COLUMN_COUNT);
+    return {(Real)(column * 100.0), 0, (Real)(row * 100.0)};
 }

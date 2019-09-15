@@ -212,3 +212,6 @@ Void free_command_buffer(VulkanDevice *device, VkCommandBuffer command_buffer);
 
 Bool upload_buffer(VulkanDevice *device, VulkanBuffer *host_buffer, VulkanBuffer *device_buffer);
 Bool upload_texture(VulkanDevice *device, VulkanBuffer *host_buffer, VkImage image, Int width, Int height);
+
+Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout *descriptor_set_layout,
+                             VulkanBuffer *uniform_buffer, Int offset, Int range, VkDescriptorSet *descriptor_set);

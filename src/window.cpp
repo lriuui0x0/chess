@@ -273,6 +273,24 @@ Bool get_window_message(Window window, WindowMessage *message)
 
                 got_message = true;
             }
+            else if (os_message.message == WM_RBUTTONDOWN)
+            {
+                message->type = WindowMessageType::mouse_down;
+                message->mouse_down_data.button_type = WindowMessageMouseButtonType::right;
+                message->mouse_down_data.x = GET_X_LPARAM(os_message.lParam);
+                message->mouse_down_data.y = GET_Y_LPARAM(os_message.lParam);
+
+                got_message = true;
+            }
+            else if (os_message.message == WM_RBUTTONUP)
+            {
+                message->type = WindowMessageType::mouse_up;
+                message->mouse_up_data.button_type = WindowMessageMouseButtonType::right;
+                message->mouse_up_data.x = GET_X_LPARAM(os_message.lParam);
+                message->mouse_up_data.y = GET_Y_LPARAM(os_message.lParam);
+
+                got_message = true;
+            }
             else if (os_message.message == WM_MOUSEMOVE)
             {
                 message->type = WindowMessageType::mouse_move;

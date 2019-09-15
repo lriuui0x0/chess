@@ -361,6 +361,16 @@ Mat4 get_translate_matrix(Real x, Real y, Real z)
     return result;
 }
 
+Mat4 get_scale_matrix(Real x, Real y, Real z)
+{
+    Mat4 result;
+    result[0] = {x, 0, 0, 0};
+    result[1] = {0, y, 0, 0};
+    result[2] = {0, 0, z, 0};
+    result[3] = {0, 0, 0, 1};
+    return result;
+}
+
 Mat4 get_rotation_matrix_x(Real angle)
 {
     Mat4 result;

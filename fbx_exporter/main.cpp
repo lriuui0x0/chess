@@ -1,6 +1,6 @@
 #include "fbxsdk.h"
 
-#include "../src/util.cpp"
+#include "../lib/util.hpp"
 #include "../src/math.cpp"
 #include <cstdio>
 
@@ -32,23 +32,23 @@ Bool vec3_equal(Vec3 u, Vec3 v)
     return u.x == v.x && u.y == v.y && u.z == v.z;
 }
 
-int main(Int argc, RawStr *argv)
+int main(Int argc, CStr *argv)
 {
     argc--;
     argv++;
 
-    assert(argc == 2);
-    RawStr input_filename = argv[0];
-    RawStr output_filename = argv[1];
+    ASSERT(argc == 2);
+    CStr input_filename = argv[0];
+    CStr output_filename = argv[1];
 
     FbxManager *manager = FbxManager::Create();
     FbxIOSettings *io_settings = FbxIOSettings::Create(manager, IOSROOT);
     manager->SetIOSettings(io_settings);
     FbxImporter *importer = FbxImporter::Create(manager, "");
-    assert(importer->Initialize(input_filename, -1, manager->GetIOSettings()));
+    ASSERT(importer->Initialize(input_filename, -1, manager->GetIOSettings()));
 
     FILE *output_file = fopen(output_filename, "wb");
-    assert(fseek(output_file, 0, SEEK_SET) == 0);
+    ASSERT(fseek(output_file, 0, SEEK_SET) == 0);
 
     FbxScene *scene = FbxScene::Create(manager, "scene");
     importer->Import(scene);
@@ -57,7 +57,7 @@ int main(Int argc, RawStr *argv)
     FbxMesh *mesh = (FbxMesh *)node->GetNodeAttribute();
 
     FbxLayerElementMaterial *material_layer = mesh->GetLayer(0)->GetMaterials();
-    assert(material_layer);
+    ASSERT(material_layer);
 
     Array<VertexCopy> vertex_copies = create_array<VertexCopy>();
     Array<UInt32> indices = create_array<UInt32>();
@@ -68,20 +68,20 @@ int main(Int argc, RawStr *argv)
     {
         Int material_index = material_layer->GetMappingMode() == FbxLayerElement::eAllSame ? material_layer->GetIndexArray()[0] : material_layer->GetIndexArray()[polygon_index];
         FbxSurfaceLambert *material = (FbxSurfaceLambert *)scene->GetMaterial(material_index);
-        assert(material);
+        ASSERT(material);
         FbxDouble3 fbx_color = material->Diffuse.Get();
         Vec3 vertex_color = convert_vec3(fbx_color);
 
         for (Int polygon_vertex_index = 0; polygon_vertex_index < 3; polygon_vertex_index++)
         {
             Int32 vertex_index = mesh->GetPolygonVertex(polygon_index, polygon_vertex_index);
-            assert(vertex_index != -1);
+            ASSERT(vertex_index != -1);
             FbxVector4 fbx_normal;
-            assert(mesh->GetPolygonVertexNormal(polygon_index, polygon_vertex_index, fbx_normal));
+            ASSERT(mesh->GetPolygonVertexNormal(polygon_index, polygon_vertex_index, fbx_normal));
             Vec3 vertex_normal = convert_vec3(fbx_normal);
 
             Bool found_copy = false;
-            for (Int vertex_copy_index = 0; vertex_copy_index < vertex_copies.length; vertex_copy_index++)
+            for (Int vertex_copy_index = 0; vertex_copy_index < vertex_copies.count; vertex_copy_index++)
             {
                 VertexCopy *vertex_copy = &vertex_copies[vertex_copy_index];
                 if (vertex_index == vertex_copy->index && vec3_equal(vertex_copy->normal, vertex_normal) && vec3_equal(vertex_copy->color, vertex_color))
@@ -99,33 +99,33 @@ int main(Int argc, RawStr *argv)
                 vertex_copy->index = vertex_index;
                 vertex_copy->normal = vertex_normal;
                 vertex_copy->color = vertex_color;
-                *indices.push() = vertex_copies.length - 1;
+                *indices.push() = vertex_copies.count - 1;
             }
         }
     }
 
-    assert(fwrite(&vertex_copies.length, sizeof(Int32), 1, output_file) == 1);
-    for (Int i = 0; i < vertex_copies.length; i++)
+    ASSERT(fwrite(&vertex_copies.count, sizeof(Int32), 1, output_file) == 1);
+    for (Int i = 0; i < vertex_copies.count; i++)
     {
         VertexCopy *vertex_copy = &vertex_copies[i];
 
         FbxVector4 fbx_vertex_pos = mesh->GetControlPointAt(vertex_copy->index);
         Vec3 vertex_pos = convert_vec3(fbx_vertex_pos);
-        assert(fwrite(&vertex_pos.x, sizeof(Real), 1, output_file) == 1);
-        assert(fwrite(&vertex_pos.y, sizeof(Real), 1, output_file) == 1);
-        assert(fwrite(&vertex_pos.z, sizeof(Real), 1, output_file) == 1);
+        ASSERT(fwrite(&vertex_pos.x, sizeof(Real), 1, output_file) == 1);
+        ASSERT(fwrite(&vertex_pos.y, sizeof(Real), 1, output_file) == 1);
+        ASSERT(fwrite(&vertex_pos.z, sizeof(Real), 1, output_file) == 1);
 
         Vec3 vertex_normal = normalize(vertex_copy->normal);
-        assert(fwrite(&vertex_normal.x, sizeof(Real), 1, output_file) == 1);
-        assert(fwrite(&vertex_normal.y, sizeof(Real), 1, output_file) == 1);
-        assert(fwrite(&vertex_normal.z, sizeof(Real), 1, output_file) == 1);
+        ASSERT(fwrite(&vertex_normal.x, sizeof(Real), 1, output_file) == 1);
+        ASSERT(fwrite(&vertex_normal.y, sizeof(Real), 1, output_file) == 1);
+        ASSERT(fwrite(&vertex_normal.z, sizeof(Real), 1, output_file) == 1);
 
         Vec3 vertex_color = vertex_copy->color;
-        assert(fwrite(&vertex_color.x, sizeof(Real), 1, output_file) == 1);
-        assert(fwrite(&vertex_color.y, sizeof(Real), 1, output_file) == 1);
-        assert(fwrite(&vertex_color.z, sizeof(Real), 1, output_file) == 1);
+        ASSERT(fwrite(&vertex_color.x, sizeof(Real), 1, output_file) == 1);
+        ASSERT(fwrite(&vertex_color.y, sizeof(Real), 1, output_file) == 1);
+        ASSERT(fwrite(&vertex_color.z, sizeof(Real), 1, output_file) == 1);
     }
 
-    assert(fwrite(&indices.length, sizeof(Int32), 1, output_file) == 1);
-    assert(fwrite(indices.data, sizeof(UInt32), indices.length, output_file) == (size_t)indices.length);
+    ASSERT(fwrite(&indices.count, sizeof(Int32), 1, output_file) == 1);
+    ASSERT(fwrite(indices.data, sizeof(UInt32), indices.count, output_file) == (size_t)indices.count);
 }

@@ -16,8 +16,6 @@ struct EntityUniformData
 {
     Mat4 world;
     Mat4 normal_world;
-    Vec4 color;
-    Vec4 padding;
 };
 
 Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
@@ -135,10 +133,11 @@ struct SceneFrame
     VulkanBuffer index_buffer;
     VulkanBuffer uniform_buffer;
     VkDescriptorSet scene_descriptor_set;
-    Array<VkDescriptorSet> entity_descriptor_sets;
+    VkDescriptorSet board_descriptor_set;
+    Array<VkDescriptorSet> piece_descriptor_sets;
 };
 
-Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Array<Entity> *entities, SceneFrame *frame,
+Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *board, Array<Piece> *pieces, SceneFrame *frame,
                         VulkanBuffer *host_vertex_buffer, VulkanBuffer *host_index_buffer, VulkanBuffer *host_uniform_buffer)
 {
     VkResult result_code;
@@ -216,14 +215,14 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Array<En
         }
     }
 
-    Int total_vertex_data_length = 0;
-    Int total_index_data_length = 0;
-    for (Int entity_i = 0; entity_i < entities->count; entity_i++)
+    Int total_vertex_data_length = sizeof(Vertex) * board->mesh->vertex_count;
+    Int total_index_data_length = sizeof(UInt32) * board->mesh->index_count;
+    for (Int piece_i = 0; piece_i < pieces->count; piece_i++)
     {
-        total_vertex_data_length += sizeof(Vertex) * entities->data[entity_i].mesh->vertex_count;
-        total_index_data_length += sizeof(UInt32) * entities->data[entity_i].mesh->index_count;
+        total_vertex_data_length += sizeof(Vertex) * pieces->data[piece_i].mesh->vertex_count;
+        total_index_data_length += sizeof(UInt32) * pieces->data[piece_i].mesh->index_count;
     }
-    Int total_uniform_data_length = sizeof(SceneUniformData) + sizeof(EntityUniformData) * entities->count;
+    Int total_uniform_data_length = sizeof(SceneUniformData) + sizeof(EntityUniformData) * (pieces->count + 1);
 
     if (!create_buffer(device, total_vertex_data_length,
                        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -267,67 +266,43 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Array<En
         return false;
     }
 
-    VkDescriptorSetAllocateInfo common_descriptor_set_alloc_info = {};
-    common_descriptor_set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    common_descriptor_set_alloc_info.descriptorPool = device->descriptor_pool;
-    common_descriptor_set_alloc_info.descriptorSetCount = 1;
-    common_descriptor_set_alloc_info.pSetLayouts = &pipeline->descriptor_set_layouts[0];
-
-    result_code = vkAllocateDescriptorSets(device->handle, &common_descriptor_set_alloc_info, &frame->scene_descriptor_set);
-    if (result_code != VK_SUCCESS)
+    if (!allocate_descriptor_set(device, &pipeline->descriptor_set_layouts[0], &frame->uniform_buffer,
+                                 0, sizeof(SceneUniformData), &frame->scene_descriptor_set))
     {
         return false;
     }
 
-    VkDescriptorBufferInfo descriptor_buffer_info = {};
-    descriptor_buffer_info.buffer = frame->uniform_buffer.handle;
-    descriptor_buffer_info.offset = 0;
-    descriptor_buffer_info.range = sizeof(SceneUniformData);
-
-    VkWriteDescriptorSet descriptor_set_write = {};
-    descriptor_set_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptor_set_write.dstSet = frame->scene_descriptor_set;
-    descriptor_set_write.dstBinding = 0;
-    descriptor_set_write.dstArrayElement = 0;
-    descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptor_set_write.descriptorCount = 1;
-    descriptor_set_write.pBufferInfo = &descriptor_buffer_info;
-
-    vkUpdateDescriptorSets(device->handle, 1, &descriptor_set_write, 0, null);
-
-    frame->entity_descriptor_sets = create_array<VkDescriptorSet>(entities->count);
-    frame->entity_descriptor_sets.count = entities->count;
-
-    for (Int entity_i = 0; entity_i < entities->count; entity_i++)
+    if (!allocate_descriptor_set(device, &pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
+                                 sizeof(SceneUniformData), sizeof(EntityUniformData), &frame->board_descriptor_set))
     {
-        VkDescriptorSetAllocateInfo entity_descriptor_set_alloc_info = {};
-        entity_descriptor_set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        entity_descriptor_set_alloc_info.descriptorPool = device->descriptor_pool;
-        entity_descriptor_set_alloc_info.descriptorSetCount = 1;
-        entity_descriptor_set_alloc_info.pSetLayouts = &pipeline->descriptor_set_layouts[1];
+        return false;
+    }
 
-        result_code = vkAllocateDescriptorSets(device->handle, &entity_descriptor_set_alloc_info, &frame->entity_descriptor_sets[entity_i]);
-        if (result_code != VK_SUCCESS)
+    frame->piece_descriptor_sets = create_array<VkDescriptorSet>(pieces->count);
+    frame->piece_descriptor_sets.count = pieces->count;
+    for (Int piece_i = 0; piece_i < pieces->count; piece_i++)
+    {
+        if (!allocate_descriptor_set(device, &pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
+                                     (piece_i + 1) * sizeof(EntityUniformData) + sizeof(SceneUniformData), sizeof(EntityUniformData), &frame->piece_descriptor_sets[piece_i]))
         {
             return false;
         }
-
-        VkDescriptorBufferInfo descriptor_buffer_info = {};
-        descriptor_buffer_info.buffer = frame->uniform_buffer.handle;
-        descriptor_buffer_info.offset = entity_i * sizeof(EntityUniformData) + sizeof(SceneUniformData);
-        descriptor_buffer_info.range = sizeof(EntityUniformData);
-
-        VkWriteDescriptorSet descriptor_set_write = {};
-        descriptor_set_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptor_set_write.dstSet = frame->entity_descriptor_sets[entity_i];
-        descriptor_set_write.dstBinding = 0;
-        descriptor_set_write.dstArrayElement = 0;
-        descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptor_set_write.descriptorCount = 1;
-        descriptor_set_write.pBufferInfo = &descriptor_buffer_info;
-
-        vkUpdateDescriptorSets(device->handle, 1, &descriptor_set_write, 0, null);
     }
 
     return true;
+}
+
+SceneUniformData *get_scene_uniform_data(VulkanBuffer *uniform_buffer)
+{
+    return (SceneUniformData *)uniform_buffer->data;
+}
+
+EntityUniformData *get_board_uniform_data(VulkanBuffer *uniform_buffer)
+{
+    return (EntityUniformData *)(uniform_buffer->data + sizeof(SceneUniformData));
+}
+
+EntityUniformData *get_piece_uniform_data(VulkanBuffer *uniform_buffer, Int piece_index)
+{
+    return (EntityUniformData *)(uniform_buffer->data + sizeof(SceneUniformData) + sizeof(EntityUniformData) * (piece_index + 1));
 }

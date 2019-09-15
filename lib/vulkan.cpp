@@ -1145,3 +1145,39 @@ Bool upload_texture(VulkanDevice *device, VulkanBuffer *host_buffer, VkImage ima
 
     return true;
 }
+
+Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout *descriptor_set_layout,
+                             VulkanBuffer *uniform_buffer, Int offset, Int range, VkDescriptorSet *descriptor_set)
+{
+    VkResult result_code;
+
+    VkDescriptorSetAllocateInfo entity_descriptor_set_alloc_info = {};
+    entity_descriptor_set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    entity_descriptor_set_alloc_info.descriptorPool = device->descriptor_pool;
+    entity_descriptor_set_alloc_info.descriptorSetCount = 1;
+    entity_descriptor_set_alloc_info.pSetLayouts = descriptor_set_layout;
+
+    result_code = vkAllocateDescriptorSets(device->handle, &entity_descriptor_set_alloc_info, descriptor_set);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkDescriptorBufferInfo descriptor_buffer_info = {};
+    descriptor_buffer_info.buffer = uniform_buffer->handle;
+    descriptor_buffer_info.offset = offset;
+    descriptor_buffer_info.range = range;
+
+    VkWriteDescriptorSet descriptor_set_write = {};
+    descriptor_set_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptor_set_write.dstSet = *descriptor_set;
+    descriptor_set_write.dstBinding = 0;
+    descriptor_set_write.dstArrayElement = 0;
+    descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptor_set_write.descriptorCount = 1;
+    descriptor_set_write.pBufferInfo = &descriptor_buffer_info;
+
+    vkUpdateDescriptorSets(device->handle, 1, &descriptor_set_write, 0, null);
+
+    return true;
+}

@@ -1,4 +1,4 @@
-#include "../src/util.cpp"
+#include "../lib/util.hpp"
 
 #include "char_string.cpp"
 #include "bitmap.cpp"
@@ -169,29 +169,29 @@ struct OtfFont
     OtfTableRecord *table_records;
 };
 
-Void peek8(Reader *reader, OUT UInt8 *result)
+Void peek8(Reader *reader, UInt8 *result)
 {
-    assert(reader->pos + 1 <= reader->buffer.length);
+    ASSERT(reader->pos + 1 <= reader->buffer.count);
     *result = reader->buffer[reader->pos];
 }
 
-Void read8(Reader *reader, OUT UInt8 *result)
+Void read8(Reader *reader, UInt8 *result)
 {
-    assert(reader->pos + 1 <= reader->buffer.length);
+    ASSERT(reader->pos + 1 <= reader->buffer.count);
     *result = reader->buffer[reader->pos++];
 }
 
-Void read16(Reader *reader, OUT UInt16 *result)
+Void read16(Reader *reader, UInt16 *result)
 {
-    assert(reader->pos + 2 <= reader->buffer.length);
+    ASSERT(reader->pos + 2 <= reader->buffer.count);
     *result = 0;
     *result |= reader->buffer[reader->pos++] << 8;
     *result |= reader->buffer[reader->pos++];
 }
 
-Void read32(Reader *reader, OUT UInt32 *result)
+Void read32(Reader *reader, UInt32 *result)
 {
-    assert(reader->pos + 4 <= reader->buffer.length);
+    ASSERT(reader->pos + 4 <= reader->buffer.count);
     *result = 0;
     *result |= reader->buffer[reader->pos++] << 24;
     *result |= reader->buffer[reader->pos++] << 16;
@@ -199,9 +199,9 @@ Void read32(Reader *reader, OUT UInt32 *result)
     *result |= reader->buffer[reader->pos++];
 }
 
-Void read_tag(Reader *reader, OUT OtfTag *result)
+Void read_tag(Reader *reader, OtfTag *result)
 {
-    assert(reader->pos + 4 <= reader->buffer.length);
+    ASSERT(reader->pos + 4 <= reader->buffer.count);
 
     Int8 *pointer = (Int8 *)result;
     *pointer++ = reader->buffer[reader->pos++];
@@ -257,15 +257,15 @@ UInt get_cff_index_offset(CffIndex *index, Int offset_i)
     }
     else
     {
-        assert(false);
+        ASSERT(false);
         return 0;
     }
 
-    assert(result >= 1);
+    ASSERT(result >= 1);
     return result - 1;
 }
 
-void read_cff_index(Reader *reader, OUT CffIndex *index)
+void read_cff_index(Reader *reader, CffIndex *index)
 {
     read16(reader, &index->count);
 
@@ -288,7 +288,7 @@ void read_cff_index(Reader *reader, OUT CffIndex *index)
     }
 }
 
-void read_cff_dict_single_value(Reader *reader, OUT CffDictValue *value)
+void read_cff_dict_single_value(Reader *reader, CffDictValue *value)
 {
     UInt8 byte0;
     read8(reader, &byte0);
@@ -297,7 +297,7 @@ void read_cff_dict_single_value(Reader *reader, OUT CffDictValue *value)
     {
         value->type = CffDictValueType::integer;
         value->integer = (Int)byte0 - 139;
-        assert(value->integer >= -107 && value->integer <= 107);
+        ASSERT(value->integer >= -107 && value->integer <= 107);
     }
     else if (byte0 >= 247 && byte0 <= 250)
     {
@@ -307,7 +307,7 @@ void read_cff_dict_single_value(Reader *reader, OUT CffDictValue *value)
         UInt8 byte1;
         read8(reader, &byte1);
         value->integer += (Int)byte1 + 108;
-        assert(value->integer >= 108 && value->integer <= 1131);
+        ASSERT(value->integer >= 108 && value->integer <= 1131);
     }
     else if (byte0 >= 251 && byte0 <= 254)
     {
@@ -317,7 +317,7 @@ void read_cff_dict_single_value(Reader *reader, OUT CffDictValue *value)
         UInt8 byte1;
         read8(reader, &byte1);
         value->integer += -(Int)byte1 - 108;
-        assert(value->integer >= -1131 && value->integer <= -108);
+        ASSERT(value->integer >= -1131 && value->integer <= -108);
     }
     else if (byte0 == 28)
     {
@@ -330,7 +330,7 @@ void read_cff_dict_single_value(Reader *reader, OUT CffDictValue *value)
 
         Int16 integer_value = ((Int)byte1 << 8) | (Int)byte2;
         value->integer = integer_value;
-        assert(value->integer >= -32768 && value->integer <= 32767);
+        ASSERT(value->integer >= -32768 && value->integer <= 32767);
     }
     else if (byte0 == 29)
     {
@@ -395,7 +395,7 @@ void read_cff_dict_single_value(Reader *reader, OUT CffDictValue *value)
                     }
                     else
                     {
-                        assert(false);
+                        ASSERT(false);
                     }
                 }
                 else if (nibble[i] == 0xa)
@@ -412,11 +412,11 @@ void read_cff_dict_single_value(Reader *reader, OUT CffDictValue *value)
                 }
                 else if (nibble[i] == 0xd)
                 {
-                    assert(false);
+                    ASSERT(false);
                 }
                 else if (nibble[i] == 0xe)
                 {
-                    assert(!is_negative);
+                    ASSERT(!is_negative);
                     is_negative = true;
                 }
                 else if (nibble[i] == 0xf)
@@ -445,11 +445,11 @@ void read_cff_dict_single_value(Reader *reader, OUT CffDictValue *value)
     }
     else
     {
-        assert(false);
+        ASSERT(false);
     }
 }
 
-void read_cff_dict_entry(Reader *reader, OUT CffDictEntry *entry)
+void read_cff_dict_entry(Reader *reader, CffDictEntry *entry)
 {
     read_cff_dict_single_value(reader, &entry->value);
 
@@ -491,7 +491,7 @@ void read_cff_dict_entry(Reader *reader, OUT CffDictEntry *entry)
     }
 }
 
-void read_cff_dict(Reader *reader, Int end_pos, OUT CffDict *dict)
+void read_cff_dict(Reader *reader, Int end_pos, CffDict *dict)
 {
     dict->entries = create_array<CffDictEntry>();
 
@@ -512,8 +512,8 @@ Int get_glyph_id(CmapTable *cmap_table, CffTable *cff_table, Int8 character)
             break;
         }
     }
-    assert(encoding_table);
-    assert(encoding_table->format == 4);
+    ASSERT(encoding_table);
+    ASSERT(encoding_table->format == 4);
 
     Int found_segment_index = -1;
     for (Int segment_index = 0; segment_index < encoding_table->segment_count_x2 / 2; segment_index++)
@@ -526,7 +526,7 @@ Int get_glyph_id(CmapTable *cmap_table, CffTable *cff_table, Int8 character)
             break;
         }
     }
-    assert(found_segment_index != -1);
+    ASSERT(found_segment_index != -1);
 
     UInt16 start_code = to_little_endian16(encoding_table->start_code[found_segment_index]);
     if (start_code <= character)
@@ -543,28 +543,28 @@ Int get_glyph_id(CmapTable *cmap_table, CffTable *cff_table, Int8 character)
             glyph_id = id_delta + character;
         }
 
-        assert(glyph_id < cff_table->char_string_index.count);
+        ASSERT(glyph_id < cff_table->char_string_index.count);
         return glyph_id;
     }
     else
     {
-        assert(false);
+        ASSERT(false);
     }
 
     return -1;
 }
 
-Int main(Int argc, RawStr *argv)
+Int main(Int argc, CStr *argv)
 {
     argc--;
     argv++;
 
-    RawStr filename = argv[0];
-    RawStr output_filename = argv[1];
+    CStr filename = argv[0];
+    CStr output_filename = argv[1];
     Real vertical_extent = atof(argv[2]);
 
     Reader reader;
-    assert(read_file(filename, &reader.buffer));
+    ASSERT(read_file(filename, &reader.buffer));
     reader.pos = 0;
 
     OtfFont font;
@@ -596,7 +596,7 @@ Int main(Int argc, RawStr *argv)
     {
         OtfTableRecord *table_record = &font.table_records[table_index];
 
-        assert(table_record->offset + table_record->length <= (UInt)reader.buffer.length);
+        ASSERT(table_record->offset + table_record->length <= (UInt)reader.buffer.count);
         reader.pos = table_record->offset;
 
         if (tag_equal(table_record->tag, otf_tag_cmap))
@@ -692,7 +692,7 @@ Int main(Int argc, RawStr *argv)
             {
                 CffDict *dict = (CffDict *)cff_table->top_index.objects + dict_i;
 
-                for (Int entry_i = 0; entry_i < dict->entries.length; entry_i++)
+                for (Int entry_i = 0; entry_i < dict->entries.count; entry_i++)
                 {
                     CffDictEntry *entry = &dict->entries[entry_i];
 
@@ -719,7 +719,7 @@ Int main(Int argc, RawStr *argv)
                     }
                     else if (entry->key == 18)
                     {
-                        assert(entry->value.type == CffDictValueType::array && entry->value.array.length == 2);
+                        ASSERT(entry->value.type == CffDictValueType::array && entry->value.array.count == 2);
                         Int private_dict_size = entry->value.array[0].integer;
                         Int private_dict_offset = entry->value.array[1].integer;
 
@@ -728,7 +728,7 @@ Int main(Int argc, RawStr *argv)
                         reader.pos = private_dict_start;
                         read_cff_dict(&reader, private_dict_end, &cff_table->private_dict);
 
-                        for (Int entry_i = 0; entry_i < cff_table->private_dict.entries.length; entry_i++)
+                        for (Int entry_i = 0; entry_i < cff_table->private_dict.entries.count; entry_i++)
                         {
                             CffDictEntry *entry = &cff_table->private_dict.entries[entry_i];
                             if (entry->key == 19)
@@ -810,7 +810,7 @@ Int main(Int argc, RawStr *argv)
         }
     }
 
-    assert(cmap_table && cff_table && hhea_table && hmtx_table);
+    ASSERT(cmap_table && cff_table && hhea_table && hmtx_table);
 
     Real scale = vertical_extent / (hhea_table->ascender - hhea_table->descender);
     Int8 start_char = 0x21;
@@ -852,10 +852,10 @@ Int main(Int argc, RawStr *argv)
         bitmap->data = (UInt32 *)malloc(bitmap_data_length);
         memset(bitmap->data, -1, bitmap_data_length);
 
-        for (Int path_i = 0; path_i < runner.paths.length; path_i++)
+        for (Int path_i = 0; path_i < runner.paths.count; path_i++)
         {
             Path *path = &runner.paths[path_i];
-            for (Int line_i = 0; line_i < path->lines.length; line_i++)
+            for (Int line_i = 0; line_i < path->lines.count; line_i++)
             {
                 Line *line = &path->lines[line_i];
                 draw_line(bitmap, (line->x0 - runner.min_x) * scale, (line->y0 - runner.min_y) * scale,
@@ -871,7 +871,7 @@ Int main(Int argc, RawStr *argv)
         min_y = min(min_y, runner.min_y);
         max_y = max(max_y, runner.max_y);
 
-        assert(glyph_id < hmtx_table->metrics.length);
+        ASSERT(glyph_id < hmtx_table->metrics.count);
         metrics[character] = hmtx_table->metrics[glyph_id];
     }
 
@@ -901,10 +901,10 @@ Int main(Int argc, RawStr *argv)
         }
         bitmap_offset_x += bitmap->width;
     }
-    write_bitmap(concat_str(wrap_str(output_filename), wrap_str(".bmp")), &output_bitmap);
+    write_bitmap(concat_str(str(output_filename), str(".bmp")), &output_bitmap);
 
     FILE *output_file = fopen(output_filename, "wb");
-    assert(fseek(output_file, 0, SEEK_SET) == 0);
+    ASSERT(fseek(output_file, 0, SEEK_SET) == 0);
 
     fwrite(&start_char, sizeof(Int8), 1, output_file);
     Int8 num_char = end_char - start_char + 1;
@@ -914,7 +914,7 @@ Int main(Int argc, RawStr *argv)
     Int16 height = output_bitmap.height;
     Int16 line_advance = round((max_y - min_y + hhea_table->line_gap) * scale);
     Int whitespace_glyph_id = get_glyph_id(cmap_table, cff_table, ' ');
-    assert(whitespace_glyph_id < hmtx_table->metrics.length);
+    ASSERT(whitespace_glyph_id < hmtx_table->metrics.count);
     Int16 whitespace_advance = round(hmtx_table->metrics[whitespace_glyph_id].advance * scale);
 
     fwrite(&width, sizeof(width), 1, output_file);
@@ -949,3 +949,5 @@ Int main(Int argc, RawStr *argv)
     }
     fclose(output_file);
 }
+
+#include "../lib/util.cpp"
