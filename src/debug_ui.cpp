@@ -158,6 +158,17 @@ void debug_ui_draw_vec3(DebugUIDrawState *draw_state, Vec3 vec3)
     debug_ui_draw_real(draw_state, vec3.z);
 }
 
+void debug_ui_draw_vec4(DebugUIDrawState *draw_state, Vec4 vec4)
+{
+    debug_ui_draw_real(draw_state, vec4.x);
+    debug_ui_draw_str(draw_state, str(", "));
+    debug_ui_draw_real(draw_state, vec4.y);
+    debug_ui_draw_str(draw_state, str(", "));
+    debug_ui_draw_real(draw_state, vec4.z);
+    debug_ui_draw_str(draw_state, str(", "));
+    debug_ui_draw_real(draw_state, vec4.w);
+}
+
 Bool create_debug_ui_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
 {
     AttachmentInfo color_attachment;

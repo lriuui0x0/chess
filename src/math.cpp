@@ -103,6 +103,21 @@ Vec3 cross(Vec3 u, Vec3 v)
     return result;
 }
 
+Vec3 get_basis_x()
+{
+    return {1, 0, 0};
+}
+
+Vec3 get_basis_y()
+{
+    return {0, 1, 0};
+}
+
+Vec3 get_basis_z()
+{
+    return {0, 0, 1};
+}
+
 union Vec4 {
     struct
     {
@@ -259,68 +274,68 @@ Bool inverse(Mat4 transform, Mat4 *result)
 {
     Mat4 adjoint;
     adjoint[0][0] = +(transform[1][1] * (transform[2][2] * transform[3][3] - transform[3][2] * transform[2][3]) -
-                     transform[2][1] * (transform[1][2] * transform[3][3] - transform[3][2] * transform[1][3]) +
-                     transform[3][1] * (transform[1][2] * transform[2][3] - transform[2][2] * transform[1][3]));
+                      transform[2][1] * (transform[1][2] * transform[3][3] - transform[3][2] * transform[1][3]) +
+                      transform[3][1] * (transform[1][2] * transform[2][3] - transform[2][2] * transform[1][3]));
 
     adjoint[0][1] = -(transform[0][1] * (transform[2][2] * transform[3][3] - transform[3][2] * transform[2][3]) -
-                     transform[2][1] * (transform[0][2] * transform[3][3] - transform[3][2] * transform[0][3]) +
-                     transform[3][1] * (transform[0][2] * transform[2][3] - transform[2][2] * transform[0][3]));
+                      transform[2][1] * (transform[0][2] * transform[3][3] - transform[3][2] * transform[0][3]) +
+                      transform[3][1] * (transform[0][2] * transform[2][3] - transform[2][2] * transform[0][3]));
 
     adjoint[0][2] = +(transform[0][1] * (transform[1][2] * transform[3][3] - transform[3][2] * transform[1][3]) -
-                     transform[1][1] * (transform[0][2] * transform[3][3] - transform[3][2] * transform[0][3]) +
-                     transform[3][1] * (transform[0][2] * transform[1][3] - transform[1][2] * transform[0][3]));
+                      transform[1][1] * (transform[0][2] * transform[3][3] - transform[3][2] * transform[0][3]) +
+                      transform[3][1] * (transform[0][2] * transform[1][3] - transform[1][2] * transform[0][3]));
 
     adjoint[0][3] = -(transform[0][1] * (transform[1][2] * transform[2][3] - transform[2][2] * transform[1][3]) -
-                     transform[1][1] * (transform[0][2] * transform[2][3] - transform[2][2] * transform[0][3]) +
-                     transform[2][1] * (transform[0][2] * transform[1][3] - transform[1][2] * transform[0][3]));
+                      transform[1][1] * (transform[0][2] * transform[2][3] - transform[2][2] * transform[0][3]) +
+                      transform[2][1] * (transform[0][2] * transform[1][3] - transform[1][2] * transform[0][3]));
 
     adjoint[1][0] = -(transform[1][0] * (transform[2][2] * transform[3][3] - transform[3][2] * transform[2][3]) -
-                     transform[2][0] * (transform[1][2] * transform[3][3] - transform[3][2] * transform[1][3]) +
-                     transform[3][0] * (transform[1][2] * transform[2][3] - transform[2][2] * transform[1][3]));
+                      transform[2][0] * (transform[1][2] * transform[3][3] - transform[3][2] * transform[1][3]) +
+                      transform[3][0] * (transform[1][2] * transform[2][3] - transform[2][2] * transform[1][3]));
 
     adjoint[1][1] = +(transform[0][0] * (transform[2][2] * transform[3][3] - transform[3][2] * transform[2][3]) -
-                     transform[2][0] * (transform[0][2] * transform[3][3] - transform[3][2] * transform[0][3]) +
-                     transform[3][0] * (transform[0][2] * transform[2][3] - transform[2][2] * transform[0][3]));
+                      transform[2][0] * (transform[0][2] * transform[3][3] - transform[3][2] * transform[0][3]) +
+                      transform[3][0] * (transform[0][2] * transform[2][3] - transform[2][2] * transform[0][3]));
 
     adjoint[1][2] = -(transform[0][0] * (transform[1][2] * transform[3][3] - transform[3][2] * transform[1][3]) -
-                     transform[1][0] * (transform[0][2] * transform[3][3] - transform[3][2] * transform[0][3]) +
-                     transform[3][0] * (transform[0][2] * transform[1][3] - transform[1][2] * transform[0][3]));
+                      transform[1][0] * (transform[0][2] * transform[3][3] - transform[3][2] * transform[0][3]) +
+                      transform[3][0] * (transform[0][2] * transform[1][3] - transform[1][2] * transform[0][3]));
 
     adjoint[1][3] = +(transform[0][0] * (transform[1][2] * transform[2][3] - transform[2][2] * transform[1][3]) -
-                     transform[1][0] * (transform[0][2] * transform[2][3] - transform[2][2] * transform[0][3]) +
-                     transform[2][0] * (transform[0][2] * transform[1][3] - transform[1][2] * transform[0][3]));
+                      transform[1][0] * (transform[0][2] * transform[2][3] - transform[2][2] * transform[0][3]) +
+                      transform[2][0] * (transform[0][2] * transform[1][3] - transform[1][2] * transform[0][3]));
 
     adjoint[2][0] = +(transform[1][0] * (transform[2][1] * transform[3][3] - transform[3][2] * transform[2][3]) -
-                     transform[2][0] * (transform[1][1] * transform[3][3] - transform[3][2] * transform[1][3]) +
-                     transform[3][0] * (transform[1][1] * transform[2][3] - transform[2][1] * transform[1][3]));
+                      transform[2][0] * (transform[1][1] * transform[3][3] - transform[3][2] * transform[1][3]) +
+                      transform[3][0] * (transform[1][1] * transform[2][3] - transform[2][1] * transform[1][3]));
 
     adjoint[2][1] = -(transform[0][0] * (transform[2][1] * transform[3][3] - transform[3][1] * transform[2][3]) -
-                     transform[2][0] * (transform[0][1] * transform[3][3] - transform[3][1] * transform[0][3]) +
-                     transform[3][0] * (transform[0][1] * transform[2][3] - transform[2][1] * transform[0][3]));
+                      transform[2][0] * (transform[0][1] * transform[3][3] - transform[3][1] * transform[0][3]) +
+                      transform[3][0] * (transform[0][1] * transform[2][3] - transform[2][1] * transform[0][3]));
 
     adjoint[2][2] = +(transform[0][0] * (transform[1][1] * transform[3][3] - transform[3][1] * transform[1][3]) -
-                     transform[1][0] * (transform[0][1] * transform[3][3] - transform[3][1] * transform[0][3]) +
-                     transform[3][0] * (transform[0][1] * transform[1][3] - transform[1][1] * transform[0][3]));
+                      transform[1][0] * (transform[0][1] * transform[3][3] - transform[3][1] * transform[0][3]) +
+                      transform[3][0] * (transform[0][1] * transform[1][3] - transform[1][1] * transform[0][3]));
 
     adjoint[2][3] = -(transform[0][0] * (transform[1][1] * transform[2][3] - transform[2][1] * transform[1][3]) -
-                     transform[1][0] * (transform[0][1] * transform[2][3] - transform[2][1] * transform[0][3]) +
-                     transform[2][0] * (transform[0][1] * transform[1][3] - transform[1][1] * transform[0][3]));
+                      transform[1][0] * (transform[0][1] * transform[2][3] - transform[2][1] * transform[0][3]) +
+                      transform[2][0] * (transform[0][1] * transform[1][3] - transform[1][1] * transform[0][3]));
 
     adjoint[3][0] = -(transform[1][0] * (transform[2][1] * transform[3][2] - transform[3][1] * transform[2][2]) -
-                     transform[2][0] * (transform[1][1] * transform[3][2] - transform[3][1] * transform[1][2]) +
-                     transform[3][0] * (transform[1][1] * transform[2][2] - transform[2][1] * transform[1][2]));
+                      transform[2][0] * (transform[1][1] * transform[3][2] - transform[3][1] * transform[1][2]) +
+                      transform[3][0] * (transform[1][1] * transform[2][2] - transform[2][1] * transform[1][2]));
 
     adjoint[3][1] = +(transform[0][0] * (transform[2][1] * transform[3][2] - transform[3][1] * transform[2][2]) -
-                     transform[2][0] * (transform[0][1] * transform[3][2] - transform[3][1] * transform[0][2]) +
-                     transform[3][0] * (transform[0][1] * transform[2][2] - transform[2][1] * transform[0][2]));
+                      transform[2][0] * (transform[0][1] * transform[3][2] - transform[3][1] * transform[0][2]) +
+                      transform[3][0] * (transform[0][1] * transform[2][2] - transform[2][1] * transform[0][2]));
 
     adjoint[3][2] = -(transform[0][0] * (transform[1][1] * transform[3][2] - transform[3][1] * transform[1][2]) -
-                     transform[1][0] * (transform[0][1] * transform[3][2] - transform[3][1] * transform[0][2]) +
-                     transform[3][0] * (transform[0][1] * transform[1][2] - transform[1][1] * transform[0][2]));
+                      transform[1][0] * (transform[0][1] * transform[3][2] - transform[3][1] * transform[0][2]) +
+                      transform[3][0] * (transform[0][1] * transform[1][2] - transform[1][1] * transform[0][2]));
 
     adjoint[3][3] = +(transform[0][0] * (transform[1][1] * transform[2][2] - transform[2][1] * transform[1][2]) -
-                     transform[1][0] * (transform[0][1] * transform[2][2] - transform[2][1] * transform[0][2]) +
-                     transform[2][0] * (transform[0][1] * transform[1][2] - transform[1][1] * transform[0][2]));
+                      transform[1][0] * (transform[0][1] * transform[2][2] - transform[2][1] * transform[0][2]) +
+                      transform[2][0] * (transform[0][1] * transform[1][2] - transform[1][1] * transform[0][2]));
 
     Real determinant = transform[0][0] * adjoint[0][0] + transform[0][1] * adjoint[1][0] + transform[0][2] * adjoint[2][0] + transform[0][3] * adjoint[3][0];
     if (determinant == 0)
@@ -436,4 +451,112 @@ Mat4 get_perspective_matrix(Real view_angle, Real aspect_ratio, Real near_plane,
     result[2] = {0, 0, far_plane / (far_plane - near_plane), 1};
     result[3] = {0, 0, -far_plane * near_plane / (far_plane - near_plane), 0};
     return result;
+}
+
+union Quaternion {
+    struct
+    {
+        Real w;
+        Real x;
+        Real y;
+        Real z;
+    };
+    Real entries[4];
+    Real &operator[](Int index);
+};
+
+Real &Quaternion::operator[](Int index)
+{
+    ASSERT(index >= 0 && index < 4);
+    return this->entries[index];
+}
+
+Quaternion quaternion(Vec3 p)
+{
+    return {0, p.x, p.y, p.z};
+}
+
+Real norm(Quaternion q)
+{
+    return sqrtf(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
+}
+
+Quaternion conjugate(Quaternion q)
+{
+    Quaternion result;
+    result.w = q.w;
+    result.x = -q.x;
+    result.y = -q.y;
+    result.z = -q.z;
+    return result;
+}
+
+Quaternion inverse(Quaternion q)
+{
+    Real norm_square = q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z;
+    Quaternion result;
+    result.w = q.w / norm_square;
+    result.x = -q.x / norm_square;
+    result.y = -q.y / norm_square;
+    result.z = -q.z / norm_square;
+    return result;
+}
+
+Quaternion get_identity_quaternion()
+{
+    return {1, 0, 0, 0};
+}
+
+Quaternion operator*(Quaternion p, Quaternion q)
+{
+    Quaternion result;
+    result.w = p.w * q.w - p.x * q.x - p.y * q.y - p.z * q.z;
+    result.x = p.w * q.x + p.x * q.w + p.y * q.z - p.z * q.y;
+    result.y = p.w * q.y + p.y * q.w + p.z * q.x - p.x * q.z;
+    result.z = p.w * q.z + p.z * q.w + p.x * q.y - p.y * q.x;
+    return result;
+}
+
+Vec3 rotate(Quaternion q, Vec3 p)
+{
+    Quaternion q_inverse = inverse(q);
+    Quaternion result = q * quaternion(p) * q_inverse;
+    return {result.x, result.y, result.z};
+}
+
+Quaternion get_rotation_quaternion(Vec3 axis, Real angle)
+{
+    Quaternion result;
+    result.w = cosf(angle / 2);
+    result.x = sinf(angle / 2) * axis.x;
+    result.y = sinf(angle / 2) * axis.y;
+    result.z = sinf(angle / 2) * axis.z;
+    return result;
+}
+
+Mat4 get_rotation_matrix(Quaternion q)
+{
+    Mat4 result;
+    result[0][0] = 1 - 2 * q.y * q.y - 2 * q.z * q.z;
+    result[0][1] = 2 * q.x * q.y + 2 * q.z * q.w;
+    result[0][2] = 2 * q.x * q.z - 2 * q.y * q.w;
+    result[0][3] = 0;
+    result[1][0] = 2 * q.x * q.y - 2 * q.z * q.w;
+    result[1][1] = 1 - 2 * q.x * q.x - 2 * q.z * q.z;
+    result[1][2] = 2 * q.y * q.z + 2 * q.x * q.w;
+    result[1][3] = 0;
+    result[2][0] = 2 * q.x * q.z + 2 * q.y * q.w;
+    result[2][1] = 2 * q.y * q.z - 2 * q.x * q.w;
+    result[2][2] = 1 - 2 * q.x * q.x - 2 * q.y * q.y;
+    result[2][3] = 0;
+    result[3][0] = 0;
+    result[3][1] = 0;
+    result[3][2] = 0;
+    result[3][3] = 1;
+    return result;
+}
+
+Vec4 vec4(Quaternion q)
+{
+    return {q.w, q.x, q.y, q.z};
 }

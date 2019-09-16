@@ -39,21 +39,16 @@ Bool read_font(CStr filename, OUT Font *font)
     return true;
 }
 
-struct Camera
+Void add_piece(Array<Piece> *pieces, Str name, Vec3 pos, Quaternion rotation, Vec3 scale, Mesh *mesh)
 {
-    Vec3 pos;
-    Mat4 rotation;
-};
+    Piece *piece = pieces->push();
+    piece->name = name;
+    piece->pos = pos;
+    piece->rotation = rotation;
+    piece->scale = scale;
+    piece->mesh = mesh;
 
-Void add_piece(Array<Piece> *pieces, Str name, Vec3 pos, Mat4 rotation, Mesh *mesh)
-{
-    Piece *entity = pieces->push();
-    entity->name = name;
-    entity->pos = pos;
-    entity->rotation = rotation;
-    entity->mesh = mesh;
-
-    entity->is_moving = false;
+    piece->is_moving = false;
 }
 
 Void write_entity_vertex_data(Entity *entity, VulkanBuffer *scene_vertex_buffer, VulkanBuffer *scene_index_buffer, Int *vertex_data_offset, Int *index_data_offset)
@@ -343,13 +338,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Font debug_font;
     ASSERT(read_font("../asset/debug_font.asset", &debug_font));
 
-    Mat4 white_world = get_scale_matrix(1, -1, 1);
-    Mat4 black_world = get_rotation_matrix_y(PI) * get_scale_matrix(1, -1, 1);
-    Mat4 board_world = get_scale_matrix(-1, -1, 1);
-
     Board board;
     board.pos = {0, 0, 0};
-    board.rotation = board_world;
+    board.rotation = get_rotation_quaternion(get_basis_y(), 0);
+    board.scale = {-1, -1, 1};
     board.mesh = &board_mesh;
 
     // NOTE: Set up board collision box
@@ -364,14 +356,17 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     }
 
     Array<Piece> pieces = create_array<Piece>();
-    add_piece(&pieces, str("white_rook1"), get_square_pos(0, 0), white_world, &white_rook_mesh);
-    add_piece(&pieces, str("white_knight1"), get_square_pos(0, 1), white_world, &white_knight_mesh);
-    add_piece(&pieces, str("white_bishop1"), get_square_pos(0, 2), white_world, &white_bishop_mesh);
-    add_piece(&pieces, str("white_queen"), get_square_pos(0, 3), white_world, &white_queen_mesh);
-    add_piece(&pieces, str("white_king"), get_square_pos(0, 4), white_world, &white_king_mesh);
-    add_piece(&pieces, str("white_bishop2"), get_square_pos(0, 5), white_world, &white_bishop_mesh);
-    add_piece(&pieces, str("white_knight2"), get_square_pos(0, 6), white_world, &white_knight_mesh);
-    add_piece(&pieces, str("white_rook2"), get_square_pos(0, 7), white_world, &white_rook_mesh);
+
+    Quaternion white_rotation = get_rotation_quaternion(get_basis_y(), 0);
+    Vec3 white_scale = {1, -1, 1};
+    add_piece(&pieces, str("white_rook1"), get_square_pos(0, 0), white_rotation, white_scale, &white_rook_mesh);
+    add_piece(&pieces, str("white_knight1"), get_square_pos(0, 1), white_rotation, white_scale, &white_knight_mesh);
+    add_piece(&pieces, str("white_bishop1"), get_square_pos(0, 2), white_rotation, white_scale, &white_bishop_mesh);
+    add_piece(&pieces, str("white_queen"), get_square_pos(0, 3), white_rotation, white_scale, &white_queen_mesh);
+    add_piece(&pieces, str("white_king"), get_square_pos(0, 4), white_rotation, white_scale, &white_king_mesh);
+    add_piece(&pieces, str("white_bishop2"), get_square_pos(0, 5), white_rotation, white_scale, &white_bishop_mesh);
+    add_piece(&pieces, str("white_knight2"), get_square_pos(0, 6), white_rotation, white_scale, &white_knight_mesh);
+    add_piece(&pieces, str("white_rook2"), get_square_pos(0, 7), white_rotation, white_scale, &white_rook_mesh);
     for (Int pawn_i = 0; pawn_i < 8; pawn_i++)
     {
         UInt8 number_suffix_data[2];
@@ -380,17 +375,19 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         Str number_suffix;
         number_suffix.count = 1;
         number_suffix.data = number_suffix_data;
-        add_piece(&pieces, concat_str(str("white_pawn"), number_suffix), get_square_pos(1, pawn_i), white_world, &white_pawn_mesh);
+        add_piece(&pieces, concat_str(str("white_pawn"), number_suffix), get_square_pos(1, pawn_i), white_rotation, white_scale, &white_pawn_mesh);
     }
 
-    add_piece(&pieces, str("black_rook1"), get_square_pos(7, 0), black_world, &black_rook_mesh);
-    add_piece(&pieces, str("black_knight1"), get_square_pos(7, 1), black_world, &black_knight_mesh);
-    add_piece(&pieces, str("black_bishop1"), get_square_pos(7, 2), black_world, &black_bishop_mesh);
-    add_piece(&pieces, str("black_queen"), get_square_pos(7, 3), black_world, &black_queen_mesh);
-    add_piece(&pieces, str("black_king"), get_square_pos(7, 4), black_world, &black_king_mesh);
-    add_piece(&pieces, str("black_bishop2"), get_square_pos(7, 5), black_world, &black_bishop_mesh);
-    add_piece(&pieces, str("black_knight2"), get_square_pos(7, 6), black_world, &black_knight_mesh);
-    add_piece(&pieces, str("black_rook2"), get_square_pos(7, 7), black_world, &black_rook_mesh);
+    Quaternion black_rotation = get_rotation_quaternion(get_basis_y(), PI);
+    Vec3 black_scale = {1, -1, 1};
+    add_piece(&pieces, str("black_rook1"), get_square_pos(7, 0), black_rotation, black_scale, &black_rook_mesh);
+    add_piece(&pieces, str("black_knight1"), get_square_pos(7, 1), black_rotation, black_scale, &black_knight_mesh);
+    add_piece(&pieces, str("black_bishop1"), get_square_pos(7, 2), black_rotation, black_scale, &black_bishop_mesh);
+    add_piece(&pieces, str("black_queen"), get_square_pos(7, 3), black_rotation, black_scale, &black_queen_mesh);
+    add_piece(&pieces, str("black_king"), get_square_pos(7, 4), black_rotation, black_scale, &black_king_mesh);
+    add_piece(&pieces, str("black_bishop2"), get_square_pos(7, 5), black_rotation, black_scale, &black_bishop_mesh);
+    add_piece(&pieces, str("black_knight2"), get_square_pos(7, 6), black_rotation, black_scale, &black_knight_mesh);
+    add_piece(&pieces, str("black_rook2"), get_square_pos(7, 7), black_rotation, black_scale, &black_rook_mesh);
     for (Int pawn_i = 0; pawn_i < 8; pawn_i++)
     {
         UInt8 number_suffix_data[2];
@@ -399,7 +396,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         Str number_suffix;
         number_suffix.count = 1;
         number_suffix.data = number_suffix_data;
-        add_piece(&pieces, concat_str(str("black_pawn"), number_suffix), get_square_pos(6, pawn_i), black_world, &black_pawn_mesh);
+        add_piece(&pieces, concat_str(str("black_pawn"), number_suffix), get_square_pos(6, pawn_i), black_rotation, black_scale, &black_pawn_mesh);
     }
 
     // NOTE: Set up piece collision boxes
@@ -456,12 +453,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     Camera camera;
     camera.pos = {350, -1600, -450};
-    camera.rotation = get_rotation_matrix_x(-degree_to_radian(65));
+    camera.rotation = get_rotation_quaternion(get_basis_x(), -degree_to_radian(65));
 
     SceneUniformData *scene_uniform_data = get_scene_uniform_data(&scene_uniform_buffer);
-    scene_uniform_data->view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-    scene_uniform_data->normal_view = get_normal_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
-    scene_uniform_data->projection = get_perspective_matrix(degree_to_radian(30), (Real)window_width / (Real)window_height, 10, 10000);
+    calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
     scene_uniform_data->light_dir[0] = {1, -1, 1};
     scene_uniform_data->light_dir[1] = {1, -1, -1};
     scene_uniform_data->light_dir[2] = {-1, -1, -1};
@@ -653,65 +648,66 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
         }
 
+        Vec3 camera_x = rotate(camera.rotation, get_basis_x());
+        Vec3 camera_y = rotate(camera.rotation, get_basis_y());
+        Vec3 camera_z = rotate(camera.rotation, get_basis_z());
         Real speed = 3;
         if (moving_x_pos)
         {
-            camera.pos = camera.pos + speed * vec3(camera.rotation.x);
+            camera.pos = camera.pos + speed * camera_x;
         }
-        else if (moving_x_neg)
+        if (moving_x_neg)
         {
-            camera.pos = camera.pos - speed * vec3(camera.rotation.x);
+            camera.pos = camera.pos - speed * camera_x;
         }
-        else if (moving_y_pos)
+        if (moving_y_pos)
         {
-            camera.pos = camera.pos + speed * vec3(camera.rotation.y);
+            camera.pos = camera.pos + speed * camera_y;
         }
-        else if (moving_y_neg)
+        if (moving_y_neg)
         {
-            camera.pos = camera.pos - speed * vec3(camera.rotation.y);
+            camera.pos = camera.pos - speed * camera_y;
         }
-        else if (moving_z_pos)
+        if (moving_z_pos)
         {
-            camera.pos = camera.pos + speed * vec3(camera.rotation.z);
+            camera.pos = camera.pos + speed * camera_z;
         }
-        else if (moving_z_neg)
+        if (moving_z_neg)
         {
-            camera.pos = camera.pos - speed * vec3(camera.rotation.z);
+            camera.pos = camera.pos - speed * camera_z;
         }
 
         Real rotating_speed = degree_to_radian(0.2);
-        Mat4 local_transform = get_identity_matrix();
+        Quaternion local_rotation = get_identity_quaternion();
         if (rotating_x_pos)
         {
-            local_transform = get_rotation_matrix_x(rotating_speed) * local_transform;
+            local_rotation = get_rotation_quaternion(get_basis_x(), rotating_speed) * local_rotation;
         }
-        else if (rotating_x_neg)
+        if (rotating_x_neg)
         {
-            local_transform = get_rotation_matrix_x(-rotating_speed) * local_transform;
+            local_rotation = get_rotation_quaternion(get_basis_x(), -rotating_speed) * local_rotation;
         }
-        else if (rotating_y_pos)
+        if (rotating_y_pos)
         {
-            local_transform = get_rotation_matrix_y(rotating_speed) * local_transform;
+            local_rotation = get_rotation_quaternion(get_basis_y(), rotating_speed) * local_rotation;
         }
-        else if (rotating_y_neg)
+        if (rotating_y_neg)
         {
-            local_transform = get_rotation_matrix_y(-rotating_speed) * local_transform;
+            local_rotation = get_rotation_quaternion(get_basis_y(), -rotating_speed) * local_rotation;
         }
-        else if (rotating_z_pos)
+        if (rotating_z_pos)
         {
-            local_transform = get_rotation_matrix_z(rotating_speed) * local_transform;
+            local_rotation = get_rotation_quaternion(get_basis_z(), rotating_speed) * local_rotation;
         }
-        else if (rotating_z_neg)
+        if (rotating_z_neg)
         {
-            local_transform = get_rotation_matrix_z(-rotating_speed) * local_transform;
+            local_rotation = get_rotation_quaternion(get_basis_z(), -rotating_speed) * local_rotation;
         }
 
-        camera.rotation = camera.rotation * local_transform;
-        scene_uniform_data->view = get_view_matrix(camera.pos, vec3(camera.rotation.z), -vec3(camera.rotation.y));
+        camera.rotation = camera.rotation * local_rotation;
+        calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
 
-        EntityUniformData *board_uniform_data = get_board_uniform_data(&scene_uniform_buffer);
-        board_uniform_data->world = get_translate_matrix(board.pos.x, board.pos.y, board.pos.z) * board.rotation;
-        board_uniform_data->normal_world = board.rotation;
+        calculate_entity_uniform_data(&board, get_board_uniform_data(&scene_uniform_buffer));
 
         for (Int piece_i = 0; piece_i < pieces.count; piece_i++)
         {
@@ -728,9 +724,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 }
             }
 
-            EntityUniformData *piece_uniform_data = get_piece_uniform_data(&scene_uniform_buffer, piece_i);
-            piece_uniform_data->world = get_translate_matrix(piece->pos.x, piece->pos.y, piece->pos.z) * piece->rotation;
-            piece_uniform_data->normal_world = piece->rotation;
+            calculate_entity_uniform_data(piece, get_piece_uniform_data(&scene_uniform_buffer, piece_i));
         }
 
         Mat4 inverse_projection;
@@ -791,16 +785,8 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             debug_ui_draw_vec3(&debug_ui_draw_state, camera.pos);
             debug_ui_draw_newline(&debug_ui_draw_state);
 
-            debug_ui_draw_str(&debug_ui_draw_state, str("rotation x: "));
-            debug_ui_draw_vec3(&debug_ui_draw_state, vec3(camera.rotation.x));
-            debug_ui_draw_newline(&debug_ui_draw_state);
-
-            debug_ui_draw_str(&debug_ui_draw_state, str("rotation y: "));
-            debug_ui_draw_vec3(&debug_ui_draw_state, vec3(camera.rotation.y));
-            debug_ui_draw_newline(&debug_ui_draw_state);
-
-            debug_ui_draw_str(&debug_ui_draw_state, str("rotation z: "));
-            debug_ui_draw_vec3(&debug_ui_draw_state, vec3(camera.rotation.z));
+            debug_ui_draw_str(&debug_ui_draw_state, str("rotation: "));
+            debug_ui_draw_vec4(&debug_ui_draw_state, vec4(camera.rotation));
             debug_ui_draw_newline(&debug_ui_draw_state);
 
             debug_ui_draw_indent(&debug_ui_draw_state, -1);

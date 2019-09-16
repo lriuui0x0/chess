@@ -42,10 +42,17 @@ Real check_collision(Ray *ray, CollisionBox *collision_box)
     return t_min;
 }
 
+struct Camera
+{
+    Vec3 pos;
+    Quaternion rotation;
+};
+
 struct Entity
 {
     Vec3 pos;
-    Mat4 rotation;
+    Quaternion rotation;
+    Vec3 scale;
     Mesh *mesh;
 };
 

@@ -306,3 +306,20 @@ EntityUniformData *get_piece_uniform_data(VulkanBuffer *uniform_buffer, Int piec
 {
     return (EntityUniformData *)(uniform_buffer->data + sizeof(SceneUniformData) + sizeof(EntityUniformData) * (piece_index + 1));
 }
+
+void calculate_scene_uniform_data(Camera *camera, Int window_width, Int window_height, SceneUniformData *uniform_data)
+{
+    Mat4 rotation = get_rotation_matrix(camera->rotation);
+    uniform_data->view = get_view_matrix(camera->pos, vec3(rotation.z), -vec3(rotation.y));
+    uniform_data->normal_view = get_normal_view_matrix(camera->pos, vec3(rotation.z), -vec3(rotation.y));
+    uniform_data->projection = get_perspective_matrix(degree_to_radian(30), (Real)window_width / (Real)window_height, 10, 10000);
+}
+
+void calculate_entity_uniform_data(Entity *entity, EntityUniformData *uniform_data)
+{
+    Mat4 translate = get_translate_matrix(entity->pos.x, entity->pos.y, entity->pos.z);
+    Mat4 rotation = get_rotation_matrix(entity->rotation);
+    Mat4 scale = get_scale_matrix(entity->scale.x, entity->scale.y, entity->scale.z);
+    uniform_data->world = translate * rotation * scale;
+    uniform_data->normal_world = rotation * scale;
+}
