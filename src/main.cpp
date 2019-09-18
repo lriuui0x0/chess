@@ -48,7 +48,7 @@ Void add_piece(Array<Piece> *pieces, Str name, Vec3 pos, Quaternion rotation, Ve
     piece->scale = scale;
     piece->mesh = mesh;
 
-    piece->is_moving = false;
+    piece->animation_type = AnimationType::stand;
 }
 
 Void write_entity_vertex_data(Entity *entity, VulkanBuffer *scene_vertex_buffer, VulkanBuffer *scene_index_buffer, Int *vertex_data_offset, Int *index_data_offset)
@@ -628,17 +628,36 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
             else if (message.type == WindowMessageType::mouse_down)
             {
+                // if (message.mouse_down_data.button_type == WindowMessageMouseButtonType::left)
+                // {
+                //     pieces[8].animation_type = AnimationType::move;
+                //     pieces[8].animation.t = 0;
+                //     pieces[8].animation.pos_from = get_square_pos(1, 0);
+                //     pieces[8].animation.pos_to = get_square_pos(3, 0);
+                //     pieces[8].animation.rotation_from = pieces[8].rotation;
+                //     pieces[8].animation.rotation_to = pieces[8].rotation;
+                // }
+                // else if (message.mouse_down_data.button_type == WindowMessageMouseButtonType::right)
+                // {
+                //     pieces[8].animation_type = AnimationType::stand;
+                //     pieces[8].pos = get_square_pos(1, 0);
+                //     pieces[8].rotation = get_rotation_quaternion(get_basis_y(), 0);
+                // }
+
                 if (message.mouse_down_data.button_type == WindowMessageMouseButtonType::left)
                 {
-                    pieces[8].is_moving = true;
-                    pieces[8].move_animation.t = 0;
-                    pieces[8].move_animation.pos_from = get_square_pos(1, 0);
-                    pieces[8].move_animation.pos_to = get_square_pos(3, 0);
+                    pieces[1].animation_type = AnimationType::knight_move1;
+                    pieces[1].animation.t = 0;
+                    pieces[1].animation.pos_from = pieces[1].pos;
+                    pieces[1].animation.pos_to = pieces[1].animation.pos_from + 0.3 * get_square_pos(2, 1) + Vec3{0, -400, 0};
+                    pieces[1].animation.rotation_from = pieces[1].rotation;
+                    pieces[1].animation.rotation_to = get_rotation_quaternion(get_basis_x(), degree_to_radian(10)) * pieces[1].rotation;
                 }
                 else if (message.mouse_down_data.button_type == WindowMessageMouseButtonType::right)
                 {
-                    pieces[8].is_moving = false;
-                    pieces[8].pos = get_square_pos(1, 0);
+                    pieces[1].animation_type = AnimationType::stand;
+                    pieces[1].pos = get_square_pos(0, 1);
+                    pieces[1].rotation = get_rotation_quaternion(get_basis_y(), 0);
                 }
             }
             else if (message.type == WindowMessageType::mouse_move)
@@ -712,15 +731,42 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         for (Int piece_i = 0; piece_i < pieces.count; piece_i++)
         {
             Piece *piece = &pieces[piece_i];
-            if (piece->is_moving)
+            if (piece->animation_type == AnimationType::move)
             {
-                piece->move_animation.t += 0.1;
-                Vec3 pos = piece->move_animation.pos_from + piece->move_animation.t * (piece->move_animation.pos_to - piece->move_animation.pos_from);
-                piece->pos = pos;
+                piece->animation.t += 0.1;
+                piece->pos = lerp(piece->animation.pos_from, piece->animation.pos_to, piece->animation.t);
+                piece->rotation = slerp(piece->animation.rotation_from, piece->animation.rotation_to, piece->animation.t);
 
-                if (piece->move_animation.t >= 1)
+                if (piece->animation.t >= 1)
                 {
-                    piece->is_moving = false;
+                    piece->animation_type = AnimationType::stand;
+                }
+            }
+            else if (piece->animation_type == AnimationType::knight_move1)
+            {
+                piece->animation.t += 0.1;
+                piece->pos = lerp(piece->animation.pos_from, piece->animation.pos_to, piece->animation.t);
+                piece->rotation = slerp(piece->animation.rotation_from, piece->animation.rotation_to, piece->animation.t);
+
+                if (piece->animation.t >= 1)
+                {
+                    piece->animation_type = AnimationType::knight_move2;
+                    piece->animation.t = 0;
+                    piece->animation.pos_from = piece->animation.pos_to;
+                    piece->animation.pos_to = piece->animation.pos_from + 0.7 * get_square_pos(2, 1) + Vec3 {0, 400, 0};
+                    piece->animation.rotation_from = piece->animation.rotation_to;
+                    piece->animation.rotation_to = get_rotation_quaternion(get_basis_x(), -degree_to_radian(10)) * piece->animation.rotation_from;
+                }
+            }
+            else if (piece->animation_type == AnimationType::knight_move2)
+            {
+                piece->animation.t += 0.1;
+                piece->pos = lerp(piece->animation.pos_from, piece->animation.pos_to, piece->animation.t);
+                piece->rotation = slerp(piece->animation.rotation_from, piece->animation.rotation_to, piece->animation.t);
+
+                if (piece->animation.t >= 1)
+                {
+                    piece->animation_type = AnimationType::stand;
                 }
             }
 

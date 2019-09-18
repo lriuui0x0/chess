@@ -56,11 +56,21 @@ struct Entity
     Mesh *mesh;
 };
 
-struct MoveAnimation
+struct Animation
 {
     Real t;
     Vec3 pos_from;
     Vec3 pos_to;
+    Quaternion rotation_from;
+    Quaternion rotation_to;
+};
+
+enum struct AnimationType
+{
+    stand,
+    move,
+    knight_move1,
+    knight_move2,
 };
 
 struct Piece : Entity
@@ -68,8 +78,8 @@ struct Piece : Entity
     Str name;
     CollisionBox collision_box;
 
-    Bool is_moving;
-    MoveAnimation move_animation;
+    AnimationType animation_type;
+    Animation animation;
 };
 
 struct Board : Entity

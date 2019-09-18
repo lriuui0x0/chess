@@ -79,6 +79,12 @@ Vec3 operator*(Real s, Vec3 u)
     return result;
 }
 
+Vec3 lerp(Vec3 p, Vec3 q, Real t)
+{
+    Vec3 result = p + t * (q - p);
+    return result;
+}
+
 Vec3 normalize(Vec3 u)
 {
     Vec3 result;
@@ -471,6 +477,46 @@ Real &Quaternion::operator[](Int index)
     return this->entries[index];
 }
 
+Quaternion operator+(Quaternion p, Quaternion q)
+{
+    Quaternion result;
+    result.w = p.w + q.w;
+    result.x = p.x + q.x;
+    result.y = p.y + q.y;
+    result.z = p.z + q.z;
+    return result;
+}
+
+Quaternion operator-(Quaternion p, Quaternion q)
+{
+    Quaternion result;
+    result.w = p.w - q.w;
+    result.x = p.x - q.x;
+    result.y = p.y - q.y;
+    result.z = p.z - q.z;
+    return result;
+}
+
+Quaternion operator*(Quaternion p, Quaternion q)
+{
+    Quaternion result;
+    result.w = p.w * q.w - p.x * q.x - p.y * q.y - p.z * q.z;
+    result.x = p.w * q.x + p.x * q.w + p.y * q.z - p.z * q.y;
+    result.y = p.w * q.y + p.y * q.w + p.z * q.x - p.x * q.z;
+    result.z = p.w * q.z + p.z * q.w + p.x * q.y - p.y * q.x;
+    return result;
+}
+
+Quaternion operator*(Real p, Quaternion q)
+{
+    Quaternion result;
+    result.w = p * q.w;
+    result.x = p * q.x;
+    result.y = p * q.y;
+    result.z = p * q.z;
+    return result;
+}
+
 Quaternion quaternion(Vec3 p)
 {
     return {0, p.x, p.y, p.z};
@@ -479,6 +525,16 @@ Quaternion quaternion(Vec3 p)
 Real norm(Quaternion q)
 {
     return sqrtf(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
+}
+
+Quaternion normalize(Quaternion q)
+{
+    return 1 / norm(q) * q;
+}
+
+Real dot(Quaternion p, Quaternion q)
+{
+    return p.w * q.w + p.x * q.x + p.y * q.y + p.z * q.z;
 }
 
 Quaternion conjugate(Quaternion q)
@@ -505,16 +561,6 @@ Quaternion inverse(Quaternion q)
 Quaternion get_identity_quaternion()
 {
     return {1, 0, 0, 0};
-}
-
-Quaternion operator*(Quaternion p, Quaternion q)
-{
-    Quaternion result;
-    result.w = p.w * q.w - p.x * q.x - p.y * q.y - p.z * q.z;
-    result.x = p.w * q.x + p.x * q.w + p.y * q.z - p.z * q.y;
-    result.y = p.w * q.y + p.y * q.w + p.z * q.x - p.x * q.z;
-    result.z = p.w * q.z + p.z * q.w + p.x * q.y - p.y * q.x;
-    return result;
 }
 
 Vec3 rotate(Quaternion q, Vec3 p)
@@ -559,4 +605,27 @@ Mat4 get_rotation_matrix(Quaternion q)
 Vec4 vec4(Quaternion q)
 {
     return {q.w, q.x, q.y, q.z};
+}
+
+Quaternion lerp(Quaternion p, Quaternion q, Real t)
+{
+    Quaternion result = p + t * (q - p);
+    return result;
+}
+
+Quaternion slerp(Quaternion p, Quaternion q, Real t)
+{
+    Real dot_product = dot(p, q);
+    if (dot_product < 0.999)
+    {
+        Real angle = acosf(dot(p, q));
+        Real sin_angle = sinf(angle);
+        Quaternion result = 1 / sin_angle * (sinf((1 - t) * angle) * p + sinf(t * angle) * q);
+        return result;
+    }
+    else
+    {
+        Quaternion result = lerp(p, q, t);
+        return result;
+    }
 }
