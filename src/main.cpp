@@ -39,18 +39,6 @@ Bool read_font(CStr filename, OUT Font *font)
     return true;
 }
 
-Void add_piece(Array<Piece> *pieces, Str name, Vec3 pos, Quaternion rotation, Vec3 scale, Mesh *mesh)
-{
-    Piece *piece = pieces->push();
-    piece->name = name;
-    piece->pos = pos;
-    piece->rotation = rotation;
-    piece->scale = scale;
-    piece->mesh = mesh;
-
-    piece->animation_type = AnimationType::stand;
-}
-
 Void write_entity_vertex_data(Entity *entity, VulkanBuffer *scene_vertex_buffer, VulkanBuffer *scene_index_buffer, Int *vertex_data_offset, Int *index_data_offset)
 {
     Mesh *mesh = entity->mesh;
@@ -70,7 +58,7 @@ Void debug_callback(Str message)
 }
 
 Bool render_vulkan_frame(VulkanDevice *device,
-                         VulkanPipeline *scene_pipeline, SceneFrame *scene_frame, VulkanBuffer *scene_uniform_buffer, Board *board, Array<Piece> *pieces,
+                         VulkanPipeline *scene_pipeline, SceneFrame *scene_frame, VulkanBuffer *scene_uniform_buffer, Board *board, Buffer<Piece> *pieces,
                          VulkanPipeline *debug_ui_pipeline, DebugUIFrame *debug_ui_frame, VulkanBuffer *debug_ui_vertex_buffer, Int debug_ui_character_count,
                          VulkanPipeline *debug_collision_pipeline, DebugCollisionFrame *debug_collision_frame, VulkanBuffer *debug_collision_vertex_buffer)
 {
@@ -338,6 +326,8 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Font debug_font;
     ASSERT(read_font("../asset/debug_font.asset", &debug_font));
 
+    GameState game_state = get_initial_game_state();
+
     Board board;
     board.pos = {0, 0, 0};
     board.rotation = get_rotation_quaternion(get_basis_y(), 0);
@@ -355,70 +345,27 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         collision_box->radius = {50, 0, 50};
     }
 
-    Array<Piece> pieces = create_array<Piece>();
+    Piece pieces_data[PIECE_COUNT];
+    Buffer<Piece> pieces;
+    pieces.count = PIECE_COUNT;
+    pieces.data = pieces_data;
 
-    Quaternion white_rotation = get_rotation_quaternion(get_basis_y(), 0);
-    Vec3 white_scale = {1, -1, 1};
-    add_piece(&pieces, str("white_rook1"), get_square_pos(0, 0), white_rotation, white_scale, &white_rook_mesh);
-    add_piece(&pieces, str("white_knight1"), get_square_pos(0, 1), white_rotation, white_scale, &white_knight_mesh);
-    add_piece(&pieces, str("white_bishop1"), get_square_pos(0, 2), white_rotation, white_scale, &white_bishop_mesh);
-    add_piece(&pieces, str("white_queen"), get_square_pos(0, 3), white_rotation, white_scale, &white_queen_mesh);
-    add_piece(&pieces, str("white_king"), get_square_pos(0, 4), white_rotation, white_scale, &white_king_mesh);
-    add_piece(&pieces, str("white_bishop2"), get_square_pos(0, 5), white_rotation, white_scale, &white_bishop_mesh);
-    add_piece(&pieces, str("white_knight2"), get_square_pos(0, 6), white_rotation, white_scale, &white_knight_mesh);
-    add_piece(&pieces, str("white_rook2"), get_square_pos(0, 7), white_rotation, white_scale, &white_rook_mesh);
-    for (Int pawn_i = 0; pawn_i < 8; pawn_i++)
+    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
-        UInt8 number_suffix_data[2];
-        number_suffix_data[0] = '0' + (pawn_i + 1);
-        number_suffix_data[1] = '\0';
-        Str number_suffix;
-        number_suffix.count = 1;
-        number_suffix.data = number_suffix_data;
-        add_piece(&pieces, concat_str(str("white_pawn"), number_suffix), get_square_pos(1, pawn_i), white_rotation, white_scale, &white_pawn_mesh);
-    }
-
-    Quaternion black_rotation = get_rotation_quaternion(get_basis_y(), PI);
-    Vec3 black_scale = {1, -1, 1};
-    add_piece(&pieces, str("black_rook1"), get_square_pos(7, 0), black_rotation, black_scale, &black_rook_mesh);
-    add_piece(&pieces, str("black_knight1"), get_square_pos(7, 1), black_rotation, black_scale, &black_knight_mesh);
-    add_piece(&pieces, str("black_bishop1"), get_square_pos(7, 2), black_rotation, black_scale, &black_bishop_mesh);
-    add_piece(&pieces, str("black_queen"), get_square_pos(7, 3), black_rotation, black_scale, &black_queen_mesh);
-    add_piece(&pieces, str("black_king"), get_square_pos(7, 4), black_rotation, black_scale, &black_king_mesh);
-    add_piece(&pieces, str("black_bishop2"), get_square_pos(7, 5), black_rotation, black_scale, &black_bishop_mesh);
-    add_piece(&pieces, str("black_knight2"), get_square_pos(7, 6), black_rotation, black_scale, &black_knight_mesh);
-    add_piece(&pieces, str("black_rook2"), get_square_pos(7, 7), black_rotation, black_scale, &black_rook_mesh);
-    for (Int pawn_i = 0; pawn_i < 8; pawn_i++)
-    {
-        UInt8 number_suffix_data[2];
-        number_suffix_data[0] = '0' + (pawn_i + 1);
-        number_suffix_data[1] = '\0';
-        Str number_suffix;
-        number_suffix.count = 1;
-        number_suffix.data = number_suffix_data;
-        add_piece(&pieces, concat_str(str("black_pawn"), number_suffix), get_square_pos(6, pawn_i), black_rotation, black_scale, &black_pawn_mesh);
-    }
-
-    // NOTE: Set up piece collision boxes
-    for (Int piece_i = 0; piece_i < pieces.count; piece_i++)
-    {
-        Vec3 min = {+10000, +10000, +10000};
-        Vec3 max = {-10000, -10000, -10000};
-
         Piece *piece = &pieces[piece_i];
-        for (Int vertex_i = 0; vertex_i < piece->mesh->vertex_count; vertex_i++)
-        {
-            Vec3 pos = piece->mesh->vertices_data[vertex_i].pos;
-            for (Int i = 0; i < 3; i++)
-            {
-                min[i] = MIN(min[i], pos[i]);
-                max[i] = MAX(max[i], pos[i]);
-            }
-        }
-        min.y = 0;
-
-        piece->collision_box.center = 0.5 * (max + min);
-        piece->collision_box.radius = 0.5 * (max - min);
+        fill_piece_initial_state(&game_state.pieces[piece_i], piece,
+                                 &white_rook_mesh,
+                                 &white_knight_mesh,
+                                 &white_bishop_mesh,
+                                 &white_queen_mesh,
+                                 &white_king_mesh,
+                                 &white_pawn_mesh,
+                                 &black_rook_mesh,
+                                 &black_knight_mesh,
+                                 &black_bishop_mesh,
+                                 &black_queen_mesh,
+                                 &black_king_mesh,
+                                 &black_pawn_mesh);
     }
 
     Window window = create_window(str("Chess"), window_width, window_height, 50, 50);
@@ -628,36 +575,15 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
             else if (message.type == WindowMessageType::mouse_down)
             {
-                // if (message.mouse_down_data.button_type == WindowMessageMouseButtonType::left)
-                // {
-                //     pieces[8].animation_type = AnimationType::move;
-                //     pieces[8].animation.t = 0;
-                //     pieces[8].animation.pos_from = get_square_pos(1, 0);
-                //     pieces[8].animation.pos_to = get_square_pos(3, 0);
-                //     pieces[8].animation.rotation_from = pieces[8].rotation;
-                //     pieces[8].animation.rotation_to = pieces[8].rotation;
-                // }
-                // else if (message.mouse_down_data.button_type == WindowMessageMouseButtonType::right)
-                // {
-                //     pieces[8].animation_type = AnimationType::stand;
-                //     pieces[8].pos = get_square_pos(1, 0);
-                //     pieces[8].rotation = get_rotation_quaternion(get_basis_y(), 0);
-                // }
-
                 if (message.mouse_down_data.button_type == WindowMessageMouseButtonType::left)
                 {
-                    pieces[1].animation_type = AnimationType::knight_move1;
-                    pieces[1].animation.t = 0;
-                    pieces[1].animation.pos_from = pieces[1].pos;
-                    pieces[1].animation.pos_to = pieces[1].animation.pos_from + 0.3 * get_square_pos(2, 1) + Vec3{0, -400, 0};
-                    pieces[1].animation.rotation_from = pieces[1].rotation;
-                    pieces[1].animation.rotation_to = get_rotation_quaternion(get_basis_x(), degree_to_radian(10)) * pieces[1].rotation;
+                    start_move_animation(&pieces[8], 2, 0);
+                    start_jump_animation(&pieces[1], 2, 1);
                 }
                 else if (message.mouse_down_data.button_type == WindowMessageMouseButtonType::right)
                 {
-                    pieces[1].animation_type = AnimationType::stand;
-                    pieces[1].pos = get_square_pos(0, 1);
-                    pieces[1].rotation = get_rotation_quaternion(get_basis_y(), 0);
+                    start_move_animation(&pieces[8], -2, 0);
+                    start_jump_animation(&pieces[1], -2, -1);
                 }
             }
             else if (message.type == WindowMessageType::mouse_move)
@@ -731,45 +657,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         for (Int piece_i = 0; piece_i < pieces.count; piece_i++)
         {
             Piece *piece = &pieces[piece_i];
-            if (piece->animation_type == AnimationType::move)
-            {
-                piece->animation.t += 0.1;
-                piece->pos = lerp(piece->animation.pos_from, piece->animation.pos_to, piece->animation.t);
-                piece->rotation = slerp(piece->animation.rotation_from, piece->animation.rotation_to, piece->animation.t);
-
-                if (piece->animation.t >= 1)
-                {
-                    piece->animation_type = AnimationType::stand;
-                }
-            }
-            else if (piece->animation_type == AnimationType::knight_move1)
-            {
-                piece->animation.t += 0.1;
-                piece->pos = lerp(piece->animation.pos_from, piece->animation.pos_to, piece->animation.t);
-                piece->rotation = slerp(piece->animation.rotation_from, piece->animation.rotation_to, piece->animation.t);
-
-                if (piece->animation.t >= 1)
-                {
-                    piece->animation_type = AnimationType::knight_move2;
-                    piece->animation.t = 0;
-                    piece->animation.pos_from = piece->animation.pos_to;
-                    piece->animation.pos_to = piece->animation.pos_from + 0.7 * get_square_pos(2, 1) + Vec3 {0, 400, 0};
-                    piece->animation.rotation_from = piece->animation.rotation_to;
-                    piece->animation.rotation_to = get_rotation_quaternion(get_basis_x(), -degree_to_radian(10)) * piece->animation.rotation_from;
-                }
-            }
-            else if (piece->animation_type == AnimationType::knight_move2)
-            {
-                piece->animation.t += 0.1;
-                piece->pos = lerp(piece->animation.pos_from, piece->animation.pos_to, piece->animation.t);
-                piece->rotation = slerp(piece->animation.rotation_from, piece->animation.rotation_to, piece->animation.t);
-
-                if (piece->animation.t >= 1)
-                {
-                    piece->animation_type = AnimationType::stand;
-                }
-            }
-
+            update_animation(piece, 0.1);
             calculate_entity_uniform_data(piece, get_piece_uniform_data(&scene_uniform_buffer, piece_i));
         }
 
@@ -852,7 +740,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             debug_ui_draw_str(&debug_ui_draw_state, str("selected piece: "));
             if (selected_piece_index != -1)
             {
-                debug_ui_draw_str(&debug_ui_draw_state, pieces[selected_piece_index].name);
+                debug_ui_draw_str(&debug_ui_draw_state, pieces[selected_piece_index].game_piece->name);
             }
             else
             {

@@ -137,7 +137,7 @@ struct SceneFrame
     Array<VkDescriptorSet> piece_descriptor_sets;
 };
 
-Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *board, Array<Piece> *pieces, SceneFrame *frame,
+Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *board, Buffer<Piece> *pieces, SceneFrame *frame,
                         VulkanBuffer *host_vertex_buffer, VulkanBuffer *host_index_buffer, VulkanBuffer *host_uniform_buffer)
 {
     VkResult result_code;

@@ -92,7 +92,7 @@ struct DebugCollisionFrame
     Array<VkFramebuffer> frame_buffers;
 };
 
-Bool create_debug_collision_frame(VulkanDevice *device, VulkanPipeline *pipeline, Array<Piece> *pieces, DebugCollisionFrame *frame, VulkanBuffer *host_vertex_buffer)
+Bool create_debug_collision_frame(VulkanDevice *device, VulkanPipeline *pipeline, Buffer<Piece> *pieces, DebugCollisionFrame *frame, VulkanBuffer *host_vertex_buffer)
 {
     VkResult result_code;
 
