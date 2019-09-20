@@ -3,6 +3,12 @@
 #include <cstdlib>
 #include <cstring>
 
+UInt align_up(UInt x, UInt mask)
+{
+    UInt result = x + mask - ((x - 1) & (mask - 1)) - 1;
+    return result;
+}
+
 constexpr Str str(char const *c_str)
 {
     if (c_str != NULL)

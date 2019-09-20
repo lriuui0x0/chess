@@ -398,14 +398,14 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     camera.pos = {350, -1600, -450};
     camera.rotation = get_rotation_quaternion(get_basis_x(), -degree_to_radian(65));
 
-    SceneUniformData *scene_uniform_data = get_scene_uniform_data(&scene_uniform_buffer);
+    SceneUniformData *scene_uniform_data = get_scene_uniform_data(&device, &scene_uniform_buffer);
     calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
     scene_uniform_data->light_dir[0] = {1, -1, 1};
     scene_uniform_data->light_dir[1] = {1, -1, -1};
     scene_uniform_data->light_dir[2] = {-1, -1, -1};
     scene_uniform_data->light_dir[3] = {-1, -1, 1};
 
-    calculate_entity_uniform_data(&board, get_board_uniform_data(&scene_uniform_buffer));
+    calculate_entity_uniform_data(&board, get_board_uniform_data(&device, &scene_uniform_buffer));
 
     Int vertex_data_offset = 0;
     Int index_data_offset = 0;
@@ -458,7 +458,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         while (get_window_message(window, &message))
         {
             switch (message.type)
-			{
+            {
             case WindowMessageType::close:
             {
                 is_running = false;
@@ -578,7 +578,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 }
             }
             break;
-            
+
             case WindowMessageType::mouse_down:
             {
                 mouse_x = message.mouse_down_data.x;
@@ -621,7 +621,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                     }
                 }
             }
-            game_state.selected_piece_index = clicked_piece_index;
+            if (clicked_piece_index != -1)
+            {
+                game_state.selected_piece_index = clicked_piece_index;
+            }
 
             if (game_state.selected_piece_index != -1 && clicked_piece_index == -1)
             {
@@ -726,7 +729,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         {
             Piece *piece = &pieces[piece_i];
             update_animation(piece, 0.1);
-            calculate_entity_uniform_data(piece, get_piece_uniform_data(&scene_uniform_buffer, piece_i));
+            calculate_entity_uniform_data(piece, get_piece_uniform_data(&device, &scene_uniform_buffer, piece_i));
         }
 
         DebugUIDrawState debug_ui_draw_state;

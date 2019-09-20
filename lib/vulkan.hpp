@@ -134,6 +134,9 @@ struct VulkanDevice
     VkInstance instance;
     VkSurfaceKHR surface;
     VkPhysicalDevice physical_device;
+    VkPhysicalDeviceFeatures physical_device_features;
+    VkPhysicalDeviceProperties physical_device_properties;
+    VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
     VkDebugReportCallbackEXT debug_callback;
 };
 

@@ -135,14 +135,9 @@ Bool create_device(Handle window, VulkanDebugCallback debug_callback, VulkanDevi
     {
         VkPhysicalDevice physical_device = physical_devices[physical_device_i];
 
-        VkPhysicalDeviceFeatures features;
-        vkGetPhysicalDeviceFeatures(physical_device, &features);
-
-        VkPhysicalDeviceProperties properties;
-        vkGetPhysicalDeviceProperties(physical_device, &properties);
-
-        VkPhysicalDeviceMemoryProperties memory_properties;
-        vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+        vkGetPhysicalDeviceFeatures(physical_device, &device->physical_device_features);
+        vkGetPhysicalDeviceProperties(physical_device, &device->physical_device_properties);
+        vkGetPhysicalDeviceMemoryProperties(physical_device, &device->physical_device_memory_properties);
 
         UInt32 queue_family_count = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, null);

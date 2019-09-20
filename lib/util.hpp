@@ -25,7 +25,7 @@ typedef Void *Handle;
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
-#define ABS(x)  ((x) > 0 ? (x) : (-(x)))
+#define ABS(x) ((x) > 0 ? (x) : (-(x)))
 #define HAS_FLAG(number, flag) ((number) & (flag))
 #define SET_FLAG(number, flag) ((number) | (flag))
 
@@ -44,10 +44,12 @@ Void *__builtin_alloca(size_t count);
 template <typename T>
 Void swap(T *x, T *y)
 {
-    T tmp = *x; 
+    T tmp = *x;
     *x = *y;
     *y = tmp;
 }
+
+UInt align_up(UInt x, UInt mask);
 
 template <typename T>
 struct Buffer

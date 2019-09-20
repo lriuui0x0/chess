@@ -18,11 +18,27 @@ struct EntityUniformData
     Mat4 normal_world;
 };
 
+VkSampleCountFlagBits get_maximum_multisample_count(VulkanDevice *device)
+{
+    VkSampleCountFlagBits multisample_count = VK_SAMPLE_COUNT_64_BIT;
+    while (
+        !(multisample_count & device->physical_device_properties.limits.framebufferColorSampleCounts) ||
+        !(multisample_count & device->physical_device_properties.limits.framebufferDepthSampleCounts) ||
+        !(multisample_count & device->physical_device_properties.limits.sampledImageColorSampleCounts) ||
+        !(multisample_count & device->physical_device_properties.limits.sampledImageDepthSampleCounts))
+    {
+        multisample_count = (VkSampleCountFlagBits)((UInt)multisample_count >> 1);
+    }
+    return multisample_count;
+}
+
 Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
 {
+    VkSampleCountFlagBits multisample_count = get_maximum_multisample_count(device);
+
     AttachmentInfo color_attachment;
     color_attachment.format = device->swapchain.format;
-    color_attachment.multisample_count = VK_SAMPLE_COUNT_16_BIT;
+    color_attachment.multisample_count = multisample_count;
     color_attachment.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
     color_attachment.store_op = VK_ATTACHMENT_STORE_OP_STORE;
     color_attachment.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -35,7 +51,7 @@ Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
 
     AttachmentInfo depth_attachment;
     depth_attachment.format = VK_FORMAT_D32_SFLOAT;
-    depth_attachment.multisample_count = VK_SAMPLE_COUNT_16_BIT;
+    depth_attachment.multisample_count = multisample_count;
     depth_attachment.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depth_attachment.store_op = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depth_attachment.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -111,7 +127,8 @@ Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     descriptor_sets.count = 2;
     descriptor_sets.data = descriptor_set_info;
 
-    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(Vertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets, VK_SAMPLE_COUNT_16_BIT, true, false, pipeline))
+    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(Vertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets,
+                         multisample_count, true, false, pipeline))
     {
         return false;
     }
@@ -140,6 +157,8 @@ struct SceneFrame
 Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *board, Piece *pieces, SceneFrame *frame,
                         VulkanBuffer *host_vertex_buffer, VulkanBuffer *host_index_buffer, VulkanBuffer *host_uniform_buffer)
 {
+    VkSampleCountFlagBits multisample_count = get_maximum_multisample_count(device);
+
     VkResult result_code;
 
     if (!allocate_command_buffer(device, &frame->command_buffer))
@@ -163,7 +182,7 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
     }
 
     if (!create_image(device, device->swapchain.width, device->swapchain.height,
-                      device->swapchain.format, VK_SAMPLE_COUNT_16_BIT, VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                      device->swapchain.format, multisample_count, VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &frame->color_image))
     {
         return false;
@@ -176,7 +195,7 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
     }
 
     if (!create_image(device, device->swapchain.width, device->swapchain.height,
-                      VK_FORMAT_D32_SFLOAT, VK_SAMPLE_COUNT_16_BIT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                      VK_FORMAT_D32_SFLOAT, multisample_count, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &frame->depth_image))
     {
         return false;
@@ -222,7 +241,10 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
         total_vertex_data_length += sizeof(Vertex) * pieces[piece_i].mesh->vertex_count;
         total_index_data_length += sizeof(UInt32) * pieces[piece_i].mesh->index_count;
     }
-    Int total_uniform_data_length = sizeof(SceneUniformData) + sizeof(EntityUniformData) * (PIECE_COUNT + 1);
+
+    Int scene_uniform_data_length = align_up(sizeof(SceneUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment);
+    Int entity_uniform_data_length = align_up(sizeof(EntityUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment);
+    Int total_uniform_data_length = scene_uniform_data_length + entity_uniform_data_length * (PIECE_COUNT + 1);
 
     if (!create_buffer(device, total_vertex_data_length,
                        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -267,13 +289,13 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
     }
 
     if (!allocate_descriptor_set(device, &pipeline->descriptor_set_layouts[0], &frame->uniform_buffer,
-                                 0, sizeof(SceneUniformData), &frame->scene_descriptor_set))
+                                 0, scene_uniform_data_length, &frame->scene_descriptor_set))
     {
         return false;
     }
 
     if (!allocate_descriptor_set(device, &pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
-                                 sizeof(SceneUniformData), sizeof(EntityUniformData), &frame->board_descriptor_set))
+                                 scene_uniform_data_length, entity_uniform_data_length, &frame->board_descriptor_set))
     {
         return false;
     }
@@ -283,7 +305,8 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
         if (!allocate_descriptor_set(device, &pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
-                                     (piece_i + 1) * sizeof(EntityUniformData) + sizeof(SceneUniformData), sizeof(EntityUniformData), &frame->piece_descriptor_sets[piece_i]))
+                                     scene_uniform_data_length + (piece_i + 1) * entity_uniform_data_length, entity_uniform_data_length,
+                                     &frame->piece_descriptor_sets[piece_i]))
         {
             return false;
         }
@@ -292,19 +315,22 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
     return true;
 }
 
-SceneUniformData *get_scene_uniform_data(VulkanBuffer *uniform_buffer)
+SceneUniformData *get_scene_uniform_data(VulkanDevice *device, VulkanBuffer *uniform_buffer)
 {
     return (SceneUniformData *)uniform_buffer->data;
 }
 
-EntityUniformData *get_board_uniform_data(VulkanBuffer *uniform_buffer)
+EntityUniformData *get_board_uniform_data(VulkanDevice *device, VulkanBuffer *uniform_buffer)
 {
-    return (EntityUniformData *)(uniform_buffer->data + sizeof(SceneUniformData));
+    Int offset = align_up(sizeof(SceneUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment);
+    return (EntityUniformData *)(uniform_buffer->data + offset);
 }
 
-EntityUniformData *get_piece_uniform_data(VulkanBuffer *uniform_buffer, Int piece_index)
+EntityUniformData *get_piece_uniform_data(VulkanDevice *device, VulkanBuffer *uniform_buffer, Int piece_index)
 {
-    return (EntityUniformData *)(uniform_buffer->data + sizeof(SceneUniformData) + sizeof(EntityUniformData) * (piece_index + 1));
+    Int offset = align_up(sizeof(SceneUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment);
+    offset += align_up(sizeof(EntityUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment) * (piece_index + 1);
+    return (EntityUniformData *)(uniform_buffer->data + offset);
 }
 
 void calculate_scene_uniform_data(Camera *camera, Int window_width, Int window_height, SceneUniformData *uniform_data)
