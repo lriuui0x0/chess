@@ -137,7 +137,7 @@ struct SceneFrame
     Array<VkDescriptorSet> piece_descriptor_sets;
 };
 
-Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *board, Buffer<Piece> *pieces, SceneFrame *frame,
+Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *board, Piece *pieces, SceneFrame *frame,
                         VulkanBuffer *host_vertex_buffer, VulkanBuffer *host_index_buffer, VulkanBuffer *host_uniform_buffer)
 {
     VkResult result_code;
@@ -217,12 +217,12 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
 
     Int total_vertex_data_length = sizeof(Vertex) * board->mesh->vertex_count;
     Int total_index_data_length = sizeof(UInt32) * board->mesh->index_count;
-    for (Int piece_i = 0; piece_i < pieces->count; piece_i++)
+    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
-        total_vertex_data_length += sizeof(Vertex) * pieces->data[piece_i].mesh->vertex_count;
-        total_index_data_length += sizeof(UInt32) * pieces->data[piece_i].mesh->index_count;
+        total_vertex_data_length += sizeof(Vertex) * pieces[piece_i].mesh->vertex_count;
+        total_index_data_length += sizeof(UInt32) * pieces[piece_i].mesh->index_count;
     }
-    Int total_uniform_data_length = sizeof(SceneUniformData) + sizeof(EntityUniformData) * (pieces->count + 1);
+    Int total_uniform_data_length = sizeof(SceneUniformData) + sizeof(EntityUniformData) * (PIECE_COUNT + 1);
 
     if (!create_buffer(device, total_vertex_data_length,
                        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -278,9 +278,9 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
         return false;
     }
 
-    frame->piece_descriptor_sets = create_array<VkDescriptorSet>(pieces->count);
-    frame->piece_descriptor_sets.count = pieces->count;
-    for (Int piece_i = 0; piece_i < pieces->count; piece_i++)
+    frame->piece_descriptor_sets = create_array<VkDescriptorSet>(PIECE_COUNT);
+    frame->piece_descriptor_sets.count = PIECE_COUNT;
+    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
         if (!allocate_descriptor_set(device, &pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
                                      (piece_i + 1) * sizeof(EntityUniformData) + sizeof(SceneUniformData), sizeof(EntityUniformData), &frame->piece_descriptor_sets[piece_i]))

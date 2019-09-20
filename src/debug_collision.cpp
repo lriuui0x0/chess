@@ -92,7 +92,7 @@ struct DebugCollisionFrame
     Array<VkFramebuffer> frame_buffers;
 };
 
-Bool create_debug_collision_frame(VulkanDevice *device, VulkanPipeline *pipeline, Buffer<Piece> *pieces, DebugCollisionFrame *frame, VulkanBuffer *host_vertex_buffer)
+Bool create_debug_collision_frame(VulkanDevice *device, VulkanPipeline *pipeline, Piece *pieces, DebugCollisionFrame *frame, VulkanBuffer *host_vertex_buffer)
 {
     VkResult result_code;
 
@@ -125,7 +125,7 @@ Bool create_debug_collision_frame(VulkanDevice *device, VulkanPipeline *pipeline
 
     Int total_vertex_data_length = 0;
     Int line_count = 12;
-    for (Int piece_i = 0; piece_i < pieces->count; piece_i++)
+    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
         total_vertex_data_length += sizeof(DebugCollisionVertex) * line_count * 2;
     }

@@ -61,7 +61,6 @@ struct Animation
     Real t;
     Vec3 pos_from;
     Vec3 pos_to;
-    Quaternion rotation;
 };
 
 enum struct AnimationType
@@ -89,21 +88,20 @@ Vec3 get_square_pos(Int row, Int column)
     return {(Real)(column * 100.0), 0, (Real)(row * 100.0)};
 }
 
-Void start_move_animation(Piece *piece, Int row_change, Int column_change)
+Void start_move_animation(Piece *piece, Int row, Int column)
 {
     piece->animation_type = AnimationType::move;
     piece->animation.t = 0;
     piece->animation.pos_from = piece->pos;
-    piece->animation.pos_to = piece->pos + get_square_pos(row_change, column_change);
+    piece->animation.pos_to = get_square_pos(row, column);
 }
 
-Void start_jump_animation(Piece *piece, Int row_change, Int column_change)
+Void start_jump_animation(Piece *piece, Int row, Int column)
 {
     piece->animation_type = AnimationType::jump;
     piece->animation.t = 0;
     piece->animation.pos_from = piece->pos;
-    piece->animation.pos_to = piece->pos + get_square_pos(row_change, column_change);
-    piece->animation.rotation = piece->rotation;
+    piece->animation.pos_to = get_square_pos(row, column);
 }
 
 Void update_animation(Piece *piece, Real dt)
@@ -111,30 +109,18 @@ Void update_animation(Piece *piece, Real dt)
     if (piece->animation_type == AnimationType::move)
     {
         piece->animation.t += dt;
-        piece->pos = lerp(piece->animation.pos_from, piece->animation.pos_to, piece->animation.t);
+        Real a = 0.1;
+        Real ft = a * square(piece->animation.t) + (1 - a) * piece->animation.t;
+        piece->pos = lerp(piece->animation.pos_from, piece->animation.pos_to, ft);
     }
     else if (piece->animation_type == AnimationType::jump)
     {
         piece->animation.t += dt;
-        Real height = -400;
-        Real rotate_angle = degree_to_radian(10);
-        Real first_half = 0.5;
-        if (piece->animation.t <= 0.5)
-        {
-            Real t = piece->animation.t * 2;
-            Vec3 pos_to = lerp(piece->animation.pos_from, piece->animation.pos_to, first_half) + Vec3{0, height, 0};
-            Quaternion rotation_to = get_rotation_quaternion(get_basis_x(), rotate_angle) * piece->animation.rotation;
-            piece->pos = lerp(piece->animation.pos_from, pos_to, t);
-            piece->rotation = slerp(piece->animation.rotation, rotation_to, t);
-        }
-        else
-        {
-            Real t = (piece->animation.t - 0.5) * 2;
-            Vec3 pos_from = lerp(piece->animation.pos_from, piece->animation.pos_to, first_half) + Vec3{0, height, 0};
-            Quaternion rotation_from = get_rotation_quaternion(get_basis_x(), rotate_angle) * piece->animation.rotation;
-            piece->pos = lerp(pos_from, piece->animation.pos_to, t);
-            piece->rotation = slerp(rotation_from, piece->animation.rotation, t);
-        }
+        piece->pos = lerp(piece->animation.pos_from, piece->animation.pos_to, piece->animation.t);
+        Real height = -200;
+        Real a = -4 * height;
+        Real b = 4 * height;
+        piece->pos.y = a * square(piece->animation.t) + b * piece->animation.t;
     }
 
     if (piece->animation.t >= 1)
@@ -302,10 +288,8 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         }
     }
 
-    // NOTE: Set up piece collision boxes
     Vec3 min = {+10000, +10000, +10000};
     Vec3 max = {-10000, -10000, -10000};
-
     for (Int vertex_i = 0; vertex_i < piece->mesh->vertex_count; vertex_i++)
     {
         Vec3 pos = piece->mesh->vertices_data[vertex_i].pos;
@@ -316,7 +300,8 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         }
     }
     min.y = 0;
-
     piece->collision_box.center = 0.5 * (max + min);
     piece->collision_box.radius = 0.5 * (max - min);
+
+    piece->animation_type = AnimationType::stand;
 }

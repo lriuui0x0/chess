@@ -18,14 +18,9 @@ enum struct GameSide
     black,
 };
 
-struct PawnStateType
-{
-};
-
 struct PawnState
 {
     Bool moved;
-    GamePieceType promoted_type;
 };
 
 struct GamePiece
@@ -48,6 +43,9 @@ struct GameState
 {
     GamePiece pieces[PIECE_COUNT];
     GamePiece *board[BOARD_ROW_COUNT][BOARD_COLUMN_COUNT];
+    GameSide player_side;
+    GameSide current_side;
+    Int selected_piece_index;
 };
 
 Int get_row(Int square_index)
@@ -72,8 +70,11 @@ Int get_square(Int row, Int column)
 GameState get_initial_game_state()
 {
     GameState state = {};
-    GamePiece *piece = &state.pieces[0];
+    state.player_side = GameSide::white;
+    state.current_side = GameSide::white;
+    state.selected_piece_index = -1;
 
+    GamePiece *piece = &state.pieces[0];
     *piece = GamePiece{GameSide::white, GamePieceType::rook, 0, str("white rook 0"), 0, 0};
     state.board[piece->row][piece->column] = piece;
     piece++;
@@ -116,6 +117,7 @@ GameState get_initial_game_state()
         number_suffix.data = number_suffix_data;
 
         *piece = GamePiece{GameSide::white, GamePieceType::pawn, pawn_i, concat_str(str("white pawn "), number_suffix), 1, pawn_i};
+        piece->pawn_state.moved = false;
         state.board[piece->row][piece->column] = piece;
         piece++;
     }
@@ -162,6 +164,7 @@ GameState get_initial_game_state()
         number_suffix.data = number_suffix_data;
 
         *piece = GamePiece{GameSide::black, GamePieceType::pawn, pawn_i, concat_str(str("black pawn "), number_suffix), 6, pawn_i};
+        piece->pawn_state.moved = false;
         state.board[piece->row][piece->column] = piece;
         piece++;
     }
@@ -169,23 +172,139 @@ GameState get_initial_game_state()
     return state;
 }
 
-Bool is_move_orthogonal(Int row_from, Int column_from, Int row_to, Int column_to)
+Bool is_occupied(GameState *state, Int row, Int column)
 {
-    return row_to == row_from || column_to == column_from;
+    return state->board[row][column] != null;
 }
 
-Bool is_move_diagonal(Int row_from, Int column_from, Int row_to, Int column_to)
+Bool check_orthogonal_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
 {
-    return ABS(row_to - row_from) == ABS(column_to - column_from);
+    ASSERT(row_to != piece->row || column_to != piece->column);
+
+    if (column_to == piece->column)
+    {
+        if (row_to > piece->row)
+        {
+            for (Int row = piece->row + 1; row <= row_to; row++)
+            {
+                if (is_occupied(state, row, piece->column))
+                {
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            for (Int row = piece->row - 1; row >= row_to; row--)
+            {
+                if (is_occupied(state, row, piece->column))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+    else if (row_to == piece->row)
+    {
+        if (column_to > piece->column)
+        {
+            for (Int column = piece->column + 1; column <= column_to; column++)
+            {
+                if (is_occupied(state, piece->row, column))
+                {
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            for (Int column = piece->column - 1; column >= column_to; column--)
+            {
+                if (is_occupied(state, piece->row, column))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    return false;
 }
 
-Bool check_game_move(GamePiece *piece, Int row_to, Int column_to)
+Bool check_diagonal_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
 {
+    ASSERT(row_to != piece->row || column_to != piece->column);
+
+    if (row_to - piece->row == column_to - piece->column)
+    {
+        if (row_to > piece->row)
+        {
+            for (Int row = piece->row + 1, column = piece->column + 1; row <= row_to; row++, column++)
+            {
+                if (is_occupied(state, row, column))
+                {
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            for (Int row = piece->row - 1, column = piece->column - 1; row >= row_to; row--, column--)
+            {
+                if (is_occupied(state, row, column))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+    else if (row_to - piece->row == -(column_to - piece->column))
+    {
+        if (row_to > piece->row)
+        {
+            for (Int row = piece->row + 1, column = piece->column - 1; row <= row_to; row++, column--)
+            {
+                if (is_occupied(state, row, column))
+                {
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            for (Int row = piece->row - 1, column = piece->column + 1; row >= row_to; row--, column++)
+            {
+                if (is_occupied(state, row, column))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+Bool check_game_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
+{
+    if (row_to == piece->row && column_to == piece->column)
+    {
+        return false;
+    }
+
     switch (piece->type)
     {
     case GamePieceType::rook:
     {
-        if (is_move_orthogonal(piece->row, piece->column, row_to, column_to))
+        if (check_orthogonal_move(state, piece, row_to, column_to))
         {
             return true;
         }
@@ -196,13 +315,17 @@ Bool check_game_move(GamePiece *piece, Int row_to, Int column_to)
     {
         Int row_change = ABS(row_to - piece->row);
         Int column_change = ABS(column_to - piece->column);
-        return row_change == 1 && column_change == 2 || row_change == 2 && column_change == 1;
+        if ((row_change == 1 && column_change == 2 || row_change == 2 && column_change == 1) &&
+            !is_occupied(state, row_to, column_to))
+        {
+            return true;
+        }
     }
     break;
 
     case GamePieceType::bishop:
     {
-        if (is_move_diagonal(piece->row, piece->column, row_to, column_to))
+        if (check_diagonal_move(state, piece, row_to, column_to))
         {
             return true;
         }
@@ -211,8 +334,11 @@ Bool check_game_move(GamePiece *piece, Int row_to, Int column_to)
 
     case GamePieceType::queen:
     {
-        if (is_move_orthogonal(piece->row, piece->column, row_to, column_to) ||
-            is_move_diagonal(piece->row, piece->column, row_to, column_to))
+        if (check_orthogonal_move(state, piece, row_to, column_to))
+        {
+            return true;
+        }
+        if (check_diagonal_move(state, piece, row_to, column_to))
         {
             return true;
         }
@@ -223,7 +349,11 @@ Bool check_game_move(GamePiece *piece, Int row_to, Int column_to)
     {
         Int row_change = ABS(row_to - piece->row);
         Int column_change = ABS(column_to - piece->column);
-        return MAX(row_change, column_change) == 1;
+        if (MAX(row_change, column_change) == 1 &&
+            !is_occupied(state, row_to, column_to))
+        {
+            return true;
+        }
     }
     break;
 
@@ -232,10 +362,36 @@ Bool check_game_move(GamePiece *piece, Int row_to, Int column_to)
         Int direction = piece->side == GameSide::white ? 1 : -1;
         Int row_change = row_to - piece->row;
         Int column_change = column_to - piece->column;
-        return row_change == direction && column_change == 0;
+
+        if (column_change == 0)
+        {
+            if (!piece->pawn_state.moved && row_change == direction * 2 &&
+                !is_occupied(state, piece->row + direction * 1, piece->column) &&
+                !is_occupied(state, piece->row + direction * 2, piece->column))
+            {
+                return true;
+            }
+            else if (row_change == direction * 1 &&
+                     !is_occupied(state, piece->row + direction * 1, piece->column))
+            {
+                return true;
+            }
+        }
     }
     break;
     }
 
     return false;
+}
+
+Void update_piece_pos(GameState *state, GamePiece *piece, Int row, Int column)
+{
+    state->board[piece->row][piece->column] = null;
+    state->board[row][column] = piece;
+    piece->row = row;
+    piece->column = column;
+    if (piece->type == GamePieceType::pawn)
+    {
+        piece->pawn_state.moved = true;
+    }
 }

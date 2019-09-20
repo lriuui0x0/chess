@@ -10,6 +10,11 @@ Real degree_to_radian(Real degree)
     return degree / 180 * PI;
 }
 
+Real square(Real x)
+{
+    return x * x;
+}
+
 union Vec2 {
     struct
     {

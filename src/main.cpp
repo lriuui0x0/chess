@@ -58,7 +58,7 @@ Void debug_callback(Str message)
 }
 
 Bool render_vulkan_frame(VulkanDevice *device,
-                         VulkanPipeline *scene_pipeline, SceneFrame *scene_frame, VulkanBuffer *scene_uniform_buffer, Board *board, Buffer<Piece> *pieces,
+                         VulkanPipeline *scene_pipeline, SceneFrame *scene_frame, VulkanBuffer *scene_uniform_buffer, Board *board, Piece *pieces,
                          VulkanPipeline *debug_ui_pipeline, DebugUIFrame *debug_ui_frame, VulkanBuffer *debug_ui_vertex_buffer, Int debug_ui_character_count,
                          VulkanPipeline *debug_collision_pipeline, DebugCollisionFrame *debug_collision_frame, VulkanBuffer *debug_collision_vertex_buffer)
 {
@@ -183,12 +183,12 @@ Bool render_vulkan_frame(VulkanDevice *device,
     index_offset += board->mesh->index_count;
     vertex_offset += board->mesh->vertex_count;
 
-    for (Int piece_i = 0; piece_i < pieces->count; piece_i++)
+    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
         vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
-        vkCmdDrawIndexed(scene_frame->command_buffer, pieces->data[piece_i].mesh->index_count, 1, index_offset, vertex_offset, 0);
-        index_offset += pieces->data[piece_i].mesh->index_count;
-        vertex_offset += pieces->data[piece_i].mesh->vertex_count;
+        vkCmdDrawIndexed(scene_frame->command_buffer, pieces[piece_i].mesh->index_count, 1, index_offset, vertex_offset, 0);
+        index_offset += pieces[piece_i].mesh->index_count;
+        vertex_offset += pieces[piece_i].mesh->vertex_count;
     }
 
     vkCmdEndRenderPass(scene_frame->command_buffer);
@@ -212,7 +212,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
         vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &debug_collision_frame->vertex_buffer.handle, &offset);
 
         vertex_offset = 0;
-        for (Int piece_i = 0; piece_i < pieces->count; piece_i++)
+        for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
         {
             vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_collision_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
             vkCmdDraw(scene_frame->command_buffer, 12 * 2, 1, vertex_offset, 0);
@@ -345,11 +345,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         collision_box->radius = {50, 0, 50};
     }
 
-    Piece pieces_data[PIECE_COUNT];
-    Buffer<Piece> pieces;
-    pieces.count = PIECE_COUNT;
-    pieces.data = pieces_data;
-
+    Piece pieces[PIECE_COUNT];
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
         Piece *piece = &pieces[piece_i];
@@ -388,7 +384,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanBuffer scene_vertex_buffer;
     VulkanBuffer scene_index_buffer;
     VulkanBuffer scene_uniform_buffer;
-    ASSERT(create_scene_frame(&device, &scene_pipeline, &board, &pieces, &scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
+    ASSERT(create_scene_frame(&device, &scene_pipeline, &board, pieces, &scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
 
     DebugUIFrame debug_ui_frame;
     VulkanBuffer debug_ui_vertex_buffer;
@@ -396,7 +392,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     DebugCollisionFrame debug_collision_frame;
     VulkanBuffer debug_collision_vertex_buffer;
-    ASSERT(create_debug_collision_frame(&device, &debug_collision_pipeline, &pieces, &debug_collision_frame, &debug_collision_vertex_buffer));
+    ASSERT(create_debug_collision_frame(&device, &debug_collision_pipeline, pieces, &debug_collision_frame, &debug_collision_vertex_buffer));
 
     Camera camera;
     camera.pos = {350, -1600, -450};
@@ -409,10 +405,12 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     scene_uniform_data->light_dir[2] = {-1, -1, -1};
     scene_uniform_data->light_dir[3] = {-1, -1, 1};
 
+    calculate_entity_uniform_data(&board, get_board_uniform_data(&scene_uniform_buffer));
+
     Int vertex_data_offset = 0;
     Int index_data_offset = 0;
     write_entity_vertex_data(&board, &scene_vertex_buffer, &scene_index_buffer, &vertex_data_offset, &index_data_offset);
-    for (Int piece_i = 0; piece_i < pieces.count; piece_i++)
+    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
         write_entity_vertex_data(&pieces[piece_i], &scene_vertex_buffer, &scene_index_buffer, &vertex_data_offset, &index_data_offset);
     }
@@ -421,7 +419,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     ASSERT(upload_buffer(&device, &scene_index_buffer, &scene_frame.index_buffer));
 
     DebugCollisionVertex *vertex = (DebugCollisionVertex *)debug_collision_vertex_buffer.data;
-    for (Int piece_i = 0; piece_i < pieces.count; piece_i++)
+    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
         CollisionBox *collision_box = &pieces[piece_i].collision_box;
         write_collision_box_vertex_data(collision_box, vertex);
@@ -448,22 +446,26 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Bool rotating_z_pos = false;
     Bool rotating_z_neg = false;
 
-    Int mouse_x;
-    Int mouse_y;
-
     Bool is_running = true;
     Bool show_debug_ui = false;
     while (is_running)
     {
+        Int mouse_x = -1;
+        Int mouse_y = -1;
+        WindowMessageMouseButtonType mouse_button;
+
         WindowMessage message;
         while (get_window_message(window, &message))
         {
-            if (message.type == WindowMessageType::close)
+            switch (message.type)
+			{
+            case WindowMessageType::close:
             {
                 is_running = false;
-                break;
             }
-            else if (message.type == WindowMessageType::key_down)
+            break;
+
+            case WindowMessageType::key_down:
             {
                 WindowMessageKeyCode key_code = message.key_down_data.key_code;
 
@@ -520,7 +522,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                     show_debug_ui = !show_debug_ui;
                 }
             }
-            else if (message.type == WindowMessageType::key_up)
+            break;
+
+            case WindowMessageType::key_up:
             {
                 WindowMessageKeyCode key_code = message.key_down_data.key_code;
 
@@ -573,24 +577,91 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                     rotating_z_neg = false;
                 }
             }
-            else if (message.type == WindowMessageType::mouse_down)
+            break;
+            
+            case WindowMessageType::mouse_down:
             {
-                if (message.mouse_down_data.button_type == WindowMessageMouseButtonType::left)
+                mouse_x = message.mouse_down_data.x;
+                mouse_y = message.mouse_down_data.y;
+                mouse_button = message.mouse_down_data.button_type;
+            }
+            break;
+            }
+        }
+
+        if (mouse_x != -1 && mouse_button == WindowMessageMouseButtonType::left)
+        {
+            Mat4 inverse_projection;
+            ASSERT(inverse(scene_uniform_data->projection, &inverse_projection));
+            Mat4 inverse_view;
+            ASSERT(inverse(scene_uniform_data->view, &inverse_view));
+
+            Vec4 mouse_pos_clip = {(Real)mouse_x * 2 / window_width - 1, (Real)mouse_y * 2 / window_height - 1, 0, 1};
+            Vec3 mouse_pos = vec3(perspective_divide(inverse_view * inverse_projection * mouse_pos_clip));
+            Vec3 dir = normalize(mouse_pos - camera.pos);
+            Ray ray;
+            ray.pos = camera.pos;
+            ray.dir = dir;
+
+            Real min_dist = 10000000;
+            Int clicked_piece_index = -1;
+            for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+            {
+                Piece *piece = &pieces[piece_i];
+                if (piece->game_piece->side == game_state.player_side)
                 {
-                    start_move_animation(&pieces[8], 2, 0);
-                    start_jump_animation(&pieces[1], 2, 1);
-                }
-                else if (message.mouse_down_data.button_type == WindowMessageMouseButtonType::right)
-                {
-                    start_move_animation(&pieces[8], -2, 0);
-                    start_jump_animation(&pieces[1], -2, -1);
+                    CollisionBox collision_box;
+                    collision_box.center = piece->collision_box.center + piece->pos;
+                    collision_box.radius = piece->collision_box.radius;
+
+                    Real dist = check_collision(&ray, &collision_box);
+                    if (dist > 0 && dist < min_dist)
+                    {
+                        clicked_piece_index = piece_i;
+                    }
                 }
             }
-            else if (message.type == WindowMessageType::mouse_move)
+            game_state.selected_piece_index = clicked_piece_index;
+
+            if (game_state.selected_piece_index != -1 && clicked_piece_index == -1)
             {
-                mouse_x = message.mouse_move_data.x;
-                mouse_y = message.mouse_move_data.y;
+                Int selected_row = -1;
+                Int selected_column = -1;
+                for (Int square_i = 0; square_i < BOARD_SQUARE_COUNT; square_i++)
+                {
+                    Real dist = check_collision(&ray, &board.collision_box[square_i]);
+                    if (dist > 0)
+                    {
+                        selected_row = get_row(square_i);
+                        selected_column = get_column(square_i);
+                        break;
+                    }
+                }
+
+                if (selected_row != -1 && selected_column != -1)
+                {
+                    GamePiece *game_piece = &game_state.pieces[game_state.selected_piece_index];
+                    Bool can_move = check_game_move(&game_state, game_piece, selected_row, selected_column);
+                    if (can_move)
+                    {
+                        Piece *piece = &pieces[game_state.selected_piece_index];
+                        if (game_piece->type == GamePieceType::knight)
+                        {
+                            start_jump_animation(piece, selected_row, selected_column);
+                        }
+                        else
+                        {
+                            start_move_animation(piece, selected_row, selected_column);
+                        }
+                        update_piece_pos(&game_state, game_piece, selected_row, selected_column);
+                        game_state.selected_piece_index = -1;
+                    }
+                }
             }
+        }
+        else if (mouse_x != -1 && mouse_button == WindowMessageMouseButtonType::right)
+        {
+            game_state.selected_piece_index = -1;
         }
 
         Vec3 camera_x = rotate(camera.rotation, get_basis_x());
@@ -648,60 +719,14 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         {
             local_rotation = get_rotation_quaternion(get_basis_z(), -rotating_speed) * local_rotation;
         }
-
         camera.rotation = camera.rotation * local_rotation;
+
         calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
-
-        calculate_entity_uniform_data(&board, get_board_uniform_data(&scene_uniform_buffer));
-
-        for (Int piece_i = 0; piece_i < pieces.count; piece_i++)
+        for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
         {
             Piece *piece = &pieces[piece_i];
             update_animation(piece, 0.1);
             calculate_entity_uniform_data(piece, get_piece_uniform_data(&scene_uniform_buffer, piece_i));
-        }
-
-        Mat4 inverse_projection;
-        ASSERT(inverse(scene_uniform_data->projection, &inverse_projection));
-        Mat4 inverse_view;
-        ASSERT(inverse(scene_uniform_data->view, &inverse_view));
-
-        Vec4 mouse_pos_clip = {(Real)mouse_x * 2 / window_width - 1, (Real)mouse_y * 2 / window_height - 1, 0, 1};
-        Vec3 mouse_pos = vec3(perspective_divide(inverse_view * inverse_projection * mouse_pos_clip));
-        Vec3 dir = normalize(mouse_pos - camera.pos);
-        Ray ray;
-        ray.pos = camera.pos;
-        ray.dir = dir;
-
-        Real min_dist = 10000000;
-        Int selected_piece_index = -1;
-        for (Int piece_i = 0; piece_i < pieces.count; piece_i++)
-        {
-            Piece *piece = &pieces[piece_i];
-            CollisionBox collision_box;
-            collision_box.center = piece->collision_box.center + piece->pos;
-            collision_box.radius = piece->collision_box.radius;
-
-            Real dist = check_collision(&ray, &collision_box);
-            if (dist > 0 && dist < min_dist)
-            {
-                selected_piece_index = piece_i;
-            }
-        }
-
-        Int selected_row = -1;
-        Int selected_column = -1;
-        if (selected_piece_index == -1)
-        {
-            for (Int square_i = 0; square_i < BOARD_SQUARE_COUNT; square_i++)
-            {
-                Real dist = check_collision(&ray, &board.collision_box[square_i]);
-                if (dist > 0)
-                {
-                    selected_row = get_row(square_i);
-                    selected_column = get_column(square_i);
-                }
-            }
         }
 
         DebugUIDrawState debug_ui_draw_state;
@@ -725,22 +750,22 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
             debug_ui_draw_indent(&debug_ui_draw_state, -1);
 
-            debug_ui_draw_str(&debug_ui_draw_state, str("ray"));
-            debug_ui_draw_newline(&debug_ui_draw_state);
-            debug_ui_draw_indent(&debug_ui_draw_state, 1);
+            // debug_ui_draw_str(&debug_ui_draw_state, str("ray"));
+            // debug_ui_draw_newline(&debug_ui_draw_state);
+            // debug_ui_draw_indent(&debug_ui_draw_state, 1);
 
-            debug_ui_draw_str(&debug_ui_draw_state, str("position: "));
-            debug_ui_draw_vec3(&debug_ui_draw_state, ray.pos);
-            debug_ui_draw_newline(&debug_ui_draw_state);
+            // debug_ui_draw_str(&debug_ui_draw_state, str("position: "));
+            // debug_ui_draw_vec3(&debug_ui_draw_state, ray.pos);
+            // debug_ui_draw_newline(&debug_ui_draw_state);
 
-            debug_ui_draw_str(&debug_ui_draw_state, str("dir: "));
-            debug_ui_draw_vec3(&debug_ui_draw_state, ray.dir);
-            debug_ui_draw_newline(&debug_ui_draw_state);
+            // debug_ui_draw_str(&debug_ui_draw_state, str("dir: "));
+            // debug_ui_draw_vec3(&debug_ui_draw_state, ray.dir);
+            // debug_ui_draw_newline(&debug_ui_draw_state);
 
             debug_ui_draw_str(&debug_ui_draw_state, str("selected piece: "));
-            if (selected_piece_index != -1)
+            if (game_state.selected_piece_index != -1)
             {
-                debug_ui_draw_str(&debug_ui_draw_state, pieces[selected_piece_index].game_piece->name);
+                debug_ui_draw_str(&debug_ui_draw_state, pieces[game_state.selected_piece_index].game_piece->name);
             }
             else
             {
@@ -748,22 +773,22 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
             debug_ui_draw_newline(&debug_ui_draw_state);
 
-            debug_ui_draw_str(&debug_ui_draw_state, str("selected square: "));
-            if (selected_row != -1 && selected_column != -1)
-            {
-                debug_ui_draw_int(&debug_ui_draw_state, selected_row + 1);
-                debug_ui_draw_str(&debug_ui_draw_state, str(", "));
-                debug_ui_draw_int(&debug_ui_draw_state, selected_column + 1);
-            }
-            else
-            {
-                debug_ui_draw_str(&debug_ui_draw_state, str("<no>"));
-            }
-            debug_ui_draw_newline(&debug_ui_draw_state);
+            // debug_ui_draw_str(&debug_ui_draw_state, str("selected square: "));
+            // if (selected_row != -1 && selected_column != -1)
+            // {
+            //     debug_ui_draw_int(&debug_ui_draw_state, selected_row + 1);
+            //     debug_ui_draw_str(&debug_ui_draw_state, str(", "));
+            //     debug_ui_draw_int(&debug_ui_draw_state, selected_column + 1);
+            // }
+            // else
+            // {
+            //     debug_ui_draw_str(&debug_ui_draw_state, str("<no>"));
+            // }
+            // debug_ui_draw_newline(&debug_ui_draw_state);
         }
 
         ASSERT(render_vulkan_frame(&device,
-                                   &scene_pipeline, &scene_frame, &scene_uniform_buffer, &board, &pieces,
+                                   &scene_pipeline, &scene_frame, &scene_uniform_buffer, &board, pieces,
                                    &debug_ui_pipeline, &debug_ui_frame, &debug_ui_vertex_buffer, debug_ui_draw_state.character_count,
                                    &debug_collision_pipeline, &debug_collision_frame, &debug_collision_vertex_buffer));
     }
