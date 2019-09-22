@@ -13,9 +13,11 @@ struct Vertex
 struct Mesh
 {
     Int32 vertex_count;
-    Int32 index_count;
     Vertex *vertices_data;
+    Int32 index_count;
     Int32 *indices_data;
+    Int32 hull_vertex_count;
+    Vec3 *hull_vertex_data;
 };
 
 Bool deserialise_mesh(Str buffer, Mesh *mesh)
@@ -42,7 +44,21 @@ Bool deserialise_mesh(Str buffer, Mesh *mesh)
 
     Int index_data_start = index_count_start + 4;
     Int index_data_length = sizeof(Int32) * mesh->index_count;
-    if (buffer.count != index_data_start + index_data_length)
+    if (buffer.count < index_data_start + index_data_length)
+    {
+        return false;
+    }
+
+    Int hull_vertex_count_start = index_data_start + index_data_length;
+    if (buffer.count < hull_vertex_count_start + 4)
+    {
+        return false;
+    }
+    mesh->hull_vertex_count = *(Int32 *)(buffer.data + hull_vertex_count_start);
+
+    Int hull_vertex_data_start = hull_vertex_count_start + 4;
+    Int hull_vertex_data_length = sizeof(Vec3) * mesh->hull_vertex_count;
+    if (buffer.count != hull_vertex_data_start + hull_vertex_data_length)
     {
         return false;
     }
@@ -51,6 +67,8 @@ Bool deserialise_mesh(Str buffer, Mesh *mesh)
     memcpy(mesh->vertices_data, buffer.data + vertex_data_start, vertex_data_length);
     mesh->indices_data = (Int32 *)malloc(index_data_length);
     memcpy(mesh->indices_data, buffer.data + index_data_start, index_data_length);
+    mesh->hull_vertex_data = (Vec3 *)malloc(hull_vertex_data_length);
+    memcpy(mesh->hull_vertex_data, buffer.data + hull_vertex_data_start, hull_vertex_data_length);
 
     return true;
 }
@@ -103,11 +121,11 @@ Bool deserialise_font(Str buffer, Font *font)
         return false;
     }
 
-    font->pos = (FontCharHeader *) malloc(pos_data_length);
+    font->pos = (FontCharHeader *)malloc(pos_data_length);
     memcpy(font->pos, buffer.data + pos, pos_data_length);
     pos += pos_data_length;
 
-    font->data = (UInt32 *) malloc(image_data_length);
+    font->data = (UInt32 *)malloc(image_data_length);
     memcpy(font->data, buffer.data + pos, image_data_length);
 
     return true;

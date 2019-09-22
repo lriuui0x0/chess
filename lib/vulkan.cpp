@@ -620,7 +620,8 @@ Bool create_pipeline(VulkanDevice *device,
         vertex_attribute_description[vertex_attribute_i].offset = vertex_attribute->offset;
     }
 
-    VkPipelineVertexInputStateCreateInfo vertex_input_state_info = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    VkPipelineVertexInputStateCreateInfo vertex_input_state_info = {};
+    vertex_input_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertex_input_state_info.vertexBindingDescriptionCount = 1;
     vertex_input_state_info.pVertexBindingDescriptions = &vertex_binding_description;
     vertex_input_state_info.vertexAttributeDescriptionCount = vertex_attributes->count;

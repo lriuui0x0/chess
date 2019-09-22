@@ -4,7 +4,6 @@ layout(set = 0, binding = 0) uniform Scene {
     mat4 view;
     mat4 normal_view;
     mat4 projection;
-    vec4 light_dir[4];
 } scene;
 
 layout(set = 1, binding = 0) uniform Entity {

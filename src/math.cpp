@@ -15,6 +15,13 @@ Real square(Real x)
     return x * x;
 }
 
+template<typename T>
+T lerp(T p, T q, Real t)
+{
+    T result = p + t * (q - p);
+    return result;
+}
+
 union Vec2 {
     struct
     {
@@ -84,16 +91,37 @@ Vec3 operator*(Real s, Vec3 u)
     return result;
 }
 
-Vec3 lerp(Vec3 p, Vec3 q, Real t)
+Vec3 operator*(Vec3 u, Vec3 v)
 {
-    Vec3 result = p + t * (q - p);
+    Vec3 result;
+    result.x = u.x * v.x;
+    result.y = u.y * v.y;
+    result.z = u.z * v.z;
+    return result;
+}
+
+Bool operator==(Vec3 u, Vec3 v)
+{
+    Bool result = u.x == v.x && u.y == v.y && u.z == v.z;
+    return result;
+}
+
+Bool operator<(Vec3 u, Vec3 v)
+{
+    Bool result = u.x < v.x && u.y < v.y && u.z < v.z;
+    return result;
+}
+
+Real norm(Vec3 u)
+{
+    Real result = sqrtf(u.x * u.x + u.y * u.y + u.z * u.z);
     return result;
 }
 
 Vec3 normalize(Vec3 u)
 {
     Vec3 result;
-    Real length = sqrtf(u.x * u.x + u.y * u.y + u.z * u.z);
+    Real length = norm(u);
     result.x = u.x / length;
     result.y = u.y / length;
     result.z = u.z / length;
@@ -610,12 +638,6 @@ Mat4 get_rotation_matrix(Quaternion q)
 Vec4 vec4(Quaternion q)
 {
     return {q.w, q.x, q.y, q.z};
-}
-
-Quaternion lerp(Quaternion p, Quaternion q, Real t)
-{
-    Quaternion result = p + t * (q - p);
-    return result;
 }
 
 Quaternion slerp(Quaternion p, Quaternion q, Real t)

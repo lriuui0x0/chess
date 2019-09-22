@@ -10,13 +10,14 @@ layout(set = 0, binding = 0) uniform Scene {
 layout(set = 1, binding = 0) uniform Entity {
     mat4 world;
     mat4 normal_world;
+    float alpha;
 } entity;
 
 layout(location = 0) in vec3 pos;
 layout(location = 1) in vec3 normal;
 layout(location = 2) in vec3 color;
 
-layout(location = 0) out flat vec3 frag_color;
+layout(location = 0) out flat vec4 frag_color;
 
 vec3 shade(vec3 light_dir, vec3 normal_dir, vec3 surface_color)
 {
@@ -29,10 +30,13 @@ vec3 shade(vec3 light_dir, vec3 normal_dir, vec3 surface_color)
 void main() {
     vec3 world_pos = vec3(scene.view * entity.world * vec4(pos, 1)); 
     vec3 normal_dir = vec3(scene.normal_view * entity.normal_world * vec4(normal, 1));
-    frag_color = vec3(0);
-    frag_color += 0.3 * shade(-vec3(scene.light_dir[0]), normal_dir, vec3(color));
-    frag_color += 0.3 * shade(-vec3(scene.light_dir[1]), normal_dir, vec3(color));
-    frag_color += 0.2 * shade(-vec3(scene.light_dir[2]), normal_dir, vec3(color));
-    frag_color += 0.2 * shade(-vec3(scene.light_dir[3]), normal_dir, vec3(color));
+
+    vec3 shade_color = vec3(0);
+    shade_color += 0.3 * shade(-vec3(scene.light_dir[0]), normal_dir, vec3(color));
+    shade_color += 0.3 * shade(-vec3(scene.light_dir[1]), normal_dir, vec3(color));
+    shade_color += 0.2 * shade(-vec3(scene.light_dir[2]), normal_dir, vec3(color));
+    shade_color += 0.2 * shade(-vec3(scene.light_dir[3]), normal_dir, vec3(color));
+    frag_color = vec4(shade_color, entity.alpha);
+
     gl_Position = scene.projection * vec4(world_pos.x, world_pos.y, world_pos.z, 1);
 }

@@ -58,7 +58,7 @@ Void debug_callback(Str message)
 }
 
 Bool render_vulkan_frame(VulkanDevice *device,
-                         VulkanPipeline *scene_pipeline, SceneFrame *scene_frame, VulkanBuffer *scene_uniform_buffer, Board *board, Piece *pieces,
+                         VulkanPipeline *scene_pipeline, SceneFrame *scene_frame, VulkanBuffer *scene_uniform_buffer, Board *board, Piece *pieces, Int ghost_piece_index,
                          VulkanPipeline *debug_ui_pipeline, DebugUIFrame *debug_ui_frame, VulkanBuffer *debug_ui_vertex_buffer, Int debug_ui_character_count,
                          VulkanPipeline *debug_collision_pipeline, DebugCollisionFrame *debug_collision_frame, VulkanBuffer *debug_collision_vertex_buffer)
 {
@@ -97,13 +97,8 @@ Bool render_vulkan_frame(VulkanDevice *device,
     scene_uniform_buffer_copy.size = scene_uniform_buffer->count;
     vkCmdCopyBuffer(scene_frame->command_buffer, scene_uniform_buffer->handle, scene_frame->uniform_buffer.handle, 1, &scene_uniform_buffer_copy);
 
-    VkBufferCopy debug_ui_vertex_buffer_copy = {};
-    debug_ui_vertex_buffer_copy.srcOffset = 0;
-    debug_ui_vertex_buffer_copy.dstOffset = 0;
-    debug_ui_vertex_buffer_copy.size = sizeof(DebugUIVertex) * debug_ui_character_count * 6;
-    vkCmdCopyBuffer(scene_frame->command_buffer, debug_ui_vertex_buffer->handle, debug_ui_frame->vertex_buffer.handle, 1, &debug_ui_vertex_buffer_copy);
-
-    VkBufferMemoryBarrier scene_uniform_buffer_memory_barrier = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+    VkBufferMemoryBarrier scene_uniform_buffer_memory_barrier = {};
+    scene_uniform_buffer_memory_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
     scene_uniform_buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     scene_uniform_buffer_memory_barrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
     scene_uniform_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -112,16 +107,6 @@ Bool render_vulkan_frame(VulkanDevice *device,
     scene_uniform_buffer_memory_barrier.offset = 0;
     scene_uniform_buffer_memory_barrier.size = scene_uniform_buffer->count;
     vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, null, 1, &scene_uniform_buffer_memory_barrier, 0, null);
-
-    VkBufferMemoryBarrier debug_ui_vertex_buffer_memory_barrier = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-    debug_ui_vertex_buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    debug_ui_vertex_buffer_memory_barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-    debug_ui_vertex_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    debug_ui_vertex_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    debug_ui_vertex_buffer_memory_barrier.buffer = debug_ui_frame->vertex_buffer.handle;
-    debug_ui_vertex_buffer_memory_barrier.offset = 0;
-    debug_ui_vertex_buffer_memory_barrier.size = sizeof(DebugUIVertex) * debug_ui_character_count * 6;
-    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, null, 1, &debug_ui_vertex_buffer_memory_barrier, 0, null);
 
     VkImageMemoryBarrier depth_image_memory_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     depth_image_memory_barrier.srcAccessMask = 0;
@@ -174,21 +159,37 @@ Bool render_vulkan_frame(VulkanDevice *device,
     vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &scene_frame->vertex_buffer.handle, &offset);
     vkCmdBindIndexBuffer(scene_frame->command_buffer, scene_frame->index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
 
-    Int index_offset = 0;
     Int vertex_offset = 0;
+    Int index_offset = 0;
     vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 0, 1, &scene_frame->scene_descriptor_set, 0, null);
 
     vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 1, 1, &scene_frame->board_descriptor_set, 0, null);
     vkCmdDrawIndexed(scene_frame->command_buffer, board->mesh->index_count, 1, index_offset, vertex_offset, 0);
-    index_offset += board->mesh->index_count;
     vertex_offset += board->mesh->vertex_count;
+    index_offset += board->mesh->index_count;
 
+    Int ghost_piece_vertex_offset;
+    Int ghost_piece_index_offset;
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
+        Int index_count = pieces[piece_i].mesh->index_count;
         vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
-        vkCmdDrawIndexed(scene_frame->command_buffer, pieces[piece_i].mesh->index_count, 1, index_offset, vertex_offset, 0);
-        index_offset += pieces[piece_i].mesh->index_count;
+        vkCmdDrawIndexed(scene_frame->command_buffer, index_count, 1, index_offset, vertex_offset, 0);
+
+        if (piece_i == ghost_piece_index)
+        {
+            ghost_piece_vertex_offset = vertex_offset;
+            ghost_piece_index_offset = index_offset;
+        }
         vertex_offset += pieces[piece_i].mesh->vertex_count;
+        index_offset += pieces[piece_i].mesh->index_count;
+    }
+
+    if (ghost_piece_index != -1)
+    {
+        Int index_count = pieces[ghost_piece_index].mesh->index_count;
+        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 1, 1, &scene_frame->ghost_piece_descriptor_set, 0, null);
+        vkCmdDrawIndexed(scene_frame->command_buffer, index_count, 1, ghost_piece_index_offset, ghost_piece_vertex_offset, 0);
     }
 
     vkCmdEndRenderPass(scene_frame->command_buffer);
@@ -214,10 +215,12 @@ Bool render_vulkan_frame(VulkanDevice *device,
         vertex_offset = 0;
         for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
         {
+            Piece *piece = &pieces[piece_i];
+            Int vertex_count = COLLISION_BOX_VERTEX_COUNT + piece->mesh->hull_vertex_count * 2;
+
             vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_collision_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
-            vkCmdDraw(scene_frame->command_buffer, 12 * 2, 1, vertex_offset, 0);
-            Int line_count = 12;
-            vertex_offset += line_count * 2;
+            vkCmdDraw(scene_frame->command_buffer, vertex_count, 1, vertex_offset, 0);
+            vertex_offset += vertex_count;
         }
 
         vkCmdEndRenderPass(scene_frame->command_buffer);
@@ -226,6 +229,23 @@ Bool render_vulkan_frame(VulkanDevice *device,
     // NOTE: Debug UI
     if (debug_ui_character_count > 0)
     {
+        VkBufferCopy debug_ui_vertex_buffer_copy = {};
+        debug_ui_vertex_buffer_copy.srcOffset = 0;
+        debug_ui_vertex_buffer_copy.dstOffset = 0;
+        debug_ui_vertex_buffer_copy.size = sizeof(DebugUIVertex) * debug_ui_character_count * 6;
+        vkCmdCopyBuffer(scene_frame->command_buffer, debug_ui_vertex_buffer->handle, debug_ui_frame->vertex_buffer.handle, 1, &debug_ui_vertex_buffer_copy);
+
+        VkBufferMemoryBarrier debug_ui_vertex_buffer_memory_barrier = {};
+        debug_ui_vertex_buffer_memory_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        debug_ui_vertex_buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        debug_ui_vertex_buffer_memory_barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+        debug_ui_vertex_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        debug_ui_vertex_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        debug_ui_vertex_buffer_memory_barrier.buffer = debug_ui_frame->vertex_buffer.handle;
+        debug_ui_vertex_buffer_memory_barrier.offset = 0;
+        debug_ui_vertex_buffer_memory_barrier.size = sizeof(DebugUIVertex) * debug_ui_character_count * 6;
+        vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, null, 1, &debug_ui_vertex_buffer_memory_barrier, 0, null);
+
         VkRenderPassBeginInfo debug_ui_render_pass_begin_info = {};
         debug_ui_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         debug_ui_render_pass_begin_info.renderPass = debug_ui_pipeline->render_pass;
@@ -329,10 +349,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     GameState game_state = get_initial_game_state();
 
     Board board;
-    board.pos = {0, 0, 0};
-    board.rotation = get_rotation_quaternion(get_basis_y(), 0);
-    board.scale = {-1, -1, 1};
-    board.mesh = &board_mesh;
+    fill_board_initial_state(&board, &board_mesh);
 
     // NOTE: Set up board collision box
     for (Int square_i = 0; square_i < BOARD_SQUARE_COUNT; square_i++)
@@ -406,6 +423,11 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     scene_uniform_data->light_dir[3] = {-1, -1, 1};
 
     calculate_entity_uniform_data(&board, get_board_uniform_data(&device, &scene_uniform_buffer));
+    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+    {
+        Piece *piece = &pieces[piece_i];
+        calculate_entity_uniform_data(piece, get_piece_uniform_data(&device, &scene_uniform_buffer, piece_i));
+    }
 
     Int vertex_data_offset = 0;
     Int index_data_offset = 0;
@@ -414,20 +436,15 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     {
         write_entity_vertex_data(&pieces[piece_i], &scene_vertex_buffer, &scene_index_buffer, &vertex_data_offset, &index_data_offset);
     }
-
     ASSERT(upload_buffer(&device, &scene_vertex_buffer, &scene_frame.vertex_buffer));
     ASSERT(upload_buffer(&device, &scene_index_buffer, &scene_frame.index_buffer));
 
     DebugCollisionVertex *vertex = (DebugCollisionVertex *)debug_collision_vertex_buffer.data;
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
-        CollisionBox *collision_box = &pieces[piece_i].collision_box;
-        write_collision_box_vertex_data(collision_box, vertex);
-
-        Int line_count = 12;
-        vertex += line_count * 2;
+        vertex = write_collision_box_vertex_data(&pieces[piece_i].collision_box, vertex);
+        vertex = write_collision_hull_vertex_data(pieces[piece_i].mesh, vertex);
     }
-
     ASSERT(upload_buffer(&device, &debug_collision_vertex_buffer, &debug_collision_frame.vertex_buffer));
 
     show_window(window);
@@ -446,13 +463,15 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Bool rotating_z_pos = false;
     Bool rotating_z_neg = false;
 
+    Int mouse_x = 0;
+    Int mouse_y = 0;
+
     Bool is_running = true;
     Bool show_debug_ui = false;
     while (is_running)
     {
-        Int mouse_x = -1;
-        Int mouse_y = -1;
-        WindowMessageMouseButtonType mouse_button;
+        Bool has_click = false;
+        WindowMessageMouseButtonType click_mouse_button;
 
         WindowMessage message;
         while (get_window_message(window, &message))
@@ -581,90 +600,146 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
             case WindowMessageType::mouse_down:
             {
-                mouse_x = message.mouse_down_data.x;
-                mouse_y = message.mouse_down_data.y;
-                mouse_button = message.mouse_down_data.button_type;
+                has_click = true;
+                click_mouse_button = message.mouse_down_data.button_type;
+            }
+            break;
+
+            case WindowMessageType::mouse_move:
+            {
+                mouse_x = message.mouse_move_data.x;
+                mouse_y = message.mouse_move_data.y;
             }
             break;
             }
         }
 
-        if (mouse_x != -1 && mouse_button == WindowMessageMouseButtonType::left)
+        Mat4 inverse_projection;
+        ASSERT(inverse(scene_uniform_data->projection, &inverse_projection));
+        Mat4 inverse_view;
+        ASSERT(inverse(scene_uniform_data->view, &inverse_view));
+
+        Vec4 mouse_pos_clip = {(Real)mouse_x * 2 / window_width - 1, (Real)mouse_y * 2 / window_height - 1, 0, 1};
+        Vec3 mouse_pos_world = vec3(perspective_divide(inverse_view * inverse_projection * mouse_pos_clip));
+        Ray ray_world;
+        ray_world.pos = camera.pos;
+        ray_world.dir = normalize(mouse_pos_world - camera.pos);
+
+        Int hover_row = -1;
+        Int hover_column = -1;
+        for (Int square_i = 0; square_i < BOARD_SQUARE_COUNT; square_i++)
         {
-            Mat4 inverse_projection;
-            ASSERT(inverse(scene_uniform_data->projection, &inverse_projection));
-            Mat4 inverse_view;
-            ASSERT(inverse(scene_uniform_data->view, &inverse_view));
-
-            Vec4 mouse_pos_clip = {(Real)mouse_x * 2 / window_width - 1, (Real)mouse_y * 2 / window_height - 1, 0, 1};
-            Vec3 mouse_pos = vec3(perspective_divide(inverse_view * inverse_projection * mouse_pos_clip));
-            Vec3 dir = normalize(mouse_pos - camera.pos);
-            Ray ray;
-            ray.pos = camera.pos;
-            ray.dir = dir;
-
-            Real min_dist = 10000000;
-            Int clicked_piece_index = -1;
-            for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+            Real dist = check_box_collision(&ray_world, &board.collision_box[square_i]);
+            if (dist > 0)
             {
-                Piece *piece = &pieces[piece_i];
-                if (piece->game_piece->side == game_state.player_side)
-                {
-                    CollisionBox collision_box;
-                    collision_box.center = piece->collision_box.center + piece->pos;
-                    collision_box.radius = piece->collision_box.radius;
-
-                    Real dist = check_collision(&ray, &collision_box);
-                    if (dist > 0 && dist < min_dist)
-                    {
-                        clicked_piece_index = piece_i;
-                    }
-                }
+                hover_row = get_row(square_i);
+                hover_column = get_column(square_i);
+                break;
             }
-            if (clicked_piece_index != -1)
-            {
-                game_state.selected_piece_index = clicked_piece_index;
-            }
+        }
 
-            if (game_state.selected_piece_index != -1 && clicked_piece_index == -1)
+        Int hover_piece_index = -1;
+        Real min_dist = 10000000;
+        for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+        {
+            Piece *piece = &pieces[piece_i];
+            if (piece->game_piece->side == game_state.player_side)
             {
-                Int selected_row = -1;
-                Int selected_column = -1;
-                for (Int square_i = 0; square_i < BOARD_SQUARE_COUNT; square_i++)
-                {
-                    Real dist = check_collision(&ray, &board.collision_box[square_i]);
-                    if (dist > 0)
-                    {
-                        selected_row = get_row(square_i);
-                        selected_column = get_column(square_i);
-                        break;
-                    }
-                }
+                EntityUniformData *uniform_data = get_piece_uniform_data(&device, &scene_uniform_buffer, piece_i);
+                Mat4 inverse_world;
+                ASSERT(inverse(uniform_data->world, &inverse_world));
 
-                if (selected_row != -1 && selected_column != -1)
+                Vec3 camera_pos_local = vec3(inverse_world * vec4(camera.pos));
+                Vec3 mouse_pos_local = vec3(inverse_world * vec4(mouse_pos_world));
+                Ray ray_local;
+                ray_local.pos = camera_pos_local;
+                ray_local.dir = normalize(mouse_pos_local - camera_pos_local);
+
+                Real box_dist = check_box_collision(&ray_local, &piece->collision_box);
+                if (box_dist >= 0 && box_dist < min_dist)
                 {
-                    GamePiece *game_piece = &game_state.pieces[game_state.selected_piece_index];
-                    Bool can_move = check_game_move(&game_state, game_piece, selected_row, selected_column);
-                    if (can_move)
+                    Real convex_hull_dist = check_convex_hull_collision(&ray_local, piece->mesh);
+                    if (convex_hull_dist >= 0)
                     {
-                        Piece *piece = &pieces[game_state.selected_piece_index];
-                        if (game_piece->type == GamePieceType::knight)
-                        {
-                            start_jump_animation(piece, selected_row, selected_column);
-                        }
-                        else
-                        {
-                            start_move_animation(piece, selected_row, selected_column);
-                        }
-                        update_piece_pos(&game_state, game_piece, selected_row, selected_column);
-                        game_state.selected_piece_index = -1;
+                        min_dist = convex_hull_dist;
+                        hover_piece_index = piece_i;
                     }
                 }
             }
         }
-        else if (mouse_x != -1 && mouse_button == WindowMessageMouseButtonType::right)
+
+        if (has_click)
         {
-            game_state.selected_piece_index = -1;
+            if (click_mouse_button == WindowMessageMouseButtonType::left)
+            {
+                if (hover_piece_index != -1)
+                {
+                    if (hover_piece_index != game_state.selected_piece_index)
+                    {
+                        if (game_state.selected_piece_index != -1)
+                        {
+                            stop_flash_animation(&pieces[game_state.selected_piece_index]);
+                        }
+
+                        game_state.selected_piece_index = hover_piece_index;
+                        start_flash_animation(&pieces[game_state.selected_piece_index]);
+                    }
+                }
+
+                if (game_state.selected_piece_index != -1 && hover_piece_index == -1)
+                {
+                    if (hover_row != -1 && hover_column != -1)
+                    {
+                        GamePiece *game_piece = &game_state.pieces[game_state.selected_piece_index];
+                        Bool can_move = check_game_move(&game_state, game_piece, hover_row, hover_column);
+                        if (can_move)
+                        {
+                            Piece *piece = &pieces[game_state.selected_piece_index];
+                            stop_flash_animation(piece);
+
+                            if (game_piece->type == GamePieceType::knight)
+                            {
+                                start_jump_animation(piece, hover_row, hover_column);
+                            }
+                            else
+                            {
+                                start_move_animation(piece, hover_row, hover_column);
+                            }
+
+                            update_game_piece_pos(&game_state, game_piece, hover_row, hover_column);
+                            game_state.selected_piece_index = -1;
+                        }
+                    }
+                }
+            }
+            else if (click_mouse_button == WindowMessageMouseButtonType::right)
+            {
+                if (game_state.selected_piece_index != -1)
+                {
+                    stop_flash_animation(&pieces[game_state.selected_piece_index]);
+                }
+
+                game_state.selected_piece_index = -1;
+            }
+        }
+
+        GhostPiece ghost_piece;
+        Int ghost_piece_index = -1;
+        if (game_state.selected_piece_index != -1 && hover_row != -1 && hover_column != -1)
+        {
+            GamePiece *hover_piece = hover_piece_index != -1 ? &game_state.pieces[hover_piece_index] : null;
+            GamePiece *hover_square = game_state.board[hover_row][hover_column];
+            Bool is_hovering_player_piece = hover_piece && hover_piece->side == game_state.player_side;
+            Bool is_hovering_player_piece_square = hover_square && hover_square->side == game_state.player_side;
+            if (!is_hovering_player_piece && !is_hovering_player_piece_square)
+            {
+                ghost_piece_index = game_state.selected_piece_index;
+                ghost_piece.pos = get_square_pos(hover_row, hover_column);
+                ghost_piece.rotation = pieces[game_state.selected_piece_index].rotation;
+                ghost_piece.scale = pieces[game_state.selected_piece_index].scale;
+                ghost_piece.mesh = pieces[game_state.selected_piece_index].mesh;
+                ghost_piece.alpha = 0.7;
+            }
         }
 
         Vec3 camera_x = rotate(camera.rotation, get_basis_x());
@@ -731,6 +806,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             update_animation(piece, 0.1);
             calculate_entity_uniform_data(piece, get_piece_uniform_data(&device, &scene_uniform_buffer, piece_i));
         }
+        if (ghost_piece_index != -1)
+        {
+            calculate_entity_uniform_data(&ghost_piece, get_ghost_piece_uniform_data(&device, &scene_uniform_buffer));
+        }
 
         DebugUIDrawState debug_ui_draw_state;
         debug_ui_draw_state.character_count = 0;
@@ -753,18 +832,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
             debug_ui_draw_indent(&debug_ui_draw_state, -1);
 
-            // debug_ui_draw_str(&debug_ui_draw_state, str("ray"));
-            // debug_ui_draw_newline(&debug_ui_draw_state);
-            // debug_ui_draw_indent(&debug_ui_draw_state, 1);
-
-            // debug_ui_draw_str(&debug_ui_draw_state, str("position: "));
-            // debug_ui_draw_vec3(&debug_ui_draw_state, ray.pos);
-            // debug_ui_draw_newline(&debug_ui_draw_state);
-
-            // debug_ui_draw_str(&debug_ui_draw_state, str("dir: "));
-            // debug_ui_draw_vec3(&debug_ui_draw_state, ray.dir);
-            // debug_ui_draw_newline(&debug_ui_draw_state);
-
             debug_ui_draw_str(&debug_ui_draw_state, str("selected piece: "));
             if (game_state.selected_piece_index != -1)
             {
@@ -776,22 +843,22 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
             debug_ui_draw_newline(&debug_ui_draw_state);
 
-            // debug_ui_draw_str(&debug_ui_draw_state, str("selected square: "));
-            // if (selected_row != -1 && selected_column != -1)
-            // {
-            //     debug_ui_draw_int(&debug_ui_draw_state, selected_row + 1);
-            //     debug_ui_draw_str(&debug_ui_draw_state, str(", "));
-            //     debug_ui_draw_int(&debug_ui_draw_state, selected_column + 1);
-            // }
-            // else
-            // {
-            //     debug_ui_draw_str(&debug_ui_draw_state, str("<no>"));
-            // }
-            // debug_ui_draw_newline(&debug_ui_draw_state);
+            debug_ui_draw_str(&debug_ui_draw_state, str("selected square: "));
+            if (hover_row != -1 && hover_column != -1)
+            {
+                debug_ui_draw_int(&debug_ui_draw_state, hover_row + 1);
+                debug_ui_draw_str(&debug_ui_draw_state, str(", "));
+                debug_ui_draw_int(&debug_ui_draw_state, hover_column + 1);
+            }
+            else
+            {
+                debug_ui_draw_str(&debug_ui_draw_state, str("<no>"));
+            }
+            debug_ui_draw_newline(&debug_ui_draw_state);
         }
 
         ASSERT(render_vulkan_frame(&device,
-                                   &scene_pipeline, &scene_frame, &scene_uniform_buffer, &board, pieces,
+                                   &scene_pipeline, &scene_frame, &scene_uniform_buffer, &board, pieces, ghost_piece_index,
                                    &debug_ui_pipeline, &debug_ui_frame, &debug_ui_vertex_buffer, debug_ui_draw_state.character_count,
                                    &debug_collision_pipeline, &debug_collision_frame, &debug_collision_vertex_buffer));
     }

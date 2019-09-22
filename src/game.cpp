@@ -384,7 +384,7 @@ Bool check_game_move(GameState *state, GamePiece *piece, Int row_to, Int column_
     return false;
 }
 
-Void update_piece_pos(GameState *state, GamePiece *piece, Int row, Int column)
+Void update_game_piece_pos(GameState *state, GamePiece *piece, Int row, Int column)
 {
     state->board[piece->row][piece->column] = null;
     state->board[row][column] = piece;

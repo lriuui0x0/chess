@@ -4,43 +4,7 @@
 #include "math.cpp"
 #include "asset.cpp"
 #include "game.cpp"
-
-struct Ray
-{
-    Vec3 pos;
-    Vec3 dir;
-};
-
-struct CollisionBox
-{
-    Vec3 center;
-    Vec3 radius;
-};
-
-Real check_collision(Ray *ray, CollisionBox *collision_box)
-{
-    Real t_min = 0;
-    Real t_max = 100000000;
-    for (Int i = 0; i < 3; i++)
-    {
-        Real reciprocal_d = 1 / ray->dir[i];
-        Real t1 = (collision_box->center[i] - collision_box->radius[i] - ray->pos[i]) * reciprocal_d;
-        Real t2 = (collision_box->center[i] + collision_box->radius[i] - ray->pos[i]) * reciprocal_d;
-        if (t1 > t2)
-        {
-            swap(&t1, &t2);
-        }
-
-        t_min = MAX(t_min, t1);
-        t_max = MIN(t_max, t2);
-        if (t_min > t_max)
-        {
-            return -1;
-        }
-    }
-
-    return t_min;
-}
+#include "collision.cpp"
 
 struct Camera
 {
@@ -53,8 +17,28 @@ struct Entity
     Vec3 pos;
     Quaternion rotation;
     Vec3 scale;
+    Real alpha;
     Mesh *mesh;
 };
+
+struct Board : Entity
+{
+    CollisionBox collision_box[BOARD_SQUARE_COUNT];
+};
+
+Void fill_board_initial_state(Board *board, Mesh *board_mesh)
+{
+    board->pos = {0, 0, 0};
+    board->rotation = get_rotation_quaternion(get_basis_y(), 0);
+    board->scale = {-1, -1, 1};
+    board->mesh = board_mesh;
+    board->alpha = 1;
+}
+
+Vec3 get_square_pos(Int row, Int column)
+{
+    return {(Real)(column * 100.0), 0, (Real)(row * 100.0)};
+}
 
 struct Animation
 {
@@ -68,6 +52,7 @@ enum struct AnimationType
     stand,
     move,
     jump,
+    flash,
 };
 
 struct Piece : Entity
@@ -77,57 +62,6 @@ struct Piece : Entity
     AnimationType animation_type;
     Animation animation;
 };
-
-struct Board : Entity
-{
-    CollisionBox collision_box[BOARD_SQUARE_COUNT];
-};
-
-Vec3 get_square_pos(Int row, Int column)
-{
-    return {(Real)(column * 100.0), 0, (Real)(row * 100.0)};
-}
-
-Void start_move_animation(Piece *piece, Int row, Int column)
-{
-    piece->animation_type = AnimationType::move;
-    piece->animation.t = 0;
-    piece->animation.pos_from = piece->pos;
-    piece->animation.pos_to = get_square_pos(row, column);
-}
-
-Void start_jump_animation(Piece *piece, Int row, Int column)
-{
-    piece->animation_type = AnimationType::jump;
-    piece->animation.t = 0;
-    piece->animation.pos_from = piece->pos;
-    piece->animation.pos_to = get_square_pos(row, column);
-}
-
-Void update_animation(Piece *piece, Real dt)
-{
-    if (piece->animation_type == AnimationType::move)
-    {
-        piece->animation.t += dt;
-        Real a = 0.1;
-        Real ft = a * square(piece->animation.t) + (1 - a) * piece->animation.t;
-        piece->pos = lerp(piece->animation.pos_from, piece->animation.pos_to, ft);
-    }
-    else if (piece->animation_type == AnimationType::jump)
-    {
-        piece->animation.t += dt;
-        piece->pos = lerp(piece->animation.pos_from, piece->animation.pos_to, piece->animation.t);
-        Real height = -200;
-        Real a = -4 * height;
-        Real b = 4 * height;
-        piece->pos.y = a * square(piece->animation.t) + b * piece->animation.t;
-    }
-
-    if (piece->animation.t >= 1)
-    {
-        piece->animation_type = AnimationType::stand;
-    }
-}
 
 Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
                               Mesh *white_rook_mesh,
@@ -144,7 +78,6 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
                               Mesh *black_pawn_mesh)
 {
     piece->game_piece = game_piece;
-
     if (game_piece->side == GameSide::white)
     {
         piece->rotation = get_rotation_quaternion(get_basis_y(), 0);
@@ -304,4 +237,86 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
     piece->collision_box.radius = 0.5 * (max - min);
 
     piece->animation_type = AnimationType::stand;
+    piece->alpha = 1;
 }
+
+Void start_move_animation(Piece *piece, Int row, Int column)
+{
+    piece->animation_type = AnimationType::move;
+    piece->animation.t = 0;
+    piece->animation.pos_from = piece->pos;
+    piece->animation.pos_to = get_square_pos(row, column);
+}
+
+Void start_jump_animation(Piece *piece, Int row, Int column)
+{
+    piece->animation_type = AnimationType::jump;
+    piece->animation.t = 0;
+    piece->animation.pos_from = piece->pos;
+    piece->animation.pos_to = get_square_pos(row, column);
+}
+
+Void start_flash_animation(Piece *piece)
+{
+    piece->animation_type = AnimationType::flash;
+    piece->animation.t = 0;
+}
+
+Void stop_flash_animation(Piece *piece)
+{
+    piece->animation_type = AnimationType::stand;
+    piece->alpha = 1;
+}
+
+Void update_animation(Piece *piece, Real dt)
+{
+    if (piece->animation_type == AnimationType::move)
+    {
+        piece->animation.t += dt;
+        Real a = 0.1;
+        Real ft = a * square(piece->animation.t) + (1 - a) * piece->animation.t;
+        piece->pos = lerp(piece->animation.pos_from, piece->animation.pos_to, ft);
+
+        if (piece->animation.t >= 1)
+        {
+            piece->animation_type = AnimationType::stand;
+        }
+    }
+    else if (piece->animation_type == AnimationType::jump)
+    {
+        piece->animation.t += dt;
+        Vec3 new_pos = lerp(piece->animation.pos_from, piece->animation.pos_to, piece->animation.t);
+        Real height = -200;
+        Real a = -4 * height;
+        Real b = 4 * height;
+        new_pos.y = a * square(piece->animation.t) + b * piece->animation.t;
+        piece->pos = new_pos;
+
+        if (piece->animation.t >= 1)
+        {
+            piece->animation_type = AnimationType::stand;
+        }
+    }
+    else if (piece->animation_type == AnimationType::flash)
+    {
+        piece->animation.t += dt * 0.2;
+        Real alpha_min = 0.5;
+        if (piece->animation.t <= 0.5)
+        {
+            piece->alpha = lerp(1.0f, alpha_min, piece->animation.t * 2);
+        }
+        else
+        {
+            piece->alpha = lerp(alpha_min, 1.0f, (piece->animation.t - 0.5) * 2);
+        }
+
+        if (piece->animation.t >= 1)
+        {
+            piece->animation.t -= 1;
+        }
+    }
+}
+
+struct GhostPiece : Entity
+{
+};

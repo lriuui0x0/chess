@@ -16,6 +16,7 @@ struct EntityUniformData
 {
     Mat4 world;
     Mat4 normal_world;
+    Real alpha;
 };
 
 VkSampleCountFlagBits get_maximum_multisample_count(VulkanDevice *device)
@@ -128,7 +129,7 @@ Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     descriptor_sets.data = descriptor_set_info;
 
     if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(Vertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets,
-                         multisample_count, true, false, pipeline))
+                         multisample_count, true, true, pipeline))
     {
         return false;
     }
@@ -152,6 +153,7 @@ struct SceneFrame
     VkDescriptorSet scene_descriptor_set;
     VkDescriptorSet board_descriptor_set;
     Array<VkDescriptorSet> piece_descriptor_sets;
+    VkDescriptorSet ghost_piece_descriptor_set;
 };
 
 Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *board, Piece *pieces, SceneFrame *frame,
@@ -244,7 +246,7 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
 
     Int scene_uniform_data_length = align_up(sizeof(SceneUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment);
     Int entity_uniform_data_length = align_up(sizeof(EntityUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment);
-    Int total_uniform_data_length = scene_uniform_data_length + entity_uniform_data_length * (PIECE_COUNT + 1);
+    Int total_uniform_data_length = scene_uniform_data_length + entity_uniform_data_length * (PIECE_COUNT + 2);
 
     if (!create_buffer(device, total_vertex_data_length,
                        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -312,6 +314,13 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
         }
     }
 
+    if (!allocate_descriptor_set(device, &pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
+                                 scene_uniform_data_length + (PIECE_COUNT + 1) * entity_uniform_data_length, entity_uniform_data_length,
+                                 &frame->ghost_piece_descriptor_set))
+    {
+        return false;
+    }
+
     return true;
 }
 
@@ -333,6 +342,13 @@ EntityUniformData *get_piece_uniform_data(VulkanDevice *device, VulkanBuffer *un
     return (EntityUniformData *)(uniform_buffer->data + offset);
 }
 
+EntityUniformData *get_ghost_piece_uniform_data(VulkanDevice *device, VulkanBuffer *uniform_buffer)
+{
+    Int offset = align_up(sizeof(SceneUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment);
+    offset += align_up(sizeof(EntityUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment) * (PIECE_COUNT + 1);
+    return (EntityUniformData *)(uniform_buffer->data + offset);
+}
+
 void calculate_scene_uniform_data(Camera *camera, Int window_width, Int window_height, SceneUniformData *uniform_data)
 {
     Mat4 rotation = get_rotation_matrix(camera->rotation);
@@ -348,4 +364,5 @@ void calculate_entity_uniform_data(Entity *entity, EntityUniformData *uniform_da
     Mat4 scale = get_scale_matrix(entity->scale.x, entity->scale.y, entity->scale.z);
     uniform_data->world = translate * rotation * scale;
     uniform_data->normal_world = rotation * scale;
+    uniform_data->alpha = entity->alpha;
 }
