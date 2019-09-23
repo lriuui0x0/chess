@@ -236,14 +236,20 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
         }
     }
 
-    Int total_vertex_data_length = sizeof(Vertex) * board->mesh->vertex_count;
-    Int total_index_data_length = sizeof(UInt32) * board->mesh->index_count;
+    Int total_vertex_count = 0;
+    board->mesh->vertex_offset = total_vertex_count;
+    Int total_index_count = 0;
+    board->mesh->index_offset = total_index_count;
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
-        total_vertex_data_length += sizeof(Vertex) * pieces[piece_i].mesh->vertex_count;
-        total_index_data_length += sizeof(UInt32) * pieces[piece_i].mesh->index_count;
+        pieces[piece_i].mesh->vertex_offset = total_vertex_count;
+        total_vertex_count += pieces[piece_i].mesh->vertex_count;
+        pieces[piece_i].mesh->index_offset = total_index_count;
+        total_index_count += pieces[piece_i].mesh->index_count;
     }
 
+    Int total_vertex_data_length = sizeof(Vertex) * total_vertex_count;
+    Int total_index_data_length = sizeof(UInt32) * total_index_count;
     Int scene_uniform_data_length = align_up(sizeof(SceneUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment);
     Int entity_uniform_data_length = align_up(sizeof(EntityUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment);
     Int total_uniform_data_length = scene_uniform_data_length + entity_uniform_data_length * (PIECE_COUNT + 2);

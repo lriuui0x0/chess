@@ -18,6 +18,9 @@ struct Mesh
     Int32 *indices_data;
     Int32 hull_vertex_count;
     Vec3 *hull_vertex_data;
+
+    Int vertex_offset;
+    Int index_offset;
 };
 
 Bool deserialise_mesh(Str buffer, Mesh *mesh)

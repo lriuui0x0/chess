@@ -88,11 +88,11 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::rook:
         {
             piece->mesh = white_rook_mesh;
-            if (game_piece->index == 0)
+            if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(0, 0);
             }
-            else if (game_piece->index == 1)
+            else if (game_piece->type_index == 1)
             {
                 piece->pos = get_square_pos(0, 7);
             }
@@ -102,11 +102,11 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::knight:
         {
             piece->mesh = white_knight_mesh;
-            if (game_piece->index == 0)
+            if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(0, 1);
             }
-            else if (game_piece->index == 1)
+            else if (game_piece->type_index == 1)
             {
                 piece->pos = get_square_pos(0, 6);
             }
@@ -116,11 +116,11 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::bishop:
         {
             piece->mesh = white_bishop_mesh;
-            if (game_piece->index == 0)
+            if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(0, 2);
             }
-            else if (game_piece->index == 1)
+            else if (game_piece->type_index == 1)
             {
                 piece->pos = get_square_pos(0, 5);
             }
@@ -144,7 +144,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::pawn:
         {
             piece->mesh = white_pawn_mesh;
-            piece->pos = get_square_pos(1, game_piece->index);
+            piece->pos = get_square_pos(1, game_piece->type_index);
         }
         break;
         }
@@ -159,11 +159,11 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::rook:
         {
             piece->mesh = black_rook_mesh;
-            if (game_piece->index == 0)
+            if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(7, 0);
             }
-            else if (game_piece->index == 1)
+            else if (game_piece->type_index == 1)
             {
                 piece->pos = get_square_pos(7, 7);
             }
@@ -173,11 +173,11 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::knight:
         {
             piece->mesh = black_knight_mesh;
-            if (game_piece->index == 0)
+            if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(7, 1);
             }
-            else if (game_piece->index == 1)
+            else if (game_piece->type_index == 1)
             {
                 piece->pos = get_square_pos(7, 6);
             }
@@ -187,11 +187,11 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::bishop:
         {
             piece->mesh = black_bishop_mesh;
-            if (game_piece->index == 0)
+            if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(7, 2);
             }
-            else if (game_piece->index == 1)
+            else if (game_piece->type_index == 1)
             {
                 piece->pos = get_square_pos(7, 5);
             }
@@ -215,7 +215,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::pawn:
         {
             piece->mesh = black_pawn_mesh;
-            piece->pos = get_square_pos(6, game_piece->index);
+            piece->pos = get_square_pos(6, game_piece->type_index);
         }
         break;
         }
@@ -320,3 +320,14 @@ Void update_animation(Piece *piece, Real dt)
 struct GhostPiece : Entity
 {
 };
+
+GhostPiece get_ghost_piece(Piece *piece, Int row, Int column)
+{
+    GhostPiece result;
+    result.pos = get_square_pos(row, column);
+    result.rotation = piece->rotation;
+    result.scale = piece->scale;
+    result.mesh = piece->mesh;
+    result.alpha = 0.7;
+    return result;
+}

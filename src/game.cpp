@@ -18,20 +18,16 @@ enum struct GameSide
     black,
 };
 
-struct PawnState
-{
-    Bool moved;
-};
-
 struct GamePiece
 {
+    Int index;
     GameSide side;
     GamePieceType type;
-    Int index;
+    Int type_index;
     Str name;
     Int row;
     Int column;
-    PawnState pawn_state;
+    Bool moved;
 };
 
 #define BOARD_SQUARE_COUNT (64)
@@ -45,7 +41,7 @@ struct GameState
     GamePiece *board[BOARD_ROW_COUNT][BOARD_COLUMN_COUNT];
     GameSide player_side;
     GameSide current_side;
-    Int selected_piece_index;
+    GamePiece *selected_piece;
 };
 
 Int get_row(Int square_index)
@@ -72,38 +68,38 @@ GameState get_initial_game_state()
     GameState state = {};
     state.player_side = GameSide::white;
     state.current_side = GameSide::white;
-    state.selected_piece_index = -1;
+    state.selected_piece = null;
 
     GamePiece *piece = &state.pieces[0];
-    *piece = GamePiece{GameSide::white, GamePieceType::rook, 0, str("white rook 0"), 0, 0};
+    *piece = GamePiece{0, GameSide::white, GamePieceType::rook, 0, str("white rook 0"), 0, 0, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
-    *piece = GamePiece{GameSide::white, GamePieceType::knight, 0, str("white knight 0"), 0, 1};
+    *piece = GamePiece{1, GameSide::white, GamePieceType::knight, 0, str("white knight 0"), 0, 1, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
-    *piece = GamePiece{GameSide::white, GamePieceType::bishop, 0, str("white bishop 0"), 0, 2};
+    *piece = GamePiece{2, GameSide::white, GamePieceType::bishop, 0, str("white bishop 0"), 0, 2, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
-    *piece = GamePiece{GameSide::white, GamePieceType::queen, 0, str("white queen"), 0, 3};
+    *piece = GamePiece{3, GameSide::white, GamePieceType::queen, 0, str("white queen"), 0, 3, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
-    *piece = GamePiece{GameSide::white, GamePieceType::king, 0, str("white king"), 0, 4};
+    *piece = GamePiece{4, GameSide::white, GamePieceType::king, 0, str("white king"), 0, 4, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
-    *piece = GamePiece{GameSide::white, GamePieceType::bishop, 1, str("white bishop 1"), 0, 5};
+    *piece = GamePiece{5, GameSide::white, GamePieceType::bishop, 1, str("white bishop 1"), 0, 5, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
-    *piece = GamePiece{GameSide::white, GamePieceType::knight, 1, str("white knight 1"), 0, 6};
+    *piece = GamePiece{6, GameSide::white, GamePieceType::knight, 1, str("white knight 1"), 0, 6, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
-    *piece = GamePiece{GameSide::white, GamePieceType::rook, 1, str("white rook 1"), 0, 7};
+    *piece = GamePiece{7, GameSide::white, GamePieceType::rook, 1, str("white rook 1"), 0, 7, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
@@ -116,41 +112,40 @@ GameState get_initial_game_state()
         number_suffix.count = 1;
         number_suffix.data = number_suffix_data;
 
-        *piece = GamePiece{GameSide::white, GamePieceType::pawn, pawn_i, concat_str(str("white pawn "), number_suffix), 1, pawn_i};
-        piece->pawn_state.moved = false;
+        *piece = GamePiece{8 + pawn_i, GameSide::white, GamePieceType::pawn, pawn_i, concat_str(str("white pawn "), number_suffix), 1, pawn_i, false};
         state.board[piece->row][piece->column] = piece;
         piece++;
     }
 
-    *piece = GamePiece{GameSide::black, GamePieceType::rook, 0, str("black rook 0"), 7, 0};
+    *piece = GamePiece{16, GameSide::black, GamePieceType::rook, 0, str("black rook 0"), 7, 0, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
-    *piece = GamePiece{GameSide::black, GamePieceType::knight, 0, str("black knight 0"), 7, 1};
+    *piece = GamePiece{17, GameSide::black, GamePieceType::knight, 0, str("black knight 0"), 7, 1, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
-    *piece = GamePiece{GameSide::black, GamePieceType::bishop, 0, str("black bishop 0"), 7, 2};
+    *piece = GamePiece{18, GameSide::black, GamePieceType::bishop, 0, str("black bishop 0"), 7, 2, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
-    *piece = GamePiece{GameSide::black, GamePieceType::queen, 0, str("black queen"), 7, 3};
+    *piece = GamePiece{19, GameSide::black, GamePieceType::queen, 0, str("black queen"), 7, 3, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
-    *piece = GamePiece{GameSide::black, GamePieceType::king, 0, str("black king"), 7, 4};
+    *piece = GamePiece{20, GameSide::black, GamePieceType::king, 0, str("black king"), 7, 4, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
-    *piece = GamePiece{GameSide::black, GamePieceType::bishop, 1, str("black bishop 1"), 7, 5};
+    *piece = GamePiece{21, GameSide::black, GamePieceType::bishop, 1, str("black bishop 1"), 7, 5, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
-    *piece = GamePiece{GameSide::black, GamePieceType::knight, 1, str("black knight 1"), 7, 6};
+    *piece = GamePiece{22, GameSide::black, GamePieceType::knight, 1, str("black knight 1"), 7, 6, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
-    *piece = GamePiece{GameSide::black, GamePieceType::rook, 1, str("black rook 1"), 7, 7};
+    *piece = GamePiece{23, GameSide::black, GamePieceType::rook, 1, str("black rook 1"), 7, 7, false};
     state.board[piece->row][piece->column] = piece;
     piece++;
 
@@ -163,13 +158,22 @@ GameState get_initial_game_state()
         number_suffix.count = 1;
         number_suffix.data = number_suffix_data;
 
-        *piece = GamePiece{GameSide::black, GamePieceType::pawn, pawn_i, concat_str(str("black pawn "), number_suffix), 6, pawn_i};
-        piece->pawn_state.moved = false;
+        *piece = GamePiece{24 + pawn_i, GameSide::black, GamePieceType::pawn, pawn_i, concat_str(str("black pawn "), number_suffix), 6, pawn_i, false};
         state.board[piece->row][piece->column] = piece;
         piece++;
     }
 
     return state;
+}
+
+Bool is_friend(GameState *state, GamePiece *piece)
+{
+    return piece && piece->side == state->player_side;
+}
+
+Bool is_foe(GameState *state, GamePiece *piece)
+{
+    return piece && piece->side != state->player_side;
 }
 
 Bool is_occupied(GameState *state, Int row, Int column)
@@ -190,28 +194,26 @@ Bool is_foe_occupied(GameState *state, Int row, Int column)
     return piece != null && piece->side != state->player_side;
 }
 
-enum struct CheckMoveResultType
+enum struct GameMoveType
 {
     move,
     capture,
-
-    // NOTE: Same square as the one that the piece is currently standing on.
-    stand,
-    // NOTE: Clicked on a friend piece.
-    change_focus,
-    // NOTE: Cannot move due to illegal movement or blocked by piece.
     illegal,
 };
 
-struct CheckMoveResult
+struct GameMove
 {
-    CheckMoveResultType type;
+    GameMoveType type;
+    union {
+        GamePiece *captured_piece;
+    };
 };
 
-CheckMoveResultType check_orthogonal_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
+GameMove check_orthogonal_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
 {
     ASSERT(row_to != piece->row || column_to != piece->column);
 
+    GameMove result;
     if (column_to == piece->column)
     {
         if (row_to > piece->row)
@@ -220,130 +222,186 @@ CheckMoveResultType check_orthogonal_move(GameState *state, GamePiece *piece, In
             {
                 if (is_occupied(state, row, piece->column))
                 {
-                    return CheckMoveResultType::illegal;
+                    result.type = GameMoveType::illegal;
+                    return result;
                 }
             }
         }
         else
         {
-            for (Int row = piece->row - 1; row >= row_to; row--)
+            for (Int row = piece->row - 1; row > row_to; row--)
             {
                 if (is_occupied(state, row, piece->column))
                 {
-                    return CheckMoveResultType::illegal;
+                    result.type = GameMoveType::illegal;
+                    return result;
                 }
             }
         }
 
-        return true;
+        if (is_foe_occupied(state, row_to, column_to))
+        {
+            result.type = GameMoveType::capture;
+            result.captured_piece = state->board[row_to][column_to];
+            return result;
+        }
+        else
+        {
+            result.type = GameMoveType::move;
+            return result;
+        }
     }
     else if (row_to == piece->row)
     {
         if (column_to > piece->column)
         {
-            for (Int column = piece->column + 1; column <= column_to; column++)
+            for (Int column = piece->column + 1; column < column_to; column++)
             {
                 if (is_occupied(state, piece->row, column))
                 {
-                    return false;
+                    result.type = GameMoveType::illegal;
+                    return result;
                 }
             }
         }
         else
         {
-            for (Int column = piece->column - 1; column >= column_to; column--)
+            for (Int column = piece->column - 1; column > column_to; column--)
             {
                 if (is_occupied(state, piece->row, column))
                 {
-                    return false;
+                    result.type = GameMoveType::illegal;
+                    return result;
                 }
             }
         }
 
-        return true;
+        if (is_foe_occupied(state, row_to, column_to))
+        {
+            result.type = GameMoveType::capture;
+            result.captured_piece = state->board[row_to][column_to];
+            return result;
+        }
+        else
+        {
+            result.type = GameMoveType::move;
+            return result;
+        }
     }
-
-    return false;
+    else
+    {
+        result.type = GameMoveType::illegal;
+        return result;
+    }
 }
 
-Bool check_diagonal_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
+GameMove check_diagonal_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
 {
     ASSERT(row_to != piece->row || column_to != piece->column);
 
+    GameMove result;
     if (row_to - piece->row == column_to - piece->column)
     {
         if (row_to > piece->row)
         {
-            for (Int row = piece->row + 1, column = piece->column + 1; row <= row_to; row++, column++)
+            for (Int row = piece->row + 1, column = piece->column + 1; row < row_to; row++, column++)
             {
                 if (is_occupied(state, row, column))
                 {
-                    return false;
+                    result.type = GameMoveType::illegal;
+                    return result;
                 }
             }
         }
         else
         {
-            for (Int row = piece->row - 1, column = piece->column - 1; row >= row_to; row--, column--)
+            for (Int row = piece->row - 1, column = piece->column - 1; row > row_to; row--, column--)
             {
                 if (is_occupied(state, row, column))
                 {
-                    return false;
+                    result.type = GameMoveType::illegal;
+                    return result;
                 }
             }
         }
 
-        return true;
+        if (is_foe_occupied(state, row_to, column_to))
+        {
+            result.type = GameMoveType::capture;
+            result.captured_piece = state->board[row_to][column_to];
+            return result;
+        }
+        else
+        {
+            result.type = GameMoveType::move;
+            return result;
+        }
     }
     else if (row_to - piece->row == -(column_to - piece->column))
     {
         if (row_to > piece->row)
         {
-            for (Int row = piece->row + 1, column = piece->column - 1; row <= row_to; row++, column--)
+            for (Int row = piece->row + 1, column = piece->column - 1; row < row_to; row++, column--)
             {
                 if (is_occupied(state, row, column))
                 {
-                    return false;
+                    result.type = GameMoveType::illegal;
+                    return result;
                 }
             }
         }
         else
         {
-            for (Int row = piece->row - 1, column = piece->column + 1; row >= row_to; row--, column++)
+            for (Int row = piece->row - 1, column = piece->column + 1; row > row_to; row--, column++)
             {
                 if (is_occupied(state, row, column))
                 {
-                    return false;
+                    result.type = GameMoveType::illegal;
+                    return result;
                 }
             }
         }
 
-        return true;
+        if (is_foe_occupied(state, row_to, column_to))
+        {
+            result.type = GameMoveType::capture;
+            result.captured_piece = state->board[row_to][column_to];
+            return result;
+        }
+        else
+        {
+            result.type = GameMoveType::move;
+            return result;
+        }
     }
-
-    return false;
+    else
+    {
+        result.type = GameMoveType::illegal;
+        return result;
+    }
 }
 
-CheckMoveResult check_game_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
+GameMove check_game_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
 {
+    GameMove result;
     if (row_to == piece->row && column_to == piece->column)
     {
-        return {CheckMoveResultType::stand};
+        result.type = GameMoveType::illegal;
+        return result;
     }
 
     if (is_friend_occupied(state, row_to, column_to))
     {
-        return {CheckMoveResultType::change_focus};
+        result.type = GameMoveType::illegal;
+        return result;
     }
 
     switch (piece->type)
     {
     case GamePieceType::rook:
     {
-        if (check_orthogonal_move(state, piece, row_to, column_to))
-        {
-            return {CheckMoveResultType::move};
-        }
+        result = check_orthogonal_move(state, piece, row_to, column_to);
+        return result;
     }
     break;
 
@@ -351,33 +409,43 @@ CheckMoveResult check_game_move(GameState *state, GamePiece *piece, Int row_to, 
     {
         Int row_change = ABS(row_to - piece->row);
         Int column_change = ABS(column_to - piece->column);
-        if ((row_change == 1 && column_change == 2 || row_change == 2 && column_change == 1) &&
-            !is_occupied(state, row_to, column_to))
+        if (row_change == 1 && column_change == 2 || row_change == 2 && column_change == 1)
         {
-            return {CheckMoveResultType::move};
+            if (is_foe_occupied(state, row_to, column_to))
+            {
+                result.type = GameMoveType::capture;
+                result.captured_piece = state->board[row_to][column_to];
+                return result;
+            }
+            else
+            {
+                result.type = GameMoveType::move;
+                return result;
+            }
+        }
+        else
+        {
+            result.type = GameMoveType::illegal;
+            return result;
         }
     }
     break;
 
     case GamePieceType::bishop:
     {
-        if (check_diagonal_move(state, piece, row_to, column_to))
-        {
-            return {CheckMoveResultType::move};
-        }
+        result = check_diagonal_move(state, piece, row_to, column_to);
+        return result;
     }
     break;
 
     case GamePieceType::queen:
     {
-        if (check_orthogonal_move(state, piece, row_to, column_to))
+        result = check_orthogonal_move(state, piece, row_to, column_to);
+        if (result.type == GameMoveType::illegal)
         {
-            return {CheckMoveResultType::move};
+            result = check_diagonal_move(state, piece, row_to, column_to);
         }
-        if (check_diagonal_move(state, piece, row_to, column_to))
-        {
-            return {CheckMoveResultType::move};
-        }
+        return result;
     }
     break;
 
@@ -385,10 +453,24 @@ CheckMoveResult check_game_move(GameState *state, GamePiece *piece, Int row_to, 
     {
         Int row_change = ABS(row_to - piece->row);
         Int column_change = ABS(column_to - piece->column);
-        if (MAX(row_change, column_change) == 1 &&
-            !is_occupied(state, row_to, column_to))
+        if (MAX(row_change, column_change) == 1)
         {
-            return {CheckMoveResultType::move};
+            if (is_foe_occupied(state, row_to, column_to))
+            {
+                result.type = GameMoveType::capture;
+                result.captured_piece = state->board[row_to][column_to];
+                return result;
+            }
+            else
+            {
+                result.type = GameMoveType::move;
+                return result;
+            }
+        }
+        else
+        {
+            result.type = GameMoveType::illegal;
+            return result;
         }
     }
     break;
@@ -401,18 +483,50 @@ CheckMoveResult check_game_move(GameState *state, GamePiece *piece, Int row_to, 
 
         if (column_change == 0)
         {
-            if (!piece->pawn_state.moved && row_change == direction * 2 &&
+            if (!piece->moved && row_change == direction * 2 &&
                 !is_occupied(state, piece->row + direction * 1, piece->column) &&
                 !is_occupied(state, piece->row + direction * 2, piece->column))
             {
-                return {CheckMoveResultType::move};
+                result.type = GameMoveType::move;
+                return result;
             }
             else if (row_change == direction * 1 &&
                      !is_occupied(state, piece->row + direction * 1, piece->column))
             {
-                return {CheckMoveResultType::move};
+                result.type = GameMoveType::move;
+                return result;
+            }
+            else
+            {
+                result.type = GameMoveType::illegal;
+                return result;
             }
         }
+        else if (ABS(column_change) == 1 && row_change == direction * 1)
+        {
+            if (is_foe_occupied(state, row_to, column_to))
+            {
+                result.type = GameMoveType::capture;
+                result.captured_piece = state->board[row_to][column_to];
+                return result;
+            }
+            else
+            {
+                result.type = GameMoveType::illegal;
+                return result;
+            }
+        }
+        else
+        {
+            result.type = GameMoveType::illegal;
+            return result;
+        }
+    }
+    break;
+
+    default:
+    {
+        ASSERT(false);
     }
     break;
     }
@@ -424,8 +538,5 @@ Void update_game_piece_pos(GameState *state, GamePiece *piece, Int row, Int colu
     state->board[row][column] = piece;
     piece->row = row;
     piece->column = column;
-    if (piece->type == GamePieceType::pawn)
-    {
-        piece->pawn_state.moved = true;
-    }
+    piece->moved = true;
 }
