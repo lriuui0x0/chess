@@ -174,10 +174,41 @@ GameState get_initial_game_state()
 
 Bool is_occupied(GameState *state, Int row, Int column)
 {
-    return state->board[row][column] != null;
+    GamePiece *piece = state->board[row][column];
+    return piece != null;
 }
 
-Bool check_orthogonal_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
+Bool is_friend_occupied(GameState *state, Int row, Int column)
+{
+    GamePiece *piece = state->board[row][column];
+    return piece != null && piece->side == state->player_side;
+}
+
+Bool is_foe_occupied(GameState *state, Int row, Int column)
+{
+    GamePiece *piece = state->board[row][column];
+    return piece != null && piece->side != state->player_side;
+}
+
+enum struct CheckMoveResultType
+{
+    move,
+    capture,
+
+    // NOTE: Same square as the one that the piece is currently standing on.
+    stand,
+    // NOTE: Clicked on a friend piece.
+    change_focus,
+    // NOTE: Cannot move due to illegal movement or blocked by piece.
+    illegal,
+};
+
+struct CheckMoveResult
+{
+    CheckMoveResultType type;
+};
+
+CheckMoveResultType check_orthogonal_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
 {
     ASSERT(row_to != piece->row || column_to != piece->column);
 
@@ -185,11 +216,11 @@ Bool check_orthogonal_move(GameState *state, GamePiece *piece, Int row_to, Int c
     {
         if (row_to > piece->row)
         {
-            for (Int row = piece->row + 1; row <= row_to; row++)
+            for (Int row = piece->row + 1; row < row_to; row++)
             {
                 if (is_occupied(state, row, piece->column))
                 {
-                    return false;
+                    return CheckMoveResultType::illegal;
                 }
             }
         }
@@ -199,7 +230,7 @@ Bool check_orthogonal_move(GameState *state, GamePiece *piece, Int row_to, Int c
             {
                 if (is_occupied(state, row, piece->column))
                 {
-                    return false;
+                    return CheckMoveResultType::illegal;
                 }
             }
         }
@@ -293,11 +324,16 @@ Bool check_diagonal_move(GameState *state, GamePiece *piece, Int row_to, Int col
     return false;
 }
 
-Bool check_game_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
+CheckMoveResult check_game_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
 {
     if (row_to == piece->row && column_to == piece->column)
     {
-        return false;
+        return {CheckMoveResultType::stand};
+    }
+
+    if (is_friend_occupied(state, row_to, column_to))
+    {
+        return {CheckMoveResultType::change_focus};
     }
 
     switch (piece->type)
@@ -306,7 +342,7 @@ Bool check_game_move(GameState *state, GamePiece *piece, Int row_to, Int column_
     {
         if (check_orthogonal_move(state, piece, row_to, column_to))
         {
-            return true;
+            return {CheckMoveResultType::move};
         }
     }
     break;
@@ -318,7 +354,7 @@ Bool check_game_move(GameState *state, GamePiece *piece, Int row_to, Int column_
         if ((row_change == 1 && column_change == 2 || row_change == 2 && column_change == 1) &&
             !is_occupied(state, row_to, column_to))
         {
-            return true;
+            return {CheckMoveResultType::move};
         }
     }
     break;
@@ -327,7 +363,7 @@ Bool check_game_move(GameState *state, GamePiece *piece, Int row_to, Int column_
     {
         if (check_diagonal_move(state, piece, row_to, column_to))
         {
-            return true;
+            return {CheckMoveResultType::move};
         }
     }
     break;
@@ -336,11 +372,11 @@ Bool check_game_move(GameState *state, GamePiece *piece, Int row_to, Int column_
     {
         if (check_orthogonal_move(state, piece, row_to, column_to))
         {
-            return true;
+            return {CheckMoveResultType::move};
         }
         if (check_diagonal_move(state, piece, row_to, column_to))
         {
-            return true;
+            return {CheckMoveResultType::move};
         }
     }
     break;
@@ -352,7 +388,7 @@ Bool check_game_move(GameState *state, GamePiece *piece, Int row_to, Int column_
         if (MAX(row_change, column_change) == 1 &&
             !is_occupied(state, row_to, column_to))
         {
-            return true;
+            return {CheckMoveResultType::move};
         }
     }
     break;
@@ -369,19 +405,17 @@ Bool check_game_move(GameState *state, GamePiece *piece, Int row_to, Int column_
                 !is_occupied(state, piece->row + direction * 1, piece->column) &&
                 !is_occupied(state, piece->row + direction * 2, piece->column))
             {
-                return true;
+                return {CheckMoveResultType::move};
             }
             else if (row_change == direction * 1 &&
                      !is_occupied(state, piece->row + direction * 1, piece->column))
             {
-                return true;
+                return {CheckMoveResultType::move};
             }
         }
     }
     break;
     }
-
-    return false;
 }
 
 Void update_game_piece_pos(GameState *state, GamePiece *piece, Int row, Int column)
