@@ -3,13 +3,7 @@
 #include "../lib/util.hpp"
 #include "../src/math.cpp"
 #include <cstdio>
-
-struct Vertex
-{
-    Vec3 pos;
-    Vec3 normal;
-    Vec3 color;
-};
+#include "convex_hull.cpp"
 
 Vec3 convert_vec3(FbxVector4 fbx_vec4)
 {
@@ -27,15 +21,7 @@ Vec3 convert_vec3(FbxDouble3 fbx_double3)
     return {x, y, z};
 }
 
-struct Edge
-{
-    Int from;
-    Int to;
-    Int back;
-    Bool skip;
-};
-
-Void output(Array<Vertex> vertices, Array<UInt32> indices, Array<Vec3> hull_vertices, CStr output_filename)
+Void output(Array<Vertex> vertices, Array<UInt32> indices, Array<UInt32> hull_indices, CStr output_filename)
 {
     FILE *output_file = fopen(output_filename, "wb");
     ASSERT(fseek(output_file, 0, SEEK_SET) == 0);
@@ -63,105 +49,14 @@ Void output(Array<Vertex> vertices, Array<UInt32> indices, Array<Vec3> hull_vert
     ASSERT(fwrite(&indices.count, sizeof(Int32), 1, output_file) == 1);
     ASSERT(fwrite(indices.data, sizeof(UInt32), indices.count, output_file) == (size_t)indices.count);
 
-    ASSERT(fwrite(&hull_vertices.count, sizeof(Int32), 1, output_file) == 1);
-    for (Int vertex_i = 0; vertex_i < hull_vertices.count; vertex_i++)
+    ASSERT(fwrite(&hull_indices.count, sizeof(Int32), 1, output_file) == 1);
+    for (Int hull_index_i = 0; hull_index_i < hull_indices.count; hull_index_i++)
     {
-        Vec3 vertex_pos = hull_vertices[vertex_i];
+        Vec3 vertex_pos = vertices[hull_indices[hull_index_i]].pos;
         ASSERT(fwrite(&vertex_pos.x, sizeof(Real), 1, output_file) == 1);
         ASSERT(fwrite(&vertex_pos.y, sizeof(Real), 1, output_file) == 1);
         ASSERT(fwrite(&vertex_pos.z, sizeof(Real), 1, output_file) == 1);
     }
-}
-
-// TODO: This function tries to calculate convex hull with 3d gift wrapping algorithm, but produces messy self intersecting triangles and has bugs.
-Array<UInt32> calculate_convex_hull(Array<Vertex> vertices)
-{
-    Array<UInt32> hull_indices = create_array<UInt32>();
-    Array<Edge> hull_edges = create_array<Edge>();
-    *hull_indices.push() = 0;
-    *hull_indices.push() = 1;
-    *hull_indices.push() = 2;
-    *hull_edges.push() = Edge{0, 1, 2, false};
-    *hull_edges.push() = Edge{1, 2, 0, false};
-    *hull_edges.push() = Edge{2, 0, 1, false};
-    Int head = 0;
-    while (hull_edges.count - head > 0)
-    {
-        Edge *edge = &hull_edges[head++];
-        if (edge->skip)
-        {
-            continue;
-        }
-
-        Vec3 edge_segment = vertices[edge->to].pos - vertices[edge->from].pos;
-        Vec3 back_segment = vertices[edge->back].pos - vertices[edge->to].pos;
-        Vec3 back_cross_product = cross(edge_segment, back_segment);
-        Real back_cross_product_norm = norm(back_cross_product);
-
-        Real cos_angle = 2;
-        Int vertex_index = -1;
-        for (Int vertex_i = 0; vertex_i < vertices.count; vertex_i++)
-        {
-            Vec3 vertex_pos = vertices[vertex_i].pos;
-            Vec3 front_segment = vertex_pos - vertices[edge->to].pos;
-            Vec3 front_cross_product = cross(edge_segment, front_segment);
-            Real front_cross_product_norm = norm(front_cross_product);
-            if (front_cross_product_norm < 0.1)
-            {
-                continue;
-            }
-
-            Real front_cos_angle = dot(back_cross_product, front_cross_product) / (back_cross_product_norm * front_cross_product_norm);
-            if (front_cos_angle < cos_angle)
-            {
-                vertex_index = vertex_i;
-                cos_angle = front_cos_angle;
-            }
-        }
-        ASSERT(vertex_index != -1);
-
-        for (Int vertex_i = 0; vertex_i < vertices.count; vertex_i++)
-        {
-            Vec3 front_segment = vertices[vertex_index].pos - vertices[edge->to].pos;
-            Vec3 test_segment = vertices[vertex_i].pos - vertices[edge->from].pos;
-
-            Real signed_volume = dot(test_segment, cross(edge_segment, front_segment));
-            ASSERT(signed_volume > -0.1);
-        }
-
-        *hull_indices.push() = edge->from;
-        *hull_indices.push() = edge->to;
-        *hull_indices.push() = vertex_index;
-
-        Bool seen_new_edge[2] = {false, false};
-        Edge new_edges[2] = {{vertex_index, edge->to, edge->from}, {edge->from, vertex_index, edge->to}};
-        for (Int i = 0; i < hull_edges.count; i++)
-        {
-            Edge *edge = &hull_edges[i];
-            for (Int i = 0; i < 2; i++)
-            {
-                if (!seen_new_edge[i])
-                {
-                    if (new_edges[i].from == edge->from && new_edges[i].to == edge->to ||
-                        new_edges[i].to == edge->from && new_edges[i].from == edge->to)
-                    {
-                        edge->skip = true;
-                        seen_new_edge[i] = true;
-                    }
-                }
-            }
-        }
-
-        for (Int i = 0; i < 2; i++)
-        {
-            if (!seen_new_edge[i])
-            {
-                *hull_edges.push() = new_edges[i];
-            }
-        }
-    }
-
-    return hull_indices;
 }
 
 Vec3 calculate_closest_vertex(Array<Vertex> vertices, Vec3 base_from, Vec3 base_to)
@@ -333,14 +228,14 @@ int main(Int argc, CStr *argv)
         }
     }
 
-    Array<Vec3> hull_vertices;
+    Array<UInt32> hull_indices;
     if (argc == 2)
     {
-        hull_vertices = calculate_simple_convex_hull(vertices);
+        hull_indices = convex_hull_incremental(vertices);
     }
     else
     {
-        hull_vertices = create_array<Vec3>();
+        hull_indices = create_array<UInt32>();
     }
-    output(vertices, indices, hull_vertices, output_filename);
+    output(vertices, indices, hull_indices, output_filename);
 }
