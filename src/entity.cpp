@@ -33,6 +33,16 @@ Void fill_board_initial_state(Board *board, Mesh *board_mesh)
     board->scale = {-1, -1, 1};
     board->mesh = board_mesh;
     board->alpha = 1;
+
+    for (Int square_i = 0; square_i < BOARD_SQUARE_COUNT; square_i++)
+    {
+        Int row = get_row(square_i);
+        Int column = get_column(square_i);
+
+        CollisionBox *collision_box = &board->collision_box[square_i];
+        collision_box->center = {(Real)(column * 100), 0, (Real)(row * 100)};
+        collision_box->radius = {50, 0, 50};
+    }
 }
 
 Vec3 get_square_pos(Int row, Int column)
@@ -58,7 +68,6 @@ enum struct AnimationType
 struct Piece : Entity
 {
     GamePiece *game_piece;
-    CollisionBox collision_box;
     AnimationType animation_type;
     Animation animation;
 };
@@ -220,21 +229,6 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         break;
         }
     }
-
-    Vec3 min = {+10000, +10000, +10000};
-    Vec3 max = {-10000, -10000, -10000};
-    for (Int vertex_i = 0; vertex_i < piece->mesh->vertex_count; vertex_i++)
-    {
-        Vec3 pos = piece->mesh->vertices_data[vertex_i].pos;
-        for (Int i = 0; i < 3; i++)
-        {
-            min[i] = MIN(min[i], pos[i]);
-            max[i] = MAX(max[i], pos[i]);
-        }
-    }
-    min.y = 0;
-    piece->collision_box.center = 0.5 * (max + min);
-    piece->collision_box.radius = 0.5 * (max - min);
 
     piece->animation_type = AnimationType::stand;
     piece->alpha = 1;

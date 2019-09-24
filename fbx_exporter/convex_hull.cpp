@@ -171,49 +171,14 @@ Edge *copy_edge(Array<Edge> *edges, Edge *old_edge)
     return new_edge;
 }
 
-Void add_new_edge_pair(Array<Edge> *edges, Face *face)
+Edge *add_new_edge(Array<Edge> *edges, Int a, Int b, Face *face0, Face *face1)
 {
-    Bool found_edge = false;
-    for (Int edge_i = 0; edge_i < edges->count; edge_i++)
-    {
-        Edge *edge = &edges->data[edge_i];
-        if (edge->a == face->c && edge->b == face->a)
-        {
-            edge->faces[0] = face;
-            found_edge = true;
-            break;
-        }
-    }
-
-    if (!found_edge)
-    {
-        Edge *new_edge = edges->push();
-        new_edge->a = face->c;
-        new_edge->b = face->a;
-        new_edge->faces[0] = face;
-        new_edge->faces[1] = null;
-    }
-
-    found_edge = false;
-    for (Int edge_i = 0; edge_i < edges->count; edge_i++)
-    {
-        Edge *edge = &edges->data[edge_i];
-        if (edge->a == face->c && edge->b == face->b)
-        {
-            edge->faces[1] = face;
-            found_edge = true;
-            break;
-        }
-    }
-
-    if (!found_edge)
-    {
-        Edge *new_edge = edges->push();
-        new_edge->a = face->c;
-        new_edge->b = face->b;
-        new_edge->faces[0] = null;
-        new_edge->faces[1] = face;
-    }
+    Edge *new_edge = edges->push();
+    new_edge->a = a;
+    new_edge->b = b;
+    new_edge->faces[0] = face0;
+    new_edge->faces[1] = face1;
+    return new_edge;
 }
 
 Array<UInt32> convex_hull_incremental(Array<Vertex> vertices)
@@ -254,12 +219,12 @@ Array<UInt32> convex_hull_incremental(Array<Vertex> vertices)
         }
     }
 
-    Array<Face> hull_faces = create_array<Face>();
+    Array<Face> hull_faces = create_array<Face>(5000);
     *hull_faces.push() = {base_max_x_i, base_max_z_i, base_min_x_i, false, null};
     *hull_faces.push() = {base_min_x_i, top_i, base_max_x_i, false, null};
     *hull_faces.push() = {base_max_z_i, top_i, base_min_x_i, false, null};
     *hull_faces.push() = {base_max_x_i, top_i, base_max_z_i, false, null};
-    Array<Edge> hull_edges = create_array<Edge>();
+    Array<Edge> hull_edges = create_array<Edge>(5000);
     *hull_edges.push() = {base_max_x_i, base_min_x_i, {&hull_faces[1], &hull_faces[0]}};
     *hull_edges.push() = {base_min_x_i, base_max_z_i, {&hull_faces[2], &hull_faces[0]}};
     *hull_edges.push() = {base_max_z_i, base_max_x_i, {&hull_faces[3], &hull_faces[0]}};
@@ -267,10 +232,9 @@ Array<UInt32> convex_hull_incremental(Array<Vertex> vertices)
     *hull_edges.push() = {base_max_z_i, top_i, {&hull_faces[2], &hull_faces[3]}};
     *hull_edges.push() = {base_max_x_i, top_i, {&hull_faces[3], &hull_faces[1]}};
 
-    Array<Face> hull_faces_staging = create_array<Face>();
-    Array<Edge> hull_edges_staging = create_array<Edge>();
-    Array<Face> hull_faces_new = create_array<Face>();
-    Array<Edge> hull_edges_new = create_array<Edge>();
+    Array<Face> hull_faces_staging = create_array<Face>(5000);
+    Array<Edge> hull_edges_staging = create_array<Edge>(5000);
+    Array<Face *> hull_faces_new = create_array<Face *>(5000);
 
     for (Int vertex_i = 0; vertex_i < vertices.count; vertex_i++)
     {
@@ -295,7 +259,6 @@ Array<UInt32> convex_hull_incremental(Array<Vertex> vertices)
         {
             hull_faces_staging.count = 0;
             hull_edges_staging.count = 0;
-            hull_edges_new.count = 0;
             hull_faces_new.count = 0;
             for (Int edge_i = 0; edge_i < hull_edges.count; edge_i++)
             {
@@ -303,14 +266,16 @@ Array<UInt32> convex_hull_incremental(Array<Vertex> vertices)
                 if (edge->faces[0]->visible && !edge->faces[1]->visible)
                 {
                     Edge *edge_staging = copy_edge(&hull_edges_staging, edge);
-                    edge_staging->faces[0] = add_new_face(&hull_faces_new, edge_staging->a, edge_staging->b, vertex_i);
+                    edge_staging->faces[0] = add_new_face(&hull_faces_staging, edge_staging->a, edge_staging->b, vertex_i);
                     edge_staging->faces[1] = add_new_face(&hull_faces_staging, edge->faces[1]);
+                    *hull_faces_new.push() = edge_staging->faces[0];
                 }
                 else if (!edge->faces[0]->visible && edge->faces[1]->visible)
                 {
                     Edge *edge_staging = copy_edge(&hull_edges_staging, edge);
                     edge_staging->faces[0] = add_new_face(&hull_faces_staging, edge->faces[0]);
-                    edge_staging->faces[1] = add_new_face(&hull_faces_new, edge_staging->b, edge_staging->a, vertex_i);
+                    edge_staging->faces[1] = add_new_face(&hull_faces_staging, edge_staging->b, edge_staging->a, vertex_i);
+                    *hull_faces_new.push() = edge_staging->faces[1];
                 }
                 else if (!edge->faces[0]->visible && !edge->faces[1]->visible)
                 {
@@ -322,13 +287,24 @@ Array<UInt32> convex_hull_incremental(Array<Vertex> vertices)
 
             for (Int face_i = 0; face_i < hull_faces_new.count; face_i++)
             {
-                Face *face = &hull_faces_new[face_i];
-                copy_face(&hull_faces_staging, face);
-            }
-            for (Int edge_i = 0; edge_i < hull_edges_new.count; edge_i++)
-            {
-                Edge *edge = &hull_edges_new[edge_i];
-                copy_edge(&hull_edges_staging, edge);
+                Face *face = hull_faces_new[face_i];
+                Face *adj_face = null;
+                for (Int face_j = 0; face_j < hull_faces_new.count; face_j++)
+                {
+                    if (hull_faces_new[face_j]->b == face->a)
+                    {
+                        if (adj_face == null)
+                        {
+                            adj_face = hull_faces_new[face_j];
+                        }
+                        else
+                        {
+                            ASSERT(false);
+                        }
+                    }
+                }
+                ASSERT(adj_face != null);
+                add_new_edge(&hull_edges_staging, face->c, face->a, face, adj_face);
             }
 
             swap(&hull_faces, &hull_faces_staging);

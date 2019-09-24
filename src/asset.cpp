@@ -2,6 +2,7 @@
 
 #include "../lib/util.hpp"
 #include "math.cpp"
+#include "collision.cpp"
 
 struct Vertex
 {
@@ -16,8 +17,9 @@ struct Mesh
     Vertex *vertices_data;
     Int32 index_count;
     Int32 *indices_data;
-    Int32 hull_vertex_count;
-    Vec3 *hull_vertex_data;
+    CollisionBox collision_box;
+    Int32 collision_hull_vertex_count;
+    Vec3 *collision_hull_vertex_data;
 
     Int vertex_offset;
     Int index_offset;
@@ -52,15 +54,29 @@ Bool deserialise_mesh(Str buffer, Mesh *mesh)
         return false;
     }
 
-    Int hull_vertex_count_start = index_data_start + index_data_length;
-    if (buffer.count < hull_vertex_count_start + 4)
+    Int collision_box_center_start = index_data_start + index_data_length;
+    if (buffer.count < collision_box_center_start + (Int)sizeof(Vec3))
     {
         return false;
     }
-    mesh->hull_vertex_count = *(Int32 *)(buffer.data + hull_vertex_count_start);
+    mesh->collision_box.center = *(Vec3 *)(buffer.data + collision_box_center_start);
 
-    Int hull_vertex_data_start = hull_vertex_count_start + 4;
-    Int hull_vertex_data_length = sizeof(Vec3) * mesh->hull_vertex_count;
+    Int collision_box_radius_start = collision_box_center_start + (Int)sizeof(Vec3);
+    if (buffer.count < collision_box_radius_start + (Int)sizeof(Vec3))
+    {
+        return false;
+    }
+    mesh->collision_box.radius = *(Vec3 *)(buffer.data + collision_box_radius_start);
+
+    Int collision_hull_vertex_count_start = collision_box_radius_start + sizeof(Vec3);
+    if (buffer.count < collision_hull_vertex_count_start + 4)
+    {
+        return false;
+    }
+    mesh->collision_hull_vertex_count = *(Int32 *)(buffer.data + collision_hull_vertex_count_start);
+
+    Int hull_vertex_data_start = collision_hull_vertex_count_start + 4;
+    Int hull_vertex_data_length = sizeof(Vec3) * mesh->collision_hull_vertex_count;
     if (buffer.count != hull_vertex_data_start + hull_vertex_data_length)
     {
         return false;
@@ -70,8 +86,8 @@ Bool deserialise_mesh(Str buffer, Mesh *mesh)
     memcpy(mesh->vertices_data, buffer.data + vertex_data_start, vertex_data_length);
     mesh->indices_data = (Int32 *)malloc(index_data_length);
     memcpy(mesh->indices_data, buffer.data + index_data_start, index_data_length);
-    mesh->hull_vertex_data = (Vec3 *)malloc(hull_vertex_data_length);
-    memcpy(mesh->hull_vertex_data, buffer.data + hull_vertex_data_start, hull_vertex_data_length);
+    mesh->collision_hull_vertex_data = (Vec3 *)malloc(hull_vertex_data_length);
+    memcpy(mesh->collision_hull_vertex_data, buffer.data + hull_vertex_data_start, hull_vertex_data_length);
 
     return true;
 }

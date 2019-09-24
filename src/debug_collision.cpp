@@ -129,7 +129,7 @@ Bool create_debug_collision_frame(VulkanDevice *device, VulkanPipeline *pipeline
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
         Piece *piece = &pieces[piece_i];
-        total_vertex_data_length += sizeof(DebugCollisionVertex) * (COLLISION_BOX_VERTEX_COUNT + piece->mesh->hull_vertex_count * 2);
+        total_vertex_data_length += sizeof(DebugCollisionVertex) * (COLLISION_BOX_VERTEX_COUNT + piece->mesh->collision_hull_vertex_count * 2);
     }
 
     if (!create_buffer(device, total_vertex_data_length,
@@ -187,8 +187,9 @@ DebugCollisionVertex *write_collision_box_face_data(Vec3 a, Vec3 b, Vec3 c, Vec3
     return vertex;
 }
 
-DebugCollisionVertex *write_collision_box_vertex_data(CollisionBox *collision_box, DebugCollisionVertex *vertex)
+DebugCollisionVertex *write_collision_data(Mesh *mesh, DebugCollisionVertex *vertex)
 {
+    CollisionBox *collision_box = &mesh->collision_box;
     Real max_x = MAX(collision_box->center.x + collision_box->radius.x, collision_box->center.x - collision_box->radius.x);
     Real min_x = MIN(collision_box->center.x + collision_box->radius.x, collision_box->center.x - collision_box->radius.x);
     Real max_y = MAX(collision_box->center.y + collision_box->radius.y, collision_box->center.y - collision_box->radius.y);
@@ -209,17 +210,12 @@ DebugCollisionVertex *write_collision_box_vertex_data(CollisionBox *collision_bo
     // NOTE: Left face
     vertex = write_collision_box_face_data(Vec3{min_x, max_y, max_z}, Vec3{min_x, min_y, max_z}, Vec3{min_x, min_y, min_z}, Vec3{min_x, max_y, min_z}, vertex);
 
-    return vertex;
-}
-
-DebugCollisionVertex *write_collision_hull_vertex_data(Mesh *mesh, DebugCollisionVertex *vertex)
-{
-    for (Int vertex_i = 0; vertex_i < mesh->hull_vertex_count; vertex_i += 3)
+    for (Int vertex_i = 0; vertex_i < mesh->collision_hull_vertex_count; vertex_i += 3)
     {
         Vec3 pos[3];
         for (Int i = 0; i < 3; i++)
         {
-            pos[i] = mesh->hull_vertex_data[vertex_i + i];
+            pos[i] = mesh->collision_hull_vertex_data[vertex_i + i];
         }
 
         Vec3 color = {0, 0, 1};

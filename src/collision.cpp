@@ -2,7 +2,6 @@
 
 #include "../lib/util.hpp"
 #include "math.cpp"
-#include "asset.cpp"
 
 struct Ray
 {
@@ -41,15 +40,15 @@ Real check_box_collision(Ray *ray, CollisionBox *collision_box)
     return t_min;
 }
 
-Real check_convex_hull_collision(Ray *ray, Mesh *mesh)
+Real check_convex_hull_collision(Ray *ray, Int collision_hull_vertex_count, Vec3 *collision_hull_vertex_data)
 {
     Real t_min = 0;
     Real t_max = 100000000;
-    for (Int vertex_i = 0; vertex_i < mesh->hull_vertex_count; vertex_i += 3)
+    for (Int vertex_i = 0; vertex_i < collision_hull_vertex_count; vertex_i += 3)
     {
-        Vec3 a = mesh->hull_vertex_data[vertex_i];
-        Vec3 b = mesh->hull_vertex_data[vertex_i + 1];
-        Vec3 c = mesh->hull_vertex_data[vertex_i + 2];
+        Vec3 a = collision_hull_vertex_data[vertex_i];
+        Vec3 b = collision_hull_vertex_data[vertex_i + 1];
+        Vec3 c = collision_hull_vertex_data[vertex_i + 2];
         Vec3 normal = normalize(cross(b - a, c - b));
         Real dist = dot(a, normal);
 

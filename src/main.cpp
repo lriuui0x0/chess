@@ -203,7 +203,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
         for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
         {
             Mesh *mesh = pieces[piece_i].mesh;
-            Int vertex_count = COLLISION_BOX_VERTEX_COUNT + mesh->hull_vertex_count * 2;
+            Int vertex_count = COLLISION_BOX_VERTEX_COUNT + mesh->collision_hull_vertex_count * 2;
 
             vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_collision_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
             vkCmdDraw(scene_frame->command_buffer, vertex_count, 1, vertex_offset, 0);
@@ -338,17 +338,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Board board;
     fill_board_initial_state(&board, &board_mesh);
 
-    // NOTE: Set up board collision box
-    for (Int square_i = 0; square_i < BOARD_SQUARE_COUNT; square_i++)
-    {
-        Int row = get_row(square_i);
-        Int column = get_column(square_i);
-
-        CollisionBox *collision_box = &board.collision_box[square_i];
-        collision_box->center = {(Real)(column * 100), 0, (Real)(row * 100)};
-        collision_box->radius = {50, 0, 50};
-    }
-
     Piece pieces[PIECE_COUNT];
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
@@ -427,8 +416,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     DebugCollisionVertex *vertex = (DebugCollisionVertex *)debug_collision_vertex_buffer.data;
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
-        vertex = write_collision_box_vertex_data(&pieces[piece_i].collision_box, vertex);
-        vertex = write_collision_hull_vertex_data(pieces[piece_i].mesh, vertex);
+        vertex = write_collision_data(pieces[piece_i].mesh, vertex);
     }
     ASSERT(upload_buffer(&device, &debug_collision_vertex_buffer, &debug_collision_frame.vertex_buffer));
 
@@ -626,10 +614,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             ray_local.dir = normalize(mouse_pos_local - camera_pos_local);
 
             Piece *piece = &pieces[piece_i];
-            Real box_dist = check_box_collision(&ray_local, &piece->collision_box);
+            Real box_dist = check_box_collision(&ray_local, &piece->mesh->collision_box);
             if (box_dist >= 0 && box_dist < min_dist)
             {
-                Real convex_hull_dist = check_convex_hull_collision(&ray_local, piece->mesh);
+                Real convex_hull_dist = check_convex_hull_collision(&ray_local, piece->mesh->collision_hull_vertex_count, piece->mesh->collision_hull_vertex_data);
                 if (convex_hull_dist >= 0)
                 {
                     min_dist = convex_hull_dist;
