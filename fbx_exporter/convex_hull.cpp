@@ -125,14 +125,6 @@ struct Edge
     Face *faces[2];
 };
 
-Edge *add_new_edge(Array<Edge> *edges, Edge *old_edge)
-{
-    Edge *new_edge = edges->push();
-    new_edge->a = old_edge->a;
-    new_edge->b = old_edge->b;
-    return new_edge;
-}
-
 Face *add_new_face(Array<Face> *faces, Face *old_face)
 {
     if (old_face->new_face)
@@ -151,6 +143,15 @@ Face *add_new_face(Array<Face> *faces, Face *old_face)
         return new_face;
     }
 }
+Edge *copy_edge(Array<Edge> *edges, Edge *old_edge)
+{
+    Edge *new_edge = edges->push();
+    new_edge->a = old_edge->a;
+    new_edge->b = old_edge->b;
+    new_edge->faces[0] = old_edge->faces[0];
+    new_edge->faces[1] = old_edge->faces[1];
+    return new_edge;
+}
 
 Face *add_new_face(Array<Face> *faces, Int a, Int b, Int c)
 {
@@ -161,6 +162,51 @@ Face *add_new_face(Array<Face> *faces, Int a, Int b, Int c)
     new_face->visible = false;
     new_face->new_face = null;
     return new_face;
+}
+
+Void add_new_edge_pair(Array<Edge> *edges, Face *face)
+{
+    Bool found_edge = false;
+    for (Int edge_i = 0; edge_i < edges->count; edge_i++)
+    {
+        Edge *edge = &edges->data[edge_i];
+        if (edge->a == face->c && edge->b == face->a)
+        {
+            edge->faces[0] = face;
+            found_edge = true;
+            break;
+        }
+    }
+
+    if (!found_edge)
+    {
+        Edge *new_edge = edges->push();
+        new_edge->a = face->c;
+        new_edge->b = face->a;
+        new_edge->faces[0] = face;
+        new_edge->faces[1] = null;
+    }
+
+    found_edge = false;
+    for (Int edge_i = 0; edge_i < edges->count; edge_i++)
+    {
+        Edge *edge = &edges->data[edge_i];
+        if (edge->a == face->c && edge->b == face->b)
+        {
+            edge->faces[1] = face;
+            found_edge = true;
+            break;
+        }
+    }
+
+    if (!found_edge)
+    {
+        Edge *new_edge = edges->push();
+        new_edge->a = face->c;
+        new_edge->b = face->b;
+        new_edge->faces[0] = null;
+        new_edge->faces[1] = face;
+    }
 }
 
 Array<UInt32> convex_hull_incremental(Array<Vertex> vertices)
@@ -216,6 +262,7 @@ Array<UInt32> convex_hull_incremental(Array<Vertex> vertices)
 
     Array<Face> hull_faces_staging = create_array<Face>();
     Array<Edge> hull_edges_staging = create_array<Edge>();
+    Array<Edge> hull_edges_new = create_array<Edge>();
 
     for (Int vertex_i = 0; vertex_i < vertices.count; vertex_i++)
     {
@@ -240,28 +287,38 @@ Array<UInt32> convex_hull_incremental(Array<Vertex> vertices)
         {
             hull_faces_staging.count = 0;
             hull_edges_staging.count = 0;
+            hull_edges_new.count = 0;
             for (Int edge_i = 0; edge_i < hull_edges.count; edge_i++)
             {
                 Edge *edge = &hull_edges[edge_i];
                 if (edge->faces[0]->visible && !edge->faces[1]->visible)
                 {
-                    Edge *edge_staging = add_new_edge(&hull_edges_staging, edge);
+                    Edge *edge_staging = copy_edge(&hull_edges_staging, edge);
                     edge_staging->faces[0] = add_new_face(&hull_faces_staging, edge_staging->a, edge_staging->b, vertex_i);
+                    add_new_edge_pair(&hull_edges_new, edge_staging->faces[0]);
                     edge_staging->faces[1] = add_new_face(&hull_faces_staging, edge->faces[1]);
                 }
                 else if (!edge->faces[0]->visible && edge->faces[1]->visible)
                 {
-                    Edge *edge_staging = add_new_edge(&hull_edges_staging, edge);
+                    Edge *edge_staging = copy_edge(&hull_edges_staging, edge);
                     edge_staging->faces[0] = add_new_face(&hull_faces_staging, edge->faces[0]);
                     edge_staging->faces[1] = add_new_face(&hull_faces_staging, edge_staging->b, edge_staging->a, vertex_i);
+                    add_new_edge_pair(&hull_edges_new, edge_staging->faces[1]);
                 }
                 else if (!edge->faces[0]->visible && !edge->faces[1]->visible)
                 {
-                    Edge *edge_staging = add_new_edge(&hull_edges_staging, edge);
+                    Edge *edge_staging = copy_edge(&hull_edges_staging, edge);
                     edge_staging->faces[0] = add_new_face(&hull_faces_staging, edge->faces[0]);
                     edge_staging->faces[1] = add_new_face(&hull_faces_staging, edge->faces[1]);
                 }
             }
+
+            for (Int edge_i = 0; edge_i < hull_edges_new.count; edge_i++)
+            {
+                Edge *edge = &hull_edges_new[edge_i];
+                copy_edge(&hull_edges_staging, edge);
+            }
+
             swap(&hull_faces, &hull_faces_staging);
             swap(&hull_edges, &hull_edges_staging);
         }
