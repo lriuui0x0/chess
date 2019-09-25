@@ -49,3 +49,26 @@ Handle create_window_(Str title, Int client_width, Int client_height, Int window
         return NULL;
     }
 }
+
+UInt64 get_current_timestamp()
+{
+    UInt64 result;
+    QueryPerformanceCounter((LARGE_INTEGER *)&result);
+    return result;
+}
+
+Real64 get_elapsed_time(UInt64 timestamp)
+{
+    static UInt64 frequency = 0;
+    if (frequency == 0)
+    {
+        QueryPerformanceFrequency((LARGE_INTEGER *)&frequency);
+    }
+    Real64 result = timestamp / (Real64)frequency;
+    return result;
+}
+
+Void sleep(Int milisecond)
+{
+    Sleep(milisecond);
+}

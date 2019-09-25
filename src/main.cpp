@@ -1,5 +1,6 @@
 #include "../lib/util.hpp"
 #include "../lib/vulkan.hpp"
+#include "../lib/os.hpp"
 #include "math.cpp"
 #include "asset.cpp"
 #include "window.cpp"
@@ -441,6 +442,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     Bool is_running = true;
     Bool show_debug_ui = false;
+
+    UInt64 last_timestamp = get_current_timestamp();
+    Real frame_time = 1.0 / 60.0;
     while (is_running)
     {
         Bool has_click = false;
@@ -802,7 +806,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
         {
             Piece *piece = &pieces[piece_i];
-            update_animation(piece, 0.1);
+            update_animation(piece, frame_time);
             calculate_entity_uniform_data(piece, get_piece_uniform_data(&device, &scene_uniform_buffer, piece_i));
         }
         if (ghost_piece_index != -1)
@@ -860,6 +864,16 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                                    &scene_pipeline, &scene_frame, &scene_uniform_buffer, &board, pieces, ghost_piece_index, shadowed_piece_index,
                                    &debug_ui_pipeline, &debug_ui_frame, &debug_ui_vertex_buffer, debug_ui_draw_state.character_count,
                                    &debug_collision_pipeline, &debug_collision_frame, &debug_collision_vertex_buffer));
+
+        UInt64 current_timestamp = get_current_timestamp();
+        Real64 elapsed_time = get_elapsed_time(current_timestamp - last_timestamp);
+        while (elapsed_time < frame_time)
+        {
+            sleep(frame_time - elapsed_time);
+            current_timestamp = get_current_timestamp();
+            elapsed_time = get_elapsed_time(current_timestamp - last_timestamp);
+        }
+        last_timestamp = current_timestamp;
     }
 
     return 0;

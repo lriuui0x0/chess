@@ -262,11 +262,13 @@ Void stop_flash_animation(Piece *piece)
     piece->alpha = 1;
 }
 
-Void update_animation(Piece *piece, Real dt)
+Void update_animation(Piece *piece, Real elapsed_time)
 {
+    Real animation_time = 0.2;
+    Real dt = elapsed_time / animation_time;
     if (piece->animation_type == AnimationType::move)
     {
-        piece->animation.t += dt;
+        piece->animation.t = MIN(piece->animation.t + dt, 1);
         Real a = 0.1;
         Real ft = a * square(piece->animation.t) + (1 - a) * piece->animation.t;
         piece->pos = lerp(piece->animation.pos_from, piece->animation.pos_to, ft);
@@ -278,7 +280,7 @@ Void update_animation(Piece *piece, Real dt)
     }
     else if (piece->animation_type == AnimationType::jump)
     {
-        piece->animation.t += dt;
+        piece->animation.t = MIN(piece->animation.t + dt, 1);
         Vec3 new_pos = lerp(piece->animation.pos_from, piece->animation.pos_to, piece->animation.t);
         Real height = -200;
         Real a = -4 * height;
