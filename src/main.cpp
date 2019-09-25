@@ -446,6 +446,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Bool is_running = true;
     Bool show_debug_ui = false;
 
+    Int last_hover_row = -1;
+    Int last_hover_column = -1;
+
     UInt64 last_timestamp = get_current_timestamp();
     Real frame_time = 1.0 / 60.0;
     while (is_running)
@@ -655,78 +658,63 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
         }
 
-        Bool move_illegal = false;
-        if (has_click)
+        // NOTE: Select piece or change piece selection
+        if (has_click && click_mouse_button == WindowMessageMouseButtonType::left)
         {
-            if (click_mouse_button == WindowMessageMouseButtonType::left)
+            if (hover_piece &&
+                hover_piece != game_state.selected_piece &&
+                is_friend(&game_state, hover_piece) &&
+                pieces[hover_piece->index].animation_type == AnimationType::none)
             {
-                // NOTE: Select piece or change piece selection
-                if (hover_piece &&
-                    hover_piece != game_state.selected_piece &&
-                    is_friend(&game_state, hover_piece))
-                {
-                    if (game_state.selected_piece)
-                    {
-                        stop_flash_animation(&pieces[game_state.selected_piece->index]);
-                    }
-
-                    game_state.selected_piece = hover_piece;
-                    start_flash_animation(&pieces[game_state.selected_piece->index]);
-                }
-
-                // NOTE: Move piece
-                if (game_state.selected_piece &&
-                    hover_row != -1 && hover_column != -1)
-                {
-                    Piece *piece = &pieces[game_state.selected_piece->index];
-                    GameMove game_move = check_game_move(&game_state, game_state.selected_piece, hover_row, hover_column);
-                    switch (game_move.type)
-                    {
-                    case GameMoveType::move:
-                    {
-                        stop_flash_animation(piece);
-
-                        if (game_state.selected_piece->type == GamePieceType::knight)
-                        {
-                            start_jump_animation(piece, hover_row, hover_column);
-                        }
-                        else
-                        {
-                            start_move_animation(piece, hover_row, hover_column);
-                        }
-
-                        update_game_piece_pos(&game_state, game_state.selected_piece, hover_row, hover_column);
-                        game_state.selected_piece = null;
-                    }
-                    break;
-
-                    case GameMoveType::capture:
-                    {
-                    }
-                    break;
-
-                    case GameMoveType::illegal:
-                    {
-                        move_illegal = true;
-                    }
-                    break;
-
-                    default:
-                    {
-                        ASSERT(false);
-                    }
-                    break;
-                    }
-                }
-            }
-            else if (click_mouse_button == WindowMessageMouseButtonType::right)
-            {
-                // NOTE: Clear selected piece
                 if (game_state.selected_piece)
                 {
                     stop_flash_animation(&pieces[game_state.selected_piece->index]);
-                    game_state.selected_piece = null;
                 }
+
+                game_state.selected_piece = hover_piece;
+                start_flash_animation(&pieces[game_state.selected_piece->index]);
+            }
+        }
+        // NOTE: Clear piece selection
+        else if (has_click && click_mouse_button == WindowMessageMouseButtonType::right)
+        {
+            if (game_state.selected_piece)
+            {
+                stop_flash_animation(&pieces[game_state.selected_piece->index]);
+                game_state.selected_piece = null;
+            }
+        }
+
+        // NOTE: Check game move
+        GameMove game_move;
+        if (game_state.selected_piece && hover_row != -1 && hover_column != -1)
+        {
+            game_move = check_game_move(&game_state, game_state.selected_piece, hover_row, hover_column);
+        }
+        else
+        {
+            game_move.type = GameMoveType::illegal;
+        }
+
+        // NOTE: Update game move
+        if (has_click && click_mouse_button == WindowMessageMouseButtonType::left)
+        {
+            if (game_move.type == GameMoveType::move)
+            {
+                Piece *piece = &pieces[game_state.selected_piece->index];
+                stop_flash_animation(piece);
+
+                if (game_state.selected_piece->type == GamePieceType::knight)
+                {
+                    start_jump_animation(piece, hover_row, hover_column);
+                }
+                else
+                {
+                    start_move_animation(piece, hover_row, hover_column);
+                }
+
+                update_game_piece_pos(&game_state, game_state.selected_piece, hover_row, hover_column);
+                game_state.selected_piece = null;
             }
         }
 
@@ -748,10 +736,26 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 update_ghost_piece(&ghost_piece, &pieces[game_state.selected_piece->index], hover_row, hover_column);
             }
         }
-        if (ghost_piece_index != -1 && move_illegal)
+
+        // NOTE: Clear ghost piece illegal move feedback
+        if (hover_row != last_hover_row || hover_column != last_hover_column ||
+            ghost_piece_index == -1)
         {
-            start_illegal_flash_animation(&ghost_piece);
+            stop_illegal_flash_animation(&ghost_piece);
         }
+
+        // NOTE: Start ghost piece illegal move feedback
+        if (has_click && click_mouse_button == WindowMessageMouseButtonType::left)
+        {
+            if (ghost_piece_index != -1 &&
+                game_move.type == GameMoveType::illegal)
+            {
+                start_illegal_flash_animation(&ghost_piece);
+            }
+        }
+
+        last_hover_row = hover_row;
+        last_hover_column = hover_column;
 
         Vec3 camera_x = rotate(camera.rotation, get_basis_x());
         Vec3 camera_y = rotate(camera.rotation, get_basis_y());

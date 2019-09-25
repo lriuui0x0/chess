@@ -289,6 +289,12 @@ Void start_illegal_flash_animation(GhostPiece *ghost_piece)
     ghost_piece->animation.t = 0;
 }
 
+Void stop_illegal_flash_animation(GhostPiece *ghost_piece)
+{
+    ghost_piece->animation_type = AnimationType::none;
+    ghost_piece->color = Vec4{1, 1, 1, GHOST_PIECE_ALPHA};
+}
+
 Void update_animation(Entity *entity, Real elapsed_time)
 {
     if (entity->animation_type == AnimationType::move)
