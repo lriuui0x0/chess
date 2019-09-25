@@ -21,6 +21,23 @@ Vec3 convert_vec3(FbxDouble3 fbx_double3)
     return {x, y, z};
 }
 
+Vec3 gamma(Vec3 color)
+{
+    Vec3 result;
+    for (Int i = 0; i < 3; i++)
+    {
+        if (color[i] <= 0.04045)
+        {
+            result[i] = color[i] / 12.92;
+        }
+        else
+        {
+            result[i] = powf((color[i] + 0.055) / 1.055, 2.4);
+        }
+    }
+    return result;
+}
+
 Void output(Array<Vertex> vertices, Array<UInt32> indices, Vec3 *box_center, Vec3 *box_radius, Array<UInt32> hull_indices, CStr output_filename)
 {
     FILE *output_file = fopen(output_filename, "wb");
@@ -116,7 +133,7 @@ int main(Int argc, CStr *argv)
             Vertex *vertex = vertices.push();
             vertex->pos = vertex_pos;
             vertex->normal = vertex_normal;
-            vertex->color = vertex_color;
+            vertex->color = gamma(vertex_color);
             *indices.push() = vertices.count - 1;
         }
     }

@@ -57,7 +57,7 @@ Void debug_callback(Str message)
 
 Bool render_vulkan_frame(VulkanDevice *device,
                          VulkanPipeline *scene_pipeline, SceneFrame *scene_frame, VulkanBuffer *scene_uniform_buffer,
-                         Board *board, Piece *pieces, Int ghost_piece_index, Int shadowed_piece_index,
+                         Board *board, Piece *pieces, GhostPiece * ghost_piece,
                          VulkanPipeline *debug_ui_pipeline, DebugUIFrame *debug_ui_frame, VulkanBuffer *debug_ui_vertex_buffer, Int debug_ui_character_count,
                          VulkanPipeline *debug_collision_pipeline, DebugCollisionFrame *debug_collision_frame, VulkanBuffer *debug_collision_vertex_buffer)
 {
@@ -165,7 +165,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
 
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
-        if (piece_i != shadowed_piece_index)
+        if (ghost_piece == null || piece_i != ghost_piece->shadowed_piece_index)
         {
             Mesh *mesh = pieces[piece_i].mesh;
             vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
@@ -173,9 +173,9 @@ Bool render_vulkan_frame(VulkanDevice *device,
         }
     }
 
-    if (ghost_piece_index != -1)
+    if (ghost_piece)
     {
-        Mesh *mesh = pieces[ghost_piece_index].mesh;
+        Mesh *mesh = ghost_piece->mesh;
         vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 1, 1, &scene_frame->ghost_piece_descriptor_set, 0, null);
         vkCmdDrawIndexed(scene_frame->command_buffer, mesh->index_count, 1, mesh->index_offset, mesh->vertex_offset, 0);
     }
@@ -720,7 +720,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
         // NOTE: Calculate ghost piece
         Int ghost_piece_index = -1;
-        Int shadowed_piece_index = -1;
         if (game_state.selected_piece &&
             hover_row != -1 && hover_column != -1)
         {
@@ -728,12 +727,13 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             {
                 ghost_piece_index = game_state.selected_piece->index;
                 update_ghost_piece(&ghost_piece, &pieces[game_state.selected_piece->index], hover_row, hover_column);
+                ghost_piece.shadowed_piece_index = -1;
             }
             else if (is_foe_occupied(&game_state, hover_row, hover_column))
             {
-                shadowed_piece_index = game_state.board[hover_row][hover_column]->index;
                 ghost_piece_index = game_state.selected_piece->index;
                 update_ghost_piece(&ghost_piece, &pieces[game_state.selected_piece->index], hover_row, hover_column);
+                ghost_piece.shadowed_piece_index = game_state.board[hover_row][hover_column]->index;
             }
         }
 
@@ -874,7 +874,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         }
 
         ASSERT(render_vulkan_frame(&device,
-                                   &scene_pipeline, &scene_frame, &scene_uniform_buffer, &board, pieces, ghost_piece_index, shadowed_piece_index,
+                                   &scene_pipeline, &scene_frame, &scene_uniform_buffer, &board, pieces, ghost_piece_index != -1 ? &ghost_piece : null,
                                    &debug_ui_pipeline, &debug_ui_frame, &debug_ui_vertex_buffer, debug_ui_draw_state.character_count,
                                    &debug_collision_pipeline, &debug_collision_frame, &debug_collision_vertex_buffer));
 

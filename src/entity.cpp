@@ -238,6 +238,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
 
 struct GhostPiece : Entity
 {
+    Int shadowed_piece_index;
 };
 
 #define GHOST_PIECE_ALPHA (0.7)
@@ -361,7 +362,7 @@ Void update_animation(Entity *entity, Real elapsed_time)
         Real alpha_end = 1.0;
         Real alpha;
         Real green_blue_start = 1.0;
-        Real green_blue_end = 0.5;
+        Real green_blue_end = 0.2;
         Real green_blue;
         if (entity->animation.t < 0.25)
         {
