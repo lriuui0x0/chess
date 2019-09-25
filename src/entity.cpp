@@ -12,13 +12,31 @@ struct Camera
     Quaternion rotation;
 };
 
+struct Animation
+{
+    Real t;
+    Vec3 pos_from;
+    Vec3 pos_to;
+};
+
+enum struct AnimationType
+{
+    none,
+    move,
+    jump,
+    flash,
+    illegal_flash,
+};
+
 struct Entity
 {
     Vec3 pos;
     Quaternion rotation;
     Vec3 scale;
-    Real alpha;
+    Vec4 color;
     Mesh *mesh;
+    AnimationType animation_type;
+    Animation animation;
 };
 
 struct Board : Entity
@@ -32,7 +50,8 @@ Void fill_board_initial_state(Board *board, Mesh *board_mesh)
     board->rotation = get_rotation_quaternion(get_basis_y(), 0);
     board->scale = {-1, -1, 1};
     board->mesh = board_mesh;
-    board->alpha = 1;
+    board->color = Vec4{1, 1, 1, 1};
+    board->animation_type = AnimationType::none;
 
     for (Int square_i = 0; square_i < BOARD_SQUARE_COUNT; square_i++)
     {
@@ -50,26 +69,9 @@ Vec3 get_square_pos(Int row, Int column)
     return {(Real)(column * 100.0), 0, (Real)(row * 100.0)};
 }
 
-struct Animation
-{
-    Real t;
-    Vec3 pos_from;
-    Vec3 pos_to;
-};
-
-enum struct AnimationType
-{
-    stand,
-    move,
-    jump,
-    flash,
-};
-
 struct Piece : Entity
 {
     GamePiece *game_piece;
-    AnimationType animation_type;
-    Animation animation;
 };
 
 Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
@@ -230,8 +232,27 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         }
     }
 
-    piece->animation_type = AnimationType::stand;
-    piece->alpha = 1;
+    piece->animation_type = AnimationType::none;
+    piece->color = Vec4{1, 1, 1, 1};
+}
+
+struct GhostPiece : Entity
+{
+};
+
+#define GHOST_PIECE_ALPHA (0.7)
+Void fill_ghost_piece_initila_state(GhostPiece *ghost_piece)
+{
+    ghost_piece->animation_type = AnimationType::none;
+    ghost_piece->color = Vec4{1, 1, 1, GHOST_PIECE_ALPHA};
+}
+
+Void update_ghost_piece(GhostPiece *ghost_piece, Piece *piece, Int row, Int column)
+{
+    ghost_piece->pos = get_square_pos(row, column);
+    ghost_piece->rotation = piece->rotation;
+    ghost_piece->scale = piece->scale;
+    ghost_piece->mesh = piece->mesh;
 }
 
 Void start_move_animation(Piece *piece, Int row, Int column)
@@ -258,72 +279,109 @@ Void start_flash_animation(Piece *piece)
 
 Void stop_flash_animation(Piece *piece)
 {
-    piece->animation_type = AnimationType::stand;
-    piece->alpha = 1;
+    piece->animation_type = AnimationType::none;
+    piece->color = Vec4{1, 1, 1, 1};
 }
 
-Void update_animation(Piece *piece, Real elapsed_time)
+Void start_illegal_flash_animation(GhostPiece *ghost_piece)
 {
-    Real animation_time = 0.2;
-    Real dt = elapsed_time / animation_time;
-    if (piece->animation_type == AnimationType::move)
-    {
-        piece->animation.t = MIN(piece->animation.t + dt, 1);
-        Real a = 0.1;
-        Real ft = a * square(piece->animation.t) + (1 - a) * piece->animation.t;
-        piece->pos = lerp(piece->animation.pos_from, piece->animation.pos_to, ft);
+    ghost_piece->animation_type = AnimationType::illegal_flash;
+    ghost_piece->animation.t = 0;
+}
 
-        if (piece->animation.t >= 1)
+Void update_animation(Entity *entity, Real elapsed_time)
+{
+    if (entity->animation_type == AnimationType::move)
+    {
+        Real animation_time = 0.2;
+        Real dt = elapsed_time / animation_time;
+        entity->animation.t = MIN(entity->animation.t + dt, 1);
+        Real a = 0.1;
+        Real ft = a * square(entity->animation.t) + (1 - a) * entity->animation.t;
+        entity->pos = lerp(entity->animation.pos_from, entity->animation.pos_to, ft);
+
+        if (entity->animation.t >= 1)
         {
-            piece->animation_type = AnimationType::stand;
+            entity->animation_type = AnimationType::none;
         }
     }
-    else if (piece->animation_type == AnimationType::jump)
+    else if (entity->animation_type == AnimationType::jump)
     {
-        piece->animation.t = MIN(piece->animation.t + dt, 1);
-        Vec3 new_pos = lerp(piece->animation.pos_from, piece->animation.pos_to, piece->animation.t);
+        Real animation_time = 0.2;
+        Real dt = elapsed_time / animation_time;
+        entity->animation.t = MIN(entity->animation.t + dt, 1);
+        Vec3 new_pos = lerp(entity->animation.pos_from, entity->animation.pos_to, entity->animation.t);
         Real height = -200;
         Real a = -4 * height;
         Real b = 4 * height;
-        new_pos.y = a * square(piece->animation.t) + b * piece->animation.t;
-        piece->pos = new_pos;
+        new_pos.y = a * square(entity->animation.t) + b * entity->animation.t;
+        entity->pos = new_pos;
 
-        if (piece->animation.t >= 1)
+        if (entity->animation.t >= 1)
         {
-            piece->animation_type = AnimationType::stand;
+            entity->animation_type = AnimationType::none;
         }
     }
-    else if (piece->animation_type == AnimationType::flash)
+    else if (entity->animation_type == AnimationType::flash)
     {
-        piece->animation.t += dt * 0.2;
-        Real alpha_min = 0.5;
-        if (piece->animation.t <= 0.5)
+        Real animation_time = 1.2;
+        Real dt = elapsed_time / animation_time;
+        entity->animation.t += dt;
+        if (entity->animation.t >= 1)
         {
-            piece->alpha = lerp(1.0f, alpha_min, piece->animation.t * 2);
+            entity->animation.t -= 1;
+        }
+
+        Real alpha_min = 0.5;
+        Real alpha_max = 1;
+        Real alpha;
+        if (entity->animation.t < 0.5)
+        {
+            alpha = lerp(alpha_max, alpha_min, entity->animation.t * 2);
         }
         else
         {
-            piece->alpha = lerp(alpha_min, 1.0f, (piece->animation.t - 0.5) * 2);
+            alpha = lerp(alpha_min, alpha_max, (entity->animation.t - 0.5) * 2);
         }
+        entity->color = Vec4{1, 1, 1, alpha};
+    }
+    else if (entity->animation_type == AnimationType::illegal_flash)
+    {
+        Real animation_time = 0.4;
+        Real dt = elapsed_time / animation_time;
+        entity->animation.t = MIN(entity->animation.t + dt, 1);
 
-        if (piece->animation.t >= 1)
+        Real alpha_start = GHOST_PIECE_ALPHA;
+        Real alpha_end = 1.0;
+        Real alpha;
+        Real green_blue_start = 1.0;
+        Real green_blue_end = 0.5;
+        Real green_blue;
+        if (entity->animation.t < 0.25)
         {
-            piece->animation.t -= 1;
+            alpha = lerp(alpha_start, alpha_end, entity->animation.t * 4);
+            green_blue = lerp(green_blue_start, green_blue_end, entity->animation.t);
+        }
+        else if (entity->animation.t >= 0.25 && entity->animation.t < 0.5)
+        {
+            alpha = lerp(alpha_end, alpha_start, (entity->animation.t - 0.25) * 4);
+            green_blue = lerp(green_blue_end, green_blue_start, (entity->animation.t - 0.25) * 4);
+        }
+        else if (entity->animation.t >= 0.5 && entity->animation.t < 0.75)
+        {
+            alpha = lerp(alpha_start, alpha_end, (entity->animation.t - 0.5) * 4);
+            green_blue = lerp(green_blue_start, green_blue_end, (entity->animation.t - 0.5) * 4);
+        }
+        else
+        {
+            alpha = lerp(alpha_end, alpha_start, (entity->animation.t - 0.75) * 4);
+            green_blue = lerp(green_blue_end, green_blue_start, (entity->animation.t - 0.75) * 4);
+        }
+        entity->color = Vec4{1, green_blue, green_blue, alpha};
+
+        if (entity->animation.t >= 1)
+        {
+            entity->animation_type = AnimationType::none;
         }
     }
-}
-
-struct GhostPiece : Entity
-{
-};
-
-GhostPiece get_ghost_piece(Piece *piece, Int row, Int column)
-{
-    GhostPiece result;
-    result.pos = get_square_pos(row, column);
-    result.rotation = piece->rotation;
-    result.scale = piece->scale;
-    result.mesh = piece->mesh;
-    result.alpha = 0.7;
-    return result;
 }

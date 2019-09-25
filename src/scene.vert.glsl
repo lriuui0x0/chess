@@ -10,7 +10,7 @@ layout(set = 0, binding = 0) uniform Scene {
 layout(set = 1, binding = 0) uniform Entity {
     mat4 world;
     mat4 normal_world;
-    float alpha;
+    vec4 color;
 } entity;
 
 layout(location = 0) in vec3 pos;
@@ -36,7 +36,7 @@ void main() {
     shade_color += 0.3 * shade(-vec3(scene.light_dir[1]), normal_dir, vec3(color));
     shade_color += 0.2 * shade(-vec3(scene.light_dir[2]), normal_dir, vec3(color));
     shade_color += 0.2 * shade(-vec3(scene.light_dir[3]), normal_dir, vec3(color));
-    frag_color = vec4(shade_color, entity.alpha);
+    frag_color = entity.color * vec4(shade_color, 1);
 
     gl_Position = scene.projection * vec4(world_pos.x, world_pos.y, world_pos.z, 1);
 }

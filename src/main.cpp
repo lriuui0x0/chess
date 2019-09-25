@@ -358,6 +358,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                                  &black_pawn_mesh);
     }
 
+    GhostPiece ghost_piece;
+    fill_ghost_piece_initila_state(&ghost_piece);
+
     Window window = create_window(str("Chess"), window_width, window_height, 50, 50);
     ASSERT(window);
 
@@ -652,6 +655,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
         }
 
+        Bool move_illegal = false;
         if (has_click)
         {
             if (click_mouse_button == WindowMessageMouseButtonType::left)
@@ -703,6 +707,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
                     case GameMoveType::illegal:
                     {
+                        move_illegal = true;
                     }
                     break;
 
@@ -726,7 +731,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         }
 
         // NOTE: Calculate ghost piece
-        GhostPiece ghost_piece;
         Int ghost_piece_index = -1;
         Int shadowed_piece_index = -1;
         if (game_state.selected_piece &&
@@ -735,14 +739,18 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             if (!is_occupied(&game_state, hover_row, hover_column))
             {
                 ghost_piece_index = game_state.selected_piece->index;
-                ghost_piece = get_ghost_piece(&pieces[game_state.selected_piece->index], hover_row, hover_column);
+                update_ghost_piece(&ghost_piece, &pieces[game_state.selected_piece->index], hover_row, hover_column);
             }
             else if (is_foe_occupied(&game_state, hover_row, hover_column))
             {
                 shadowed_piece_index = game_state.board[hover_row][hover_column]->index;
                 ghost_piece_index = game_state.selected_piece->index;
-                ghost_piece = get_ghost_piece(&pieces[game_state.selected_piece->index], hover_row, hover_column);
+                update_ghost_piece(&ghost_piece, &pieces[game_state.selected_piece->index], hover_row, hover_column);
             }
+        }
+        if (ghost_piece_index != -1 && move_illegal)
+        {
+            start_illegal_flash_animation(&ghost_piece);
         }
 
         Vec3 camera_x = rotate(camera.rotation, get_basis_x());
@@ -811,6 +819,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         }
         if (ghost_piece_index != -1)
         {
+            update_animation(&ghost_piece, frame_time);
             calculate_entity_uniform_data(&ghost_piece, get_ghost_piece_uniform_data(&device, &scene_uniform_buffer));
         }
 

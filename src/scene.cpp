@@ -16,7 +16,7 @@ struct EntityUniformData
 {
     Mat4 world;
     Mat4 normal_world;
-    Real alpha;
+    Vec4 color;
 };
 
 VkSampleCountFlagBits get_maximum_multisample_count(VulkanDevice *device)
@@ -370,5 +370,5 @@ void calculate_entity_uniform_data(Entity *entity, EntityUniformData *uniform_da
     Mat4 scale = get_scale_matrix(entity->scale.x, entity->scale.y, entity->scale.z);
     uniform_data->world = translate * rotation * scale;
     uniform_data->normal_world = rotation * scale;
-    uniform_data->alpha = entity->alpha;
+    uniform_data->color = entity->color;
 }
