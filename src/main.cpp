@@ -57,7 +57,7 @@ Void debug_callback(Str message)
 
 Bool render_vulkan_frame(VulkanDevice *device,
                          VulkanPipeline *scene_pipeline, SceneFrame *scene_frame, VulkanBuffer *scene_uniform_buffer,
-                         Board *board, Piece *pieces, GhostPiece * ghost_piece,
+                         Board *board, Piece *pieces, GhostPiece *ghost_piece,
                          VulkanPipeline *debug_ui_pipeline, DebugUIFrame *debug_ui_frame, VulkanBuffer *debug_ui_vertex_buffer, Int debug_ui_character_count,
                          VulkanPipeline *debug_collision_pipeline, DebugCollisionFrame *debug_collision_frame, VulkanBuffer *debug_collision_vertex_buffer)
 {
@@ -393,7 +393,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     Camera camera;
     camera.pos = {350, -1600, -450};
-    camera.rotation = get_rotation_quaternion(get_basis_x(), -degree_to_radian(65));
+    camera.rot = get_rotation_quaternion(get_basis_x(), -degree_to_radian(65));
 
     SceneUniformData *scene_uniform_data = get_scene_uniform_data(&device, &scene_uniform_buffer);
     calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
@@ -699,21 +699,33 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         // NOTE: Update game move
         if (has_click && click_mouse_button == WindowMessageMouseButtonType::left)
         {
-            if (game_move.type == GameMoveType::move)
+            if (game_state.selected_piece && game_move.type != GameMoveType::illegal)
             {
                 Piece *piece = &pieces[game_state.selected_piece->index];
                 stop_flash_animation(piece);
 
-                if (game_state.selected_piece->type == GamePieceType::knight)
+                if (game_move.type == GameMoveType::move)
+                {
+                    if (game_state.selected_piece->type == GamePieceType::knight)
+                    {
+                        start_jump_animation(piece, hover_row, hover_column);
+                    }
+                    else
+                    {
+                        start_move_animation(piece, hover_row, hover_column);
+                    }
+                    update_game_piece_pos(&game_state, game_state.selected_piece, hover_row, hover_column);
+                }
+                else if (game_move.type == GameMoveType::castling)
                 {
                     start_jump_animation(piece, hover_row, hover_column);
-                }
-                else
-                {
-                    start_move_animation(piece, hover_row, hover_column);
+                    update_game_piece_pos(&game_state, game_state.selected_piece, hover_row, hover_column);
+
+                    Piece *rook_piece = &pieces[game_move.castling_rook->index];
+                    start_move_animation(rook_piece, game_move.rook_row_to, game_move.rook_column_to);
+                    update_game_piece_pos(&game_state, game_move.castling_rook, game_move.rook_row_to, game_move.rook_column_to);
                 }
 
-                update_game_piece_pos(&game_state, game_state.selected_piece, hover_row, hover_column);
                 game_state.selected_piece = null;
             }
         }
@@ -757,9 +769,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         last_hover_row = hover_row;
         last_hover_column = hover_column;
 
-        Vec3 camera_x = rotate(camera.rotation, get_basis_x());
-        Vec3 camera_y = rotate(camera.rotation, get_basis_y());
-        Vec3 camera_z = rotate(camera.rotation, get_basis_z());
+        Vec3 camera_x = rotate(camera.rot, get_basis_x());
+        Vec3 camera_y = rotate(camera.rot, get_basis_y());
+        Vec3 camera_z = rotate(camera.rot, get_basis_z());
         Real speed = 3;
         if (moving_x_pos)
         {
@@ -787,32 +799,32 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         }
 
         Real rotating_speed = degree_to_radian(0.2);
-        Quaternion local_rotation = get_identity_quaternion();
+        Quaternion local_rot = get_identity_quaternion();
         if (rotating_x_pos)
         {
-            local_rotation = get_rotation_quaternion(get_basis_x(), rotating_speed) * local_rotation;
+            local_rot = get_rotation_quaternion(get_basis_x(), rotating_speed) * local_rot;
         }
         if (rotating_x_neg)
         {
-            local_rotation = get_rotation_quaternion(get_basis_x(), -rotating_speed) * local_rotation;
+            local_rot = get_rotation_quaternion(get_basis_x(), -rotating_speed) * local_rot;
         }
         if (rotating_y_pos)
         {
-            local_rotation = get_rotation_quaternion(get_basis_y(), rotating_speed) * local_rotation;
+            local_rot = get_rotation_quaternion(get_basis_y(), rotating_speed) * local_rot;
         }
         if (rotating_y_neg)
         {
-            local_rotation = get_rotation_quaternion(get_basis_y(), -rotating_speed) * local_rotation;
+            local_rot = get_rotation_quaternion(get_basis_y(), -rotating_speed) * local_rot;
         }
         if (rotating_z_pos)
         {
-            local_rotation = get_rotation_quaternion(get_basis_z(), rotating_speed) * local_rotation;
+            local_rot = get_rotation_quaternion(get_basis_z(), rotating_speed) * local_rot;
         }
         if (rotating_z_neg)
         {
-            local_rotation = get_rotation_quaternion(get_basis_z(), -rotating_speed) * local_rotation;
+            local_rot = get_rotation_quaternion(get_basis_z(), -rotating_speed) * local_rot;
         }
-        camera.rotation = camera.rotation * local_rotation;
+        camera.rot = camera.rot * local_rot;
 
         calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
         for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
@@ -843,7 +855,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             debug_ui_draw_newline(&debug_ui_draw_state);
 
             debug_ui_draw_str(&debug_ui_draw_state, str("rotation: "));
-            debug_ui_draw_vec4(&debug_ui_draw_state, vec4(camera.rotation));
+            debug_ui_draw_vec4(&debug_ui_draw_state, vec4(camera.rot));
             debug_ui_draw_newline(&debug_ui_draw_state);
 
             debug_ui_draw_indent(&debug_ui_draw_state, -1);

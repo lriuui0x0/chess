@@ -9,7 +9,7 @@
 struct Camera
 {
     Vec3 pos;
-    Quaternion rotation;
+    Quaternion rot;
 };
 
 struct Animation
@@ -17,6 +17,8 @@ struct Animation
     Real t;
     Vec3 pos_from;
     Vec3 pos_to;
+    Quaternion rot_from;
+    Quaternion rot_to;
 };
 
 enum struct AnimationType
@@ -24,6 +26,7 @@ enum struct AnimationType
     none,
     move,
     jump,
+    capture,
     flash,
     illegal_flash,
 };
@@ -31,7 +34,7 @@ enum struct AnimationType
 struct Entity
 {
     Vec3 pos;
-    Quaternion rotation;
+    Quaternion rot;
     Vec3 scale;
     Vec4 color;
     Mesh *mesh;
@@ -47,7 +50,7 @@ struct Board : Entity
 Void fill_board_initial_state(Board *board, Mesh *board_mesh)
 {
     board->pos = {0, 0, 0};
-    board->rotation = get_rotation_quaternion(get_basis_y(), 0);
+    board->rot = get_rotation_quaternion(get_basis_y(), 0);
     board->scale = {-1, -1, 1};
     board->mesh = board_mesh;
     board->color = Vec4{1, 1, 1, 1};
@@ -91,7 +94,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
     piece->game_piece = game_piece;
     if (game_piece->side == GameSide::white)
     {
-        piece->rotation = get_rotation_quaternion(get_basis_y(), 0);
+        piece->rot = get_rotation_quaternion(get_basis_y(), 0);
         piece->scale = Vec3{1, -1, 1};
 
         switch (game_piece->type)
@@ -162,7 +165,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
     }
     else if (game_piece->side == GameSide::black)
     {
-        piece->rotation = get_rotation_quaternion(get_basis_y(), PI);
+        piece->rot = get_rotation_quaternion(get_basis_y(), PI);
         piece->scale = {1, -1, 1};
 
         switch (game_piece->type)
@@ -251,7 +254,7 @@ Void fill_ghost_piece_initila_state(GhostPiece *ghost_piece)
 Void update_ghost_piece(GhostPiece *ghost_piece, Piece *piece, Int row, Int column)
 {
     ghost_piece->pos = get_square_pos(row, column);
-    ghost_piece->rotation = piece->rotation;
+    ghost_piece->rot = piece->rot;
     ghost_piece->scale = piece->scale;
     ghost_piece->mesh = piece->mesh;
 }
@@ -324,6 +327,15 @@ Void update_animation(Entity *entity, Real elapsed_time)
         new_pos.y = a * square(entity->animation.t) + b * entity->animation.t;
         entity->pos = new_pos;
 
+        if (entity->animation.t >= 1)
+        {
+            entity->animation_type = AnimationType::none;
+        }
+    }
+    else if (entity->animation_type == AnimationType::capture)
+    {
+        Real animation_time = 0.2;
+        Real dt = elapsed_time / animation_time;
         if (entity->animation.t >= 1)
         {
             entity->animation_type = AnimationType::none;
