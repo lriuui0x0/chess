@@ -368,7 +368,7 @@ void calculate_entity_uniform_data(Entity *entity, EntityUniformData *uniform_da
     Mat4 translate = get_translate_matrix(entity->pos.x, entity->pos.y, entity->pos.z);
     Mat4 rotation = get_rotation_matrix(entity->rot);
     Mat4 scale = get_scale_matrix(entity->scale.x, entity->scale.y, entity->scale.z);
-    uniform_data->world = scale * translate * rotation;
-    uniform_data->normal_world = scale * rotation;
+    uniform_data->world = translate * rotation * scale;
+    uniform_data->normal_world = rotation * scale;
     uniform_data->color = entity->color;
 }

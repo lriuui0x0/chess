@@ -282,21 +282,18 @@ Void start_capture_animation(Piece *piece, RandomGenerator *generator)
     piece->animation_type = AnimationType::capture;
     piece->animation.t = 0;
 
-    Vec3 board_center = Vec3{SQUARE_SIZE * (BOARD_COLUMN_COUNT / 2 - 0.5), 0, SQUARE_SIZE * (BOARD_ROW_COUNT / 2 - 0.5)};
-    Real distance = 2000;
+    Real distance = 1500;
     Real angle = degree_to_radian(get_random_number(generator, 0, 360));
-    Real height = 500;
+    Real height = -500;
 
     Vec3 pos_change_xz = Vec3{distance * cosf(angle), 0, distance * sinf(angle)}; 
-    Vec3 pos_to = board_center + Vec3{pos_change_xz.x, height, pos_change_xz.z};
+    Vec3 pos_to = piece->pos + Vec3{pos_change_xz.x, height, pos_change_xz.z};
     piece->animation.pos_from = piece->pos;
     piece->animation.pos_to = pos_to;
 
-    Vec3 dir = normalize(pos_change_xz);
-    Vec3 dir_perp = rotate(get_rotation_quaternion(get_basis_y(), -PI / 2), dir);
-    Quaternion rot = get_rotation_quaternion(dir_perp, PI / 2);
+    Quaternion rot_to = get_neighbour(get_rotation_quaternion(-get_basis_y(), (angle + PI) - PI / 2) * get_rotation_quaternion(get_basis_x(), PI / 2), piece->rot);
     piece->animation.rot_from = piece->rot;
-    piece->animation.rot_to = piece->rot * rot;
+    piece->animation.rot_to = rot_to;
 }
 
 Void start_flash_animation(Piece *piece)
@@ -323,6 +320,11 @@ Void stop_illegal_flash_animation(GhostPiece *ghost_piece)
     ghost_piece->color = Vec4{1, 1, 1, GHOST_PIECE_ALPHA};
 }
 
+Real quadratic_modify(Real t, Real a)
+{
+    return a * square(t) + (1 - a) * t;
+}
+
 Void update_animation(Entity *entity, Real elapsed_time)
 {
     if (entity->animation_type == AnimationType::move)
@@ -330,8 +332,7 @@ Void update_animation(Entity *entity, Real elapsed_time)
         Real animation_time = 0.2;
         Real dt = elapsed_time / animation_time;
         entity->animation.t = MIN(entity->animation.t + dt, 1);
-        Real a = 0.1;
-        Real ft = a * square(entity->animation.t) + (1 - a) * entity->animation.t;
+        Real ft = quadratic_modify(entity->animation.t, 0.1);
         entity->pos = lerp(entity->animation.pos_from, entity->animation.pos_to, ft);
 
         if (entity->animation.t >= 1)
@@ -345,7 +346,7 @@ Void update_animation(Entity *entity, Real elapsed_time)
         Real dt = elapsed_time / animation_time;
         entity->animation.t = MIN(entity->animation.t + dt, 1);
         Vec3 new_pos = lerp(entity->animation.pos_from, entity->animation.pos_to, entity->animation.t);
-        Real height = 200;
+        Real height = -200;
         Real a = -4 * height;
         Real b = 4 * height;
         new_pos.y = a * square(entity->animation.t) + b * entity->animation.t;
@@ -358,13 +359,12 @@ Void update_animation(Entity *entity, Real elapsed_time)
     }
     else if (entity->animation_type == AnimationType::capture)
     {
-        Real animation_time = 0.8;
+        Real animation_time = 0.5;
         Real dt = elapsed_time / animation_time;
         entity->animation.t = MIN(entity->animation.t + dt, 1);
-        Real a = 0.1;
-        Real ft = a * square(entity->animation.t) + (1 - a) * entity->animation.t;
-        entity->pos = lerp(entity->animation.pos_from, entity->animation.pos_to, ft);
-        entity->rot = slerp(entity->animation.rot_from, entity->animation.rot_to, ft);
+        entity->pos = lerp(entity->animation.pos_from, entity->animation.pos_to, entity->animation.t);
+        Real rot_t = quadratic_modify(entity->animation.t, -1.5);
+        entity->rot = slerp(entity->animation.rot_from, entity->animation.rot_to, rot_t);
 
         if (entity->animation.t >= 1)
         {

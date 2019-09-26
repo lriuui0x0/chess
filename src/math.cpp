@@ -530,6 +530,16 @@ Quaternion operator-(Quaternion p, Quaternion q)
     return result;
 }
 
+Quaternion operator-(Quaternion q)
+{
+    Quaternion result;
+    result.w = - q.w;
+    result.x = - q.x;
+    result.y = - q.y;
+    result.z = - q.z;
+    return result;
+}
+
 Quaternion operator*(Quaternion p, Quaternion q)
 {
     Quaternion result;
@@ -610,6 +620,16 @@ Quaternion get_rotation_quaternion(Vec3 axis, Real angle)
     result.x = sinf(angle / 2) * axis.x;
     result.y = sinf(angle / 2) * axis.y;
     result.z = sinf(angle / 2) * axis.z;
+    return result;
+}
+
+Quaternion get_neighbour(Quaternion q, Quaternion neighbour)
+{
+    Quaternion result = q;
+    if (dot(q, neighbour) < 0)
+    {
+        result = -q;
+    }
     return result;
 }
 
