@@ -143,3 +143,11 @@ T *Array<T>::push()
 
 Bool read_file(CStr filename, Str *contents);
 Bool write_file(CStr filename, Str contents);
+
+struct RandomGenerator
+{
+    UInt64 seed;
+};
+
+UInt64 get_random_number(RandomGenerator *generator);
+UInt64 get_random_number(RandomGenerator *generator, UInt64 min, UInt64 max);

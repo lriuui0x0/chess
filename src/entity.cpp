@@ -47,6 +47,8 @@ struct Board : Entity
     CollisionBox collision_box[BOARD_SQUARE_COUNT];
 };
 
+#define SQUARE_SIZE (100.0)
+
 Void fill_board_initial_state(Board *board, Mesh *board_mesh)
 {
     board->pos = {0, 0, 0};
@@ -62,14 +64,14 @@ Void fill_board_initial_state(Board *board, Mesh *board_mesh)
         Int column = get_column(square_i);
 
         CollisionBox *collision_box = &board->collision_box[square_i];
-        collision_box->center = {(Real)(column * 100), 0, (Real)(row * 100)};
-        collision_box->radius = {50, 0, 50};
+        collision_box->center = {(Real)(column * SQUARE_SIZE), 0, (Real)(row * SQUARE_SIZE)};
+        collision_box->radius = {SQUARE_SIZE / 2, 0, SQUARE_SIZE / 2};
     }
 }
 
 Vec3 get_square_pos(Int row, Int column)
 {
-    return {(Real)(column * 100.0), 0, (Real)(row * 100.0)};
+    return {(Real)(column * SQUARE_SIZE), 0, (Real)(row * SQUARE_SIZE)};
 }
 
 struct Piece : Entity
@@ -275,6 +277,28 @@ Void start_jump_animation(Piece *piece, Int row, Int column)
     piece->animation.pos_to = get_square_pos(row, column);
 }
 
+Void start_capture_animation(Piece *piece, RandomGenerator *generator)
+{
+    piece->animation_type = AnimationType::capture;
+    piece->animation.t = 0;
+
+    Vec3 board_center = Vec3{SQUARE_SIZE * (BOARD_COLUMN_COUNT / 2 - 0.5), 0, SQUARE_SIZE * (BOARD_ROW_COUNT / 2 - 0.5)};
+    Real distance = 2000;
+    Real angle = degree_to_radian(get_random_number(generator, 0, 360));
+    Real height = 500;
+
+    Vec3 pos_change_xz = Vec3{distance * cosf(angle), 0, distance * sinf(angle)}; 
+    Vec3 pos_to = board_center + Vec3{pos_change_xz.x, height, pos_change_xz.z};
+    piece->animation.pos_from = piece->pos;
+    piece->animation.pos_to = pos_to;
+
+    Vec3 dir = normalize(pos_change_xz);
+    Vec3 dir_perp = rotate(get_rotation_quaternion(get_basis_y(), -PI / 2), dir);
+    Quaternion rot = get_rotation_quaternion(dir_perp, PI / 2);
+    piece->animation.rot_from = piece->rot;
+    piece->animation.rot_to = piece->rot * rot;
+}
+
 Void start_flash_animation(Piece *piece)
 {
     piece->animation_type = AnimationType::flash;
@@ -321,7 +345,7 @@ Void update_animation(Entity *entity, Real elapsed_time)
         Real dt = elapsed_time / animation_time;
         entity->animation.t = MIN(entity->animation.t + dt, 1);
         Vec3 new_pos = lerp(entity->animation.pos_from, entity->animation.pos_to, entity->animation.t);
-        Real height = -200;
+        Real height = 200;
         Real a = -4 * height;
         Real b = 4 * height;
         new_pos.y = a * square(entity->animation.t) + b * entity->animation.t;
@@ -334,8 +358,14 @@ Void update_animation(Entity *entity, Real elapsed_time)
     }
     else if (entity->animation_type == AnimationType::capture)
     {
-        Real animation_time = 0.2;
+        Real animation_time = 0.8;
         Real dt = elapsed_time / animation_time;
+        entity->animation.t = MIN(entity->animation.t + dt, 1);
+        Real a = 0.1;
+        Real ft = a * square(entity->animation.t) + (1 - a) * entity->animation.t;
+        entity->pos = lerp(entity->animation.pos_from, entity->animation.pos_to, ft);
+        entity->rot = slerp(entity->animation.rot_from, entity->animation.rot_to, ft);
+
         if (entity->animation.t >= 1)
         {
             entity->animation_type = AnimationType::none;

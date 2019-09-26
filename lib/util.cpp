@@ -101,3 +101,18 @@ Bool write_file(CStr filename, Str contents)
 
     return true;
 }
+
+UInt64 get_random_number(RandomGenerator *generator)
+{
+    UInt64 next_seed = 6364136223846793005ull * generator->seed + 1442695040888963407ull;
+    generator->seed = next_seed;
+    return next_seed;
+}
+
+UInt64 get_random_number(RandomGenerator *generator, UInt64 min, UInt64 max)
+{
+    ASSERT(min < max);
+    UInt64 random_number = get_random_number(generator);
+    UInt64 result = random_number % (max - min) + min;
+    return result;
+}

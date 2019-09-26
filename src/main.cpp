@@ -299,8 +299,8 @@ Bool render_vulkan_frame(VulkanDevice *device,
 
 int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int show_code)
 {
-    Int window_width = 800;
-    Int window_height = 600;
+    RandomGenerator random_generator;
+    random_generator.seed = get_current_timestamp();
 
     Mesh board_mesh;
     ASSERT(read_mesh("../asset/board.asset", &board_mesh));
@@ -361,6 +361,8 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     GhostPiece ghost_piece;
     fill_ghost_piece_initila_state(&ghost_piece);
 
+    Int window_width = 800;
+    Int window_height = 600;
     Window window = create_window(str("Chess"), window_width, window_height, 50, 50);
     ASSERT(window);
 
@@ -704,7 +706,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 Piece *piece = &pieces[game_state.selected_piece->index];
                 stop_flash_animation(piece);
 
-                if (game_move.type == GameMoveType::move)
+                if (game_move.type == GameMoveType::move || game_move.type == GameMoveType::capture)
                 {
                     if (game_state.selected_piece->type == GamePieceType::knight)
                     {
@@ -715,6 +717,12 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                         start_move_animation(piece, hover_row, hover_column);
                     }
                     update_game_piece_pos(&game_state, game_state.selected_piece, hover_row, hover_column);
+
+                    if (game_move.type == GameMoveType::capture)
+                    {
+                        Piece *captured_piece = &pieces[game_move.captured_piece->index];
+                        start_capture_animation(captured_piece, &random_generator);
+                    }
                 }
                 else if (game_move.type == GameMoveType::castling)
                 {

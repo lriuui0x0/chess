@@ -414,9 +414,9 @@ GameMove check_game_move(GameState *state, GamePiece *piece, Int row_to, Int col
 
     case GamePieceType::knight:
     {
-        Int row_change = ABS(row_to - piece->row);
-        Int column_change = ABS(column_to - piece->column);
-        if (row_change == 1 && column_change == 2 || row_change == 2 && column_change == 1)
+        Int row_change_abs = ABS(row_to - piece->row);
+        Int column_change_abs = ABS(column_to - piece->column);
+        if (row_change_abs == 1 && column_change_abs == 2 || row_change_abs == 2 && column_change_abs == 1)
         {
             if (is_foe_occupied(state, row_to, column_to))
             {
@@ -540,7 +540,7 @@ GameMove check_game_move(GameState *state, GamePiece *piece, Int row_to, Int col
         Int direction = piece->side == GameSide::white ? 1 : -1;
         Int row_change = row_to - piece->row;
         Int column_change = column_to - piece->column;
-
+        Int column_change_abs = ABS(column_change);
         if (column_change == 0)
         {
             if (piece->moves == 0 && row_change == direction * 2 &&
@@ -562,7 +562,7 @@ GameMove check_game_move(GameState *state, GamePiece *piece, Int row_to, Int col
                 return result;
             }
         }
-        else if (ABS(column_change) == 1 && row_change == direction * 1)
+        else if (column_change_abs == 1 && row_change == direction * 1)
         {
             if (is_foe_occupied(state, row_to, column_to))
             {
