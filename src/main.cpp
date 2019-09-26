@@ -688,50 +688,47 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         }
 
         // NOTE: Check game move
-        GameMove game_move;
+        GameMoveCheck game_move_check;
         if (game_state.selected_piece && hover_row != -1 && hover_column != -1)
         {
-            game_move = check_game_move(&game_state, game_state.selected_piece, hover_row, hover_column);
+            game_move_check = check_game_move(&game_state, game_state.selected_piece, hover_row, hover_column);
         }
         else
         {
-            game_move.type = GameMoveType::illegal;
+            game_move_check.is_illegal = true;
         }
 
         // NOTE: Update game move
         if (has_click && click_mouse_button == WindowMessageMouseButtonType::left)
         {
-            if (game_state.selected_piece && game_move.type != GameMoveType::illegal)
+            if (game_state.selected_piece && !game_move_check.is_illegal)
             {
+                record_game_move(&game_state, game_move_check.move_type, game_state.selected_piece->row, game_state.selected_piece->column, hover_row, hover_column);
+
                 Piece *piece = &pieces[game_state.selected_piece->index];
                 stop_flash_animation(piece);
-
-                if (game_move.type == GameMoveType::move || game_move.type == GameMoveType::capture)
+                if (game_state.selected_piece->type == GamePieceType::knight ||
+                    game_move_check.move_type == GameMoveType::castling_king ||
+                    game_move_check.move_type == GameMoveType::castling_queen)
                 {
-                    if (game_state.selected_piece->type == GamePieceType::knight)
-                    {
-                        start_jump_animation(piece, hover_row, hover_column);
-                    }
-                    else
-                    {
-                        start_move_animation(piece, hover_row, hover_column);
-                    }
-                    update_game_piece_pos(&game_state, game_state.selected_piece, hover_row, hover_column);
-
-                    if (game_move.type == GameMoveType::capture)
-                    {
-                        Piece *captured_piece = &pieces[game_move.captured_piece->index];
-                        start_capture_animation(captured_piece, &random_generator);
-                    }
+                    start_jump_animation(piece, game_state.selected_piece->row, game_state.selected_piece->column);
                 }
-                else if (game_move.type == GameMoveType::castling)
+                else
                 {
-                    start_jump_animation(piece, hover_row, hover_column);
-                    update_game_piece_pos(&game_state, game_state.selected_piece, hover_row, hover_column);
+                    start_move_animation(piece, game_state.selected_piece->row, game_state.selected_piece->column);
+                }
 
-                    Piece *rook_piece = &pieces[game_move.castling_rook->index];
-                    start_move_animation(rook_piece, game_move.rook_row_to, game_move.rook_column_to);
-                    update_game_piece_pos(&game_state, game_move.castling_rook, game_move.rook_row_to, game_move.rook_column_to);
+                if (game_move_check.move_type == GameMoveType::castling_king ||
+                    game_move_check.move_type == GameMoveType::castling_queen)
+                {
+                    Piece *castling_piece = &pieces[game_move_check.castling_piece->index];
+                    start_move_animation(castling_piece, game_move_check.castling_piece->row, game_move_check.castling_piece->column);
+                }
+
+                if (game_move_check.captured_piece)
+                {
+                    Piece *captured_piece = &pieces[game_move_check.captured_piece->index];
+                    start_capture_animation(captured_piece, &random_generator);
                 }
 
                 game_state.selected_piece = null;
@@ -767,8 +764,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         // NOTE: Start ghost piece illegal move feedback
         if (has_click && click_mouse_button == WindowMessageMouseButtonType::left)
         {
-            if (ghost_piece_index != -1 &&
-                game_move.type == GameMoveType::illegal)
+            if (ghost_piece_index != -1 && game_move_check.is_illegal)
             {
                 start_illegal_flash_animation(&ghost_piece);
             }

@@ -35,6 +35,26 @@ struct GamePiece
 #define BOARD_COLUMN_COUNT (8)
 #define PIECE_COUNT (32)
 
+enum struct GameMoveType
+{
+    move,
+    pawn_charge,
+    pawn_capture,
+    en_passant,
+    castling_king,
+    castling_queen,
+};
+
+struct GameMove
+{
+    GameMoveType type;
+    GamePiece *piece;
+    Int row_from;
+    Int column_from;
+    Int row_to;
+    Int column_to;
+};
+
 struct GameState
 {
     GamePiece pieces[PIECE_COUNT];
@@ -42,6 +62,7 @@ struct GameState
     GameSide player_side;
     GameSide current_side;
     GamePiece *selected_piece;
+    Array<GameMove> history;
 };
 
 Int get_row(Int square_index)
@@ -69,6 +90,7 @@ GameState get_initial_game_state()
     state.player_side = GameSide::white;
     state.current_side = GameSide::white;
     state.selected_piece = null;
+    state.history = create_array<GameMove>();
 
     GamePiece *piece = &state.pieces[0];
     *piece = GamePiece{0, GameSide::white, GamePieceType::rook, 0, str("white rook 0"), 0, 0, 0};
@@ -194,33 +216,36 @@ Bool is_foe_occupied(GameState *state, Int row, Int column)
     return piece != null && piece->side != state->player_side;
 }
 
-enum struct GameMoveType
+struct GameMoveCheck
 {
-    move,
-    castling,
-    capture,
-    illegal,
+    Bool is_illegal;
+    GameMoveType move_type;
+    GamePiece *captured_piece;
+    GamePiece *castling_piece;
 };
 
-struct GameMove
+GameMoveCheck illegal_move()
 {
-    GameMoveType type;
-    union {
-        GamePiece *captured_piece;
-        struct
-        {
-            GamePiece *castling_rook;
-            Int rook_row_to;
-            Int rook_column_to;
-        };
-    };
-};
+    GameMoveCheck result = {};
+    result.is_illegal = true;
+    return result;
+}
 
-GameMove check_orthogonal_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
+GameMoveCheck general_move(GameState *state, Int row_to, Int column_to)
+{
+    GameMoveCheck result = {};
+    result.move_type = GameMoveType::move;
+    if (is_foe_occupied(state, row_to, column_to))
+    {
+        result.captured_piece = state->board[row_to][column_to];
+    }
+    return result;
+}
+
+GameMoveCheck check_orthogonal_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
 {
     ASSERT(row_to != piece->row || column_to != piece->column);
 
-    GameMove result;
     if (column_to == piece->column)
     {
         if (row_to > piece->row)
@@ -229,8 +254,7 @@ GameMove check_orthogonal_move(GameState *state, GamePiece *piece, Int row_to, I
             {
                 if (is_occupied(state, row, piece->column))
                 {
-                    result.type = GameMoveType::illegal;
-                    return result;
+                    return illegal_move();
                 }
             }
         }
@@ -240,23 +264,11 @@ GameMove check_orthogonal_move(GameState *state, GamePiece *piece, Int row_to, I
             {
                 if (is_occupied(state, row, piece->column))
                 {
-                    result.type = GameMoveType::illegal;
-                    return result;
+                    return illegal_move();
                 }
             }
         }
-
-        if (is_foe_occupied(state, row_to, column_to))
-        {
-            result.type = GameMoveType::capture;
-            result.captured_piece = state->board[row_to][column_to];
-            return result;
-        }
-        else
-        {
-            result.type = GameMoveType::move;
-            return result;
-        }
+        return general_move(state, row_to, column_to);
     }
     else if (row_to == piece->row)
     {
@@ -266,8 +278,7 @@ GameMove check_orthogonal_move(GameState *state, GamePiece *piece, Int row_to, I
             {
                 if (is_occupied(state, piece->row, column))
                 {
-                    result.type = GameMoveType::illegal;
-                    return result;
+                    return illegal_move();
                 }
             }
         }
@@ -277,36 +288,22 @@ GameMove check_orthogonal_move(GameState *state, GamePiece *piece, Int row_to, I
             {
                 if (is_occupied(state, piece->row, column))
                 {
-                    result.type = GameMoveType::illegal;
-                    return result;
+                    return illegal_move();
                 }
             }
         }
-
-        if (is_foe_occupied(state, row_to, column_to))
-        {
-            result.type = GameMoveType::capture;
-            result.captured_piece = state->board[row_to][column_to];
-            return result;
-        }
-        else
-        {
-            result.type = GameMoveType::move;
-            return result;
-        }
+        return general_move(state, row_to, column_to);
     }
     else
     {
-        result.type = GameMoveType::illegal;
-        return result;
+        return illegal_move();
     }
 }
 
-GameMove check_diagonal_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
+GameMoveCheck check_diagonal_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
 {
     ASSERT(row_to != piece->row || column_to != piece->column);
 
-    GameMove result;
     if (row_to - piece->row == column_to - piece->column)
     {
         if (row_to > piece->row)
@@ -315,8 +312,7 @@ GameMove check_diagonal_move(GameState *state, GamePiece *piece, Int row_to, Int
             {
                 if (is_occupied(state, row, column))
                 {
-                    result.type = GameMoveType::illegal;
-                    return result;
+                    return illegal_move();
                 }
             }
         }
@@ -326,23 +322,11 @@ GameMove check_diagonal_move(GameState *state, GamePiece *piece, Int row_to, Int
             {
                 if (is_occupied(state, row, column))
                 {
-                    result.type = GameMoveType::illegal;
-                    return result;
+                    return illegal_move();
                 }
             }
         }
-
-        if (is_foe_occupied(state, row_to, column_to))
-        {
-            result.type = GameMoveType::capture;
-            result.captured_piece = state->board[row_to][column_to];
-            return result;
-        }
-        else
-        {
-            result.type = GameMoveType::move;
-            return result;
-        }
+        return general_move(state, row_to, column_to);
     }
     else if (row_to - piece->row == -(column_to - piece->column))
     {
@@ -352,8 +336,7 @@ GameMove check_diagonal_move(GameState *state, GamePiece *piece, Int row_to, Int
             {
                 if (is_occupied(state, row, column))
                 {
-                    result.type = GameMoveType::illegal;
-                    return result;
+                    return illegal_move();
                 }
             }
         }
@@ -363,52 +346,35 @@ GameMove check_diagonal_move(GameState *state, GamePiece *piece, Int row_to, Int
             {
                 if (is_occupied(state, row, column))
                 {
-                    result.type = GameMoveType::illegal;
-                    return result;
+                    return illegal_move();
                 }
             }
         }
-
-        if (is_foe_occupied(state, row_to, column_to))
-        {
-            result.type = GameMoveType::capture;
-            result.captured_piece = state->board[row_to][column_to];
-            return result;
-        }
-        else
-        {
-            result.type = GameMoveType::move;
-            return result;
-        }
+        return general_move(state, row_to, column_to);
     }
     else
     {
-        result.type = GameMoveType::illegal;
-        return result;
+        return illegal_move();
     }
 }
 
-GameMove check_game_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
+GameMoveCheck check_game_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
 {
-    GameMove result;
     if (row_to == piece->row && column_to == piece->column)
     {
-        result.type = GameMoveType::illegal;
-        return result;
+        return illegal_move();
     }
 
     if (is_friend_occupied(state, row_to, column_to))
     {
-        result.type = GameMoveType::illegal;
-        return result;
+        return illegal_move();
     }
 
     switch (piece->type)
     {
     case GamePieceType::rook:
     {
-        result = check_orthogonal_move(state, piece, row_to, column_to);
-        return result;
+        return check_orthogonal_move(state, piece, row_to, column_to);
     }
     break;
 
@@ -418,41 +384,32 @@ GameMove check_game_move(GameState *state, GamePiece *piece, Int row_to, Int col
         Int column_change_abs = ABS(column_to - piece->column);
         if (row_change_abs == 1 && column_change_abs == 2 || row_change_abs == 2 && column_change_abs == 1)
         {
-            if (is_foe_occupied(state, row_to, column_to))
-            {
-                result.type = GameMoveType::capture;
-                result.captured_piece = state->board[row_to][column_to];
-                return result;
-            }
-            else
-            {
-                result.type = GameMoveType::move;
-                return result;
-            }
+            return general_move(state, row_to, column_to);
         }
         else
         {
-            result.type = GameMoveType::illegal;
-            return result;
+            return illegal_move();
         }
     }
     break;
 
     case GamePieceType::bishop:
     {
-        result = check_diagonal_move(state, piece, row_to, column_to);
-        return result;
+        return check_diagonal_move(state, piece, row_to, column_to);
     }
     break;
 
     case GamePieceType::queen:
     {
-        result = check_orthogonal_move(state, piece, row_to, column_to);
-        if (result.type == GameMoveType::illegal)
+        GameMoveCheck orthogonal_move_check = check_orthogonal_move(state, piece, row_to, column_to);
+        if (orthogonal_move_check.is_illegal)
         {
-            result = check_diagonal_move(state, piece, row_to, column_to);
+            return check_diagonal_move(state, piece, row_to, column_to);
         }
-        return result;
+        else
+        {
+            return orthogonal_move_check;
+        }
     }
     break;
 
@@ -464,32 +421,21 @@ GameMove check_game_move(GameState *state, GamePiece *piece, Int row_to, Int col
         Int column_change_abs = ABS(column_change);
         if (MAX(row_change_abs, column_change_abs) == 1)
         {
-            if (is_foe_occupied(state, row_to, column_to))
-            {
-                result.type = GameMoveType::capture;
-                result.captured_piece = state->board[row_to][column_to];
-                return result;
-            }
-            else
-            {
-                result.type = GameMoveType::move;
-                return result;
-            }
+            return general_move(state, row_to, column_to);
         }
         else if (row_change_abs == 0 && column_change_abs == 2 && piece->moves == 0)
         {
-            GamePiece *rook_piece;
+            GamePiece *castling_piece;
             if (column_change > 0)
             {
                 for (Int column = piece->column + 1; column < BOARD_COLUMN_COUNT - 1; column++)
                 {
                     if (is_occupied(state, piece->row, column))
                     {
-                        result.type = GameMoveType::illegal;
-                        return result;
+                        return illegal_move();
                     }
                 }
-                rook_piece = state->board[piece->row][BOARD_COLUMN_COUNT - 1];
+                castling_piece = state->board[piece->row][BOARD_COLUMN_COUNT - 1];
             }
             else
             {
@@ -497,40 +443,36 @@ GameMove check_game_move(GameState *state, GamePiece *piece, Int row_to, Int col
                 {
                     if (is_occupied(state, piece->row, column))
                     {
-                        result.type = GameMoveType::illegal;
-                        return result;
+                        return illegal_move();
                     }
                 }
-                rook_piece = state->board[piece->row][0];
+                castling_piece = state->board[piece->row][0];
             }
 
-            if (is_friend(state, rook_piece) &&
-                rook_piece->type == GamePieceType::rook &&
-                rook_piece->moves == 0)
+            if (is_friend(state, castling_piece) &&
+                castling_piece->type == GamePieceType::rook &&
+                castling_piece->moves == 0)
             {
-                result.type = GameMoveType::castling;
-                result.castling_rook = rook_piece;
-                result.rook_row_to = piece->row;
+                GameMoveCheck castling_move = {};
                 if (column_change > 0)
                 {
-                    result.rook_column_to = column_to - 1;
+                    castling_move.move_type = GameMoveType::castling_king;
                 }
                 else
                 {
-                    result.rook_column_to = column_to + 1;
+                    castling_move.move_type = GameMoveType::castling_queen;
                 }
-                return result;
+                castling_move.castling_piece = castling_piece;
+                return castling_move;
             }
             else
             {
-                result.type = GameMoveType::illegal;
-                return result;
+                return illegal_move();
             }
         }
         else
         {
-            result.type = GameMoveType::illegal;
-            return result;
+            return illegal_move();
         }
     }
     break;
@@ -543,43 +485,64 @@ GameMove check_game_move(GameState *state, GamePiece *piece, Int row_to, Int col
         Int column_change_abs = ABS(column_change);
         if (column_change == 0)
         {
+            GameMoveCheck pawn_orthogonal_move = {};
             if (piece->moves == 0 && row_change == direction * 2 &&
                 !is_occupied(state, piece->row + direction * 1, piece->column) &&
                 !is_occupied(state, piece->row + direction * 2, piece->column))
             {
-                result.type = GameMoveType::move;
-                return result;
+                pawn_orthogonal_move.move_type = GameMoveType::pawn_charge;
+                return pawn_orthogonal_move;
             }
             else if (row_change == direction * 1 &&
                      !is_occupied(state, piece->row + direction * 1, piece->column))
             {
-                result.type = GameMoveType::move;
-                return result;
+                pawn_orthogonal_move.move_type = GameMoveType::move;
+                return pawn_orthogonal_move;
             }
             else
             {
-                result.type = GameMoveType::illegal;
-                return result;
+                return illegal_move();
             }
         }
         else if (column_change_abs == 1 && row_change == direction * 1)
         {
+            GameMoveCheck pawn_diagonal_move = {};
             if (is_foe_occupied(state, row_to, column_to))
             {
-                result.type = GameMoveType::capture;
-                result.captured_piece = state->board[row_to][column_to];
-                return result;
+                pawn_diagonal_move.move_type = GameMoveType::pawn_capture;
+                pawn_diagonal_move.captured_piece = state->board[row_to][column_to];
+                return pawn_diagonal_move;
+            }
+            else if (!is_occupied(state, row_to, column_to) && is_foe_occupied(state, piece->row, column_to))
+            {
+                if (state->history.count > 0)
+                {
+                    GameMove *last_move = &state->history[state->history.count - 1];
+                    if (last_move->type == GameMoveType::pawn_charge &&
+                        last_move->piece->row == piece->row && last_move->piece->column == column_to)
+                    {
+                        pawn_diagonal_move.move_type = GameMoveType::en_passant;
+                        pawn_diagonal_move.captured_piece = last_move->piece;
+                        return pawn_diagonal_move;
+                    }
+                    else
+                    {
+                        return illegal_move();
+                    }
+                }
+                else
+                {
+                    return illegal_move();
+                }
             }
             else
             {
-                result.type = GameMoveType::illegal;
-                return result;
+                return illegal_move();
             }
         }
         else
         {
-            result.type = GameMoveType::illegal;
-            return result;
+            return illegal_move();
         }
     }
     break;
@@ -592,11 +555,42 @@ GameMove check_game_move(GameState *state, GamePiece *piece, Int row_to, Int col
     }
 }
 
-Void update_game_piece_pos(GameState *state, GamePiece *piece, Int row, Int column)
+Void move_game_piece(GameState *state, Int row_from, Int column_from, Int row_to, Int column_to)
 {
-    state->board[piece->row][piece->column] = null;
-    state->board[row][column] = piece;
-    piece->row = row;
-    piece->column = column;
+    GamePiece *piece = state->board[row_from][column_from];
+    state->board[row_from][column_from] = null;
+    state->board[row_to][column_to] = piece;
+    piece->row = row_to;
+    piece->column = column_to;
     piece->moves++;
+}
+
+Void remove_game_piece(GameState *state, Int row, Int column)
+{
+    state->board[row][column] = null;
+}
+
+Void record_game_move(GameState *state, GameMoveType move_type, Int row_from, Int column_from, Int row_to, Int column_to)
+{
+    GameMove *move = state->history.push();
+    move->type = move_type;
+    move->piece = state->board[row_from][column_from];
+    move->row_from = row_from;
+    move->column_from = column_from;
+    move->row_to = row_to;
+    move->column_to = column_to;
+
+    move_game_piece(state, row_from, column_from, row_to, column_to);
+    if (move_type == GameMoveType::castling_king)
+    {
+        move_game_piece(state, row_from, BOARD_COLUMN_COUNT - 1, row_to, column_to - 1);
+    }
+    else if (move_type == GameMoveType::castling_queen)
+    {
+        move_game_piece(state, row_from, 0, row_to, column_to + 1);
+    }
+    else if (move_type == GameMoveType::en_passant)
+    {
+        remove_game_piece(state, row_from, column_to);
+    }
 }
