@@ -149,3 +149,33 @@ Bool deserialise_font(Str buffer, Font *font)
 
     return true;
 }
+
+struct Image
+{
+    Int width;
+    Int height;
+    UInt8 *data;
+};
+
+Bool deserialise_image(Str buffer, Image *image)
+{
+    if (buffer.count < 8)
+    {
+        return false;
+    }
+
+    Int pos = 0;
+    image->width = *(Int *)(buffer.data + pos);
+    pos += 4;
+    image->height = *(Int *)(buffer.data + pos);
+    pos += 4;
+
+    Int image_data_length = image->width * image->height * sizeof(UInt8);
+    if (buffer.count != pos + image_data_length)
+    {
+        return false;
+    }
+    image->data = (UInt8 *)malloc(image_data_length);
+    memcpy(image->data, buffer.data + pos, image_data_length);
+    return true;
+}

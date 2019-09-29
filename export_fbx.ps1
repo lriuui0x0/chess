@@ -18,10 +18,3 @@ bin/fbx_exporter.exe asset/raw/BishopLight.fbx asset/bishop_white.asset
 bin/fbx_exporter.exe asset/raw/QueenLight.fbx asset/queen_white.asset
 bin/fbx_exporter.exe asset/raw/KingLight.fbx asset/king_white.asset
 bin/fbx_exporter.exe asset/raw/PawnLight.fbx asset/pawn_white.asset
-
-clang-cl /W4 /Zi -O0 /EHa -o bin/otf_exporter.exe `
-    -Wno-logical-op-parentheses -Wno-unused-label -Wno-unused-parameter -Wno-missing-field-initializers -Wno-missing-braces -Wno-writable-strings -Wno-deprecated-declarations `
-    otf_exporter/main.cpp `
-    /link /NATVIS:misc/debug.natvis
-
-bin/otf_exporter.exe asset/raw/consola.otf asset/debug_font.asset 36

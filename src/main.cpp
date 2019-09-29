@@ -24,6 +24,22 @@ Bool read_mesh(CStr filename, Mesh *mesh)
     return true;
 }
 
+Bool read_image(CStr filename, Image *image)
+{
+    Str file_contents;
+    if (!read_file(filename, &file_contents))
+    {
+        return false;
+    }
+
+    if (!deserialise_image(file_contents, image))
+    {
+        return false;
+    }
+
+    return true;
+}
+
 Bool read_font(CStr filename, OUT Font *font)
 {
     Str file_contents;
@@ -304,32 +320,47 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     Mesh board_mesh;
     ASSERT(read_mesh("../asset/board.asset", &board_mesh));
+    Image board_lightmap;
+    ASSERT(read_image("../asset/board_lightmap.asset", &board_lightmap));
 
-    Mesh black_king_mesh;
-    ASSERT(read_mesh("../asset/king_black.asset", &black_king_mesh));
-    Mesh black_queen_mesh;
-    ASSERT(read_mesh("../asset/queen_black.asset", &black_queen_mesh));
-    Mesh black_bishop_mesh;
-    ASSERT(read_mesh("../asset/bishop_black.asset", &black_bishop_mesh));
-    Mesh black_knight_mesh;
-    ASSERT(read_mesh("../asset/knight_black.asset", &black_knight_mesh));
     Mesh black_rook_mesh;
     ASSERT(read_mesh("../asset/rook_black.asset", &black_rook_mesh));
+    Mesh black_knight_mesh;
+    ASSERT(read_mesh("../asset/knight_black.asset", &black_knight_mesh));
+    Mesh black_bishop_mesh;
+    ASSERT(read_mesh("../asset/bishop_black.asset", &black_bishop_mesh));
+    Mesh black_queen_mesh;
+    ASSERT(read_mesh("../asset/queen_black.asset", &black_queen_mesh));
+    Mesh black_king_mesh;
+    ASSERT(read_mesh("../asset/king_black.asset", &black_king_mesh));
     Mesh black_pawn_mesh;
     ASSERT(read_mesh("../asset/pawn_black.asset", &black_pawn_mesh));
 
-    Mesh white_king_mesh;
-    ASSERT(read_mesh("../asset/king_white.asset", &white_king_mesh));
-    Mesh white_queen_mesh;
-    ASSERT(read_mesh("../asset/queen_white.asset", &white_queen_mesh));
-    Mesh white_bishop_mesh;
-    ASSERT(read_mesh("../asset/bishop_white.asset", &white_bishop_mesh));
-    Mesh white_knight_mesh;
-    ASSERT(read_mesh("../asset/knight_white.asset", &white_knight_mesh));
     Mesh white_rook_mesh;
     ASSERT(read_mesh("../asset/rook_white.asset", &white_rook_mesh));
+    Mesh white_knight_mesh;
+    ASSERT(read_mesh("../asset/knight_white.asset", &white_knight_mesh));
+    Mesh white_bishop_mesh;
+    ASSERT(read_mesh("../asset/bishop_white.asset", &white_bishop_mesh));
+    Mesh white_queen_mesh;
+    ASSERT(read_mesh("../asset/queen_white.asset", &white_queen_mesh));
+    Mesh white_king_mesh;
+    ASSERT(read_mesh("../asset/king_white.asset", &white_king_mesh));
     Mesh white_pawn_mesh;
     ASSERT(read_mesh("../asset/pawn_white.asset", &white_pawn_mesh));
+
+    Image rook_lightmap;
+    ASSERT(read_image("../asset/rook_lightmap.asset", &rook_lightmap));
+    Image knight_lightmap;
+    ASSERT(read_image("../asset/knight_lightmap.asset", &knight_lightmap));
+    Image bishop_lightmap;
+    ASSERT(read_image("../asset/bishop_lightmap.asset", &bishop_lightmap));
+    Image queen_lightmap;
+    ASSERT(read_image("../asset/queen_lightmap.asset", &queen_lightmap));
+    Image king_lightmap;
+    ASSERT(read_image("../asset/king_lightmap.asset", &king_lightmap));
+    Image pawn_lightmap;
+    ASSERT(read_image("../asset/pawn_lightmap.asset", &pawn_lightmap));
 
     Font debug_font;
     ASSERT(read_font("../asset/debug_font.asset", &debug_font));
@@ -355,7 +386,13 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                                  &black_bishop_mesh,
                                  &black_queen_mesh,
                                  &black_king_mesh,
-                                 &black_pawn_mesh);
+                                 &black_pawn_mesh,
+                                 &rook_lightmap,
+                                 &knight_lightmap,
+                                 &bishop_lightmap,
+                                 &queen_lightmap,
+                                 &king_lightmap,
+                                 &pawn_lightmap);
     }
 
     GhostPiece ghost_piece;
@@ -399,10 +436,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     SceneUniformData *scene_uniform_data = get_scene_uniform_data(&device, &scene_uniform_buffer);
     calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
-    scene_uniform_data->light_dir[0] = {1, -1, 1};
-    scene_uniform_data->light_dir[1] = {1, -1, -1};
-    scene_uniform_data->light_dir[2] = {-1, -1, -1};
-    scene_uniform_data->light_dir[3] = {-1, -1, 1};
+    scene_uniform_data->hemi_light.dir = vec4(-get_basis_y());
+    scene_uniform_data->hemi_light.color = Vec4{0.80, 0.85, 0.95, 1};
+    scene_uniform_data->hemi_light.opp_color = Vec4{0, 0, 0, 1};
 
     calculate_entity_uniform_data(&board, get_board_uniform_data(&device, &scene_uniform_buffer));
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)

@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 typedef int8_t Int8;
 typedef int16_t Int16;

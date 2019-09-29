@@ -36,8 +36,9 @@ struct Entity
     Vec3 pos;
     Quaternion rot;
     Vec3 scale;
-    Vec4 color;
+    Vec4 color_overlay;
     Mesh *mesh;
+    Image *lightmap;
     AnimationType animation_type;
     Animation animation;
 };
@@ -55,7 +56,7 @@ Void fill_board_initial_state(Board *board, Mesh *board_mesh)
     board->rot = get_rotation_quaternion(get_basis_y(), 0);
     board->scale = {-1, -1, 1};
     board->mesh = board_mesh;
-    board->color = Vec4{1, 1, 1, 1};
+    board->color_overlay = Vec4{1, 1, 1, 1};
     board->animation_type = AnimationType::none;
 
     for (Int square_i = 0; square_i < BOARD_SQUARE_COUNT; square_i++)
@@ -91,7 +92,13 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
                               Mesh *black_bishop_mesh,
                               Mesh *black_queen_mesh,
                               Mesh *black_king_mesh,
-                              Mesh *black_pawn_mesh)
+                              Mesh *black_pawn_mesh,
+                              Image *rook_lightmap,
+                              Image *knight_lightmap,
+                              Image *bishop_lightmap,
+                              Image *queen_lightmap,
+                              Image *king_lightmap,
+                              Image *pawn_lightmap)
 {
     piece->game_piece = game_piece;
     if (game_piece->side == GameSide::white)
@@ -104,6 +111,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::rook:
         {
             piece->mesh = white_rook_mesh;
+            piece->lightmap = rook_lightmap;
             if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(0, 0);
@@ -118,6 +126,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::knight:
         {
             piece->mesh = white_knight_mesh;
+            piece->lightmap = knight_lightmap;
             if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(0, 1);
@@ -132,6 +141,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::bishop:
         {
             piece->mesh = white_bishop_mesh;
+            piece->lightmap = bishop_lightmap;
             if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(0, 2);
@@ -146,6 +156,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::queen:
         {
             piece->mesh = white_queen_mesh;
+            piece->lightmap = queen_lightmap;
             piece->pos = get_square_pos(0, 3);
         }
         break;
@@ -153,6 +164,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::king:
         {
             piece->mesh = white_king_mesh;
+            piece->lightmap = king_lightmap;
             piece->pos = get_square_pos(0, 4);
         }
         break;
@@ -160,6 +172,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::pawn:
         {
             piece->mesh = white_pawn_mesh;
+            piece->lightmap = pawn_lightmap;
             piece->pos = get_square_pos(1, game_piece->type_index);
         }
         break;
@@ -175,6 +188,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::rook:
         {
             piece->mesh = black_rook_mesh;
+            piece->lightmap = rook_lightmap;
             if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(7, 0);
@@ -189,6 +203,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::knight:
         {
             piece->mesh = black_knight_mesh;
+            piece->lightmap = knight_lightmap;
             if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(7, 1);
@@ -203,6 +218,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::bishop:
         {
             piece->mesh = black_bishop_mesh;
+            piece->lightmap = bishop_lightmap;
             if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(7, 2);
@@ -217,6 +233,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::queen:
         {
             piece->mesh = black_queen_mesh;
+            piece->lightmap = queen_lightmap;
             piece->pos = get_square_pos(7, 3);
         }
         break;
@@ -224,6 +241,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::king:
         {
             piece->mesh = black_king_mesh;
+            piece->lightmap = king_lightmap;
             piece->pos = get_square_pos(7, 4);
         }
         break;
@@ -231,6 +249,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::pawn:
         {
             piece->mesh = black_pawn_mesh;
+            piece->lightmap = pawn_lightmap;
             piece->pos = get_square_pos(6, game_piece->type_index);
         }
         break;
@@ -238,7 +257,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
     }
 
     piece->animation_type = AnimationType::none;
-    piece->color = Vec4{1, 1, 1, 1};
+    piece->color_overlay = Vec4{1, 1, 1, 1};
 }
 
 struct GhostPiece : Entity
@@ -250,7 +269,7 @@ struct GhostPiece : Entity
 Void fill_ghost_piece_initila_state(GhostPiece *ghost_piece)
 {
     ghost_piece->animation_type = AnimationType::none;
-    ghost_piece->color = Vec4{1, 1, 1, GHOST_PIECE_ALPHA};
+    ghost_piece->color_overlay = Vec4{1, 1, 1, GHOST_PIECE_ALPHA};
 }
 
 Void update_ghost_piece(GhostPiece *ghost_piece, Piece *piece, Int row, Int column)
@@ -286,7 +305,7 @@ Void start_capture_animation(Piece *piece, RandomGenerator *generator)
     Real angle = degree_to_radian(get_random_number(generator, 0, 360));
     Real height = -500;
 
-    Vec3 pos_change_xz = Vec3{distance * cosf(angle), 0, distance * sinf(angle)}; 
+    Vec3 pos_change_xz = Vec3{distance * cosf(angle), 0, distance * sinf(angle)};
     Vec3 pos_to = piece->pos + Vec3{pos_change_xz.x, height, pos_change_xz.z};
     piece->animation.pos_from = piece->pos;
     piece->animation.pos_to = pos_to;
@@ -305,7 +324,7 @@ Void start_flash_animation(Piece *piece)
 Void stop_flash_animation(Piece *piece)
 {
     piece->animation_type = AnimationType::none;
-    piece->color = Vec4{1, 1, 1, 1};
+    piece->color_overlay = Vec4{1, 1, 1, 1};
 }
 
 Void start_illegal_flash_animation(GhostPiece *ghost_piece)
@@ -317,7 +336,7 @@ Void start_illegal_flash_animation(GhostPiece *ghost_piece)
 Void stop_illegal_flash_animation(GhostPiece *ghost_piece)
 {
     ghost_piece->animation_type = AnimationType::none;
-    ghost_piece->color = Vec4{1, 1, 1, GHOST_PIECE_ALPHA};
+    ghost_piece->color_overlay = Vec4{1, 1, 1, GHOST_PIECE_ALPHA};
 }
 
 Real quadratic_modify(Real t, Real a)
@@ -392,7 +411,7 @@ Void update_animation(Entity *entity, Real elapsed_time)
         {
             alpha = lerp(alpha_min, alpha_max, (entity->animation.t - 0.5) * 2);
         }
-        entity->color = Vec4{1, 1, 1, alpha};
+        entity->color_overlay = Vec4{1, 1, 1, alpha};
     }
     else if (entity->animation_type == AnimationType::illegal_flash)
     {
@@ -426,7 +445,7 @@ Void update_animation(Entity *entity, Real elapsed_time)
             alpha = lerp(alpha_end, alpha_start, (entity->animation.t - 0.75) * 4);
             green_blue = lerp(green_blue_end, green_blue_start, (entity->animation.t - 0.75) * 4);
         }
-        entity->color = Vec4{1, green_blue, green_blue, alpha};
+        entity->color_overlay = Vec4{1, green_blue, green_blue, alpha};
 
         if (entity->animation.t >= 1)
         {

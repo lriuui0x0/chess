@@ -4,19 +4,26 @@
 #include "math.cpp"
 #include "entity.cpp"
 
+struct HemiLight
+{
+    Vec4 dir;
+    Vec4 color;
+    Vec4 opp_color;
+};
+
 struct SceneUniformData
 {
     Mat4 view;
     Mat4 normal_view;
     Mat4 projection;
-    Vec4 light_dir[4];
+    HemiLight hemi_light;
 };
 
 struct EntityUniformData
 {
     Mat4 world;
     Mat4 normal_world;
-    Vec4 color;
+    Vec4 color_overlay;
 };
 
 VkSampleCountFlagBits get_maximum_multisample_count(VulkanDevice *device)
@@ -370,5 +377,5 @@ void calculate_entity_uniform_data(Entity *entity, EntityUniformData *uniform_da
     Mat4 scale = get_scale_matrix(entity->scale.x, entity->scale.y, entity->scale.z);
     uniform_data->world = translate * rotation * scale;
     uniform_data->normal_world = rotation * scale;
-    uniform_data->color = entity->color;
+    uniform_data->color_overlay = entity->color_overlay;
 }
