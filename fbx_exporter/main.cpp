@@ -5,13 +5,6 @@
 #include <cstdio>
 #include "convex_hull.cpp"
 
-Vec2 convert_vec2(FbxVector2 fbx_vec2)
-{
-    Real x = fbx_vec2.mData[0];
-    Real y = fbx_vec2.mData[1];
-    return {x, y};
-}
-
 Vec3 convert_vec3(FbxVector4 fbx_vec4)
 {
     Real x = fbx_vec4.mData[0];
@@ -144,8 +137,9 @@ int main(Int argc, CStr *argv)
             Vec3 vertex_normal = normalize(convert_vec3(fbx_normal));
             FbxVector4 fbx_vertex_pos = mesh->GetControlPointAt(vertex_index);
             Vec3 vertex_pos = convert_vec3(fbx_vertex_pos);
-            FbxVector2 fbx_uv = uv_layer->GetDirectArray().GetAt(vertex_index);
-            Vec2 vertex_uv = convert_vec2(fbx_uv);
+            Int uv_index = polygon_index * 3 + polygon_vertex_index;
+            FbxVector2 fbx_uv = uv_layer->GetDirectArray().GetAt(uv_layer->GetIndexArray().GetAt(uv_index));
+            Vec2 vertex_uv = {(Real)fbx_uv.mData[0], (Real)-fbx_uv.mData[1]};
 
             Vertex *vertex = vertices.push();
             vertex->pos = vertex_pos;

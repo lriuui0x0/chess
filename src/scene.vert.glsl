@@ -13,6 +13,7 @@ layout(set = 0, binding = 0) uniform Scene
     mat4 normal_view;
     mat4 projection;
     HemiLight hemi_light;
+    vec4 dir_light;
 } scene;
 
 layout(set = 1, binding = 0) uniform Entity
@@ -38,24 +39,19 @@ vec3 phong_shade(vec3 light_dir, vec3 normal_dir)
     return ambient_color + diffuse_color;
 }
 
-vec4 hemi_shade(HemiLight light, vec3 normal_dir)
+vec3 hemi_shade(HemiLight light, vec3 normal_dir)
 {
     float w = 0.5 * (1 + dot(vec3(light.dir), normal_dir));
-    vec4 light_color =  w * light.color + (1 - w) * light.opp_color;
+    vec3 light_color =  w * vec3(light.color) + (1 - w) * vec3(light.opp_color);
     return light_color;
 }
 
 void main()
 {
-    // vec3 shade_color = vec3(0);
-    // shade_color += 0.3 * shade(-vec3(scene.light_dir[0]), normal_dir, vec3(color));
-    // shade_color += 0.3 * shade(-vec3(scene.light_dir[1]), normal_dir, vec3(color));
-    // shade_color += 0.2 * shade(-vec3(scene.light_dir[2]), normal_dir, vec3(color));
-    // shade_color += 0.2 * shade(-vec3(scene.light_dir[3]), normal_dir, vec3(color));
-    // frag_color = entity.color * vec4(shade_color, 1);
-
     vec3 normal_dir = vec3(entity.normal_world * vec4(normal, 1));
-    frag_color = hemi_shade(scene.hemi_light, normal_dir) * vec4(color, 1) * entity.color_overlay;
+    vec3 hemi_part = hemi_shade(scene.hemi_light, normal_dir);
+    vec3 phong_part = phong_shade(vec3(-scene.dir_light), normal_dir);
+    frag_color = vec4(0.1 * hemi_part + 0.9 * phong_part, 1) * vec4(color, 1) * entity.color_overlay;
     frag_uv = uv;
     gl_Position = scene.projection * scene.view * entity.world * vec4(pos, 1);
 }

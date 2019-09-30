@@ -15,7 +15,7 @@ Real square(Real x)
     return x * x;
 }
 
-template<typename T>
+template <typename T>
 T lerp(T p, T q, Real t)
 {
     T result = p + t * (q - p);
@@ -155,6 +155,30 @@ Vec3 get_basis_y()
 Vec3 get_basis_z()
 {
     return {0, 0, 1};
+}
+
+Vec3 get_perp_to(Vec3 u)
+{
+    Int i = -1;
+    for (Int c = 0; c < 3; c++)
+    {
+        if (ABS(u[c]) > 0.001)
+        {
+            i = c;
+            break;
+        }
+    }
+    ASSERT(i != -1);
+    Int j = (i + 1) % 3;
+    Int k = (i + 2) % 3;
+
+    Vec3 perp;
+    perp[j] = 0;
+    perp[k] = 1;
+    perp[i] = -u[k] / u[i];
+
+    Vec3 result = normalize(perp);
+    return result;
 }
 
 union Vec4 {
@@ -481,6 +505,19 @@ Mat4 get_normal_view_matrix(Vec3 pos, Vec3 dir, Vec3 up)
     return result;
 }
 
+Mat4 get_orthographic_matrix(Real l, Real r, Real t, Real b, Real n, Real f)
+{
+    ASSERT(r > l);
+    ASSERT(b > t);
+    ASSERT(f > n);
+    Mat4 result;
+    result[0] = {2 / (r - l), 0, 0, 0};
+    result[1] = {0, 2 / (b - t), 0, 0};
+    result[2] = {0, 0, 1 / (f - n), 0};
+    result[3] = {-(r + l) / (r - l), -(b + t) / (b - t), -n / (f - n), 1};
+    return result;
+}
+
 Mat4 get_perspective_matrix(Real view_angle, Real aspect_ratio, Real near_plane, Real far_plane)
 {
     Mat4 result;
@@ -533,10 +570,10 @@ Quaternion operator-(Quaternion p, Quaternion q)
 Quaternion operator-(Quaternion q)
 {
     Quaternion result;
-    result.w = - q.w;
-    result.x = - q.x;
-    result.y = - q.y;
-    result.z = - q.z;
+    result.w = -q.w;
+    result.x = -q.x;
+    result.y = -q.y;
+    result.z = -q.z;
     return result;
 }
 

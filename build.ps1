@@ -1,6 +1,12 @@
 C:\VulkanSDK\1.1.114.0\Bin\glslc.exe -fshader-stage=vert src/scene.vert.glsl -g -o bin/scene.vert.spv
 C:\VulkanSDK\1.1.114.0\Bin\glslc.exe -fshader-stage=frag src/scene.frag.glsl -g -o bin/scene.frag.spv
 
+C:\VulkanSDK\1.1.114.0\Bin\glslc.exe -fshader-stage=vert src/shadow.vert.glsl -g -o bin/shadow.vert.spv
+C:\VulkanSDK\1.1.114.0\Bin\glslc.exe -fshader-stage=frag src/shadow.frag.glsl -g -o bin/shadow.frag.spv
+
+C:\VulkanSDK\1.1.114.0\Bin\glslc.exe -fshader-stage=vert src/scene.vert.glsl -g -o bin/scene.vert.spv
+C:\VulkanSDK\1.1.114.0\Bin\glslc.exe -fshader-stage=frag src/scene.frag.glsl -g -o bin/scene.frag.spv
+
 C:\VulkanSDK\1.1.114.0\Bin\glslc.exe -fshader-stage=vert src/debug_ui.vert.glsl -g -o bin/debug_ui.vert.spv
 C:\VulkanSDK\1.1.114.0\Bin\glslc.exe -fshader-stage=frag src/debug_ui.frag.glsl -g -o bin/debug_ui.frag.spv
 

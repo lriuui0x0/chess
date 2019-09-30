@@ -17,6 +17,7 @@ struct SceneUniformData
     Mat4 normal_view;
     Mat4 projection;
     HemiLight hemi_light;
+    Vec4 dir_light;
 };
 
 struct EntityUniformData
@@ -25,20 +26,6 @@ struct EntityUniformData
     Mat4 normal_world;
     Vec4 color_overlay;
 };
-
-VkSampleCountFlagBits get_maximum_multisample_count(VulkanDevice *device)
-{
-    VkSampleCountFlagBits multisample_count = VK_SAMPLE_COUNT_64_BIT;
-    while (
-        !(multisample_count & device->physical_device_properties.limits.framebufferColorSampleCounts) ||
-        !(multisample_count & device->physical_device_properties.limits.framebufferDepthSampleCounts) ||
-        !(multisample_count & device->physical_device_properties.limits.sampledImageColorSampleCounts) ||
-        !(multisample_count & device->physical_device_properties.limits.sampledImageDepthSampleCounts))
-    {
-        multisample_count = (VkSampleCountFlagBits)((UInt)multisample_count >> 1);
-    }
-    return multisample_count;
-}
 
 Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
 {

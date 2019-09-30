@@ -444,27 +444,32 @@ Bool create_swapchain(VulkanDevice *device, Int width, Int height, Int desired_i
 
 Bool create_render_pass(VulkanDevice *device, Buffer<AttachmentInfo> *color_attachments, AttachmentInfo *depth_attachment, AttachmentInfo *resolve_attachment, VkRenderPass *render_pass)
 {
-    Int attachment_count = color_attachments->count + (depth_attachment ? 1 : 0) + (resolve_attachment ? 1 : 0);
+    Int color_attachments_count = color_attachments ? color_attachments->count : 0;
+    Int attachment_count = color_attachments_count + (depth_attachment ? 1 : 0) + (resolve_attachment ? 1 : 0);
     VkAttachmentDescription *attachment_description_all = (VkAttachmentDescription *)ALLOCA(attachment_count * sizeof(VkAttachmentDescription));
-    for (Int color_attachment_i = 0; color_attachment_i < color_attachments->count; color_attachment_i++)
-    {
-        VkAttachmentDescription *attachment_description = &attachment_description_all[color_attachment_i];
-        AttachmentInfo *attachment = &color_attachments->data[color_attachment_i];
 
-        *attachment_description = {};
-        attachment_description->format = attachment->format;
-        attachment_description->samples = attachment->multisample_count;
-        attachment_description->loadOp = attachment->load_op;
-        attachment_description->storeOp = attachment->store_op;
-        attachment_description->stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        attachment_description->stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        attachment_description->initialLayout = attachment->initial_layout;
-        attachment_description->finalLayout = attachment->final_layout;
+    if (color_attachments_count)
+    {
+        for (Int color_attachment_i = 0; color_attachment_i < color_attachments_count; color_attachment_i++)
+        {
+            VkAttachmentDescription *attachment_description = &attachment_description_all[color_attachment_i];
+            AttachmentInfo *attachment = &color_attachments->data[color_attachment_i];
+
+            *attachment_description = {};
+            attachment_description->format = attachment->format;
+            attachment_description->samples = attachment->multisample_count;
+            attachment_description->loadOp = attachment->load_op;
+            attachment_description->storeOp = attachment->store_op;
+            attachment_description->stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            attachment_description->stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            attachment_description->initialLayout = attachment->initial_layout;
+            attachment_description->finalLayout = attachment->final_layout;
+        }
     }
 
     if (depth_attachment)
     {
-        VkAttachmentDescription *attachment_description = &attachment_description_all[color_attachments->count];
+        VkAttachmentDescription *attachment_description = &attachment_description_all[color_attachments_count];
 
         *attachment_description = {};
         attachment_description->format = depth_attachment->format;
@@ -479,7 +484,7 @@ Bool create_render_pass(VulkanDevice *device, Buffer<AttachmentInfo> *color_atta
 
     if (resolve_attachment)
     {
-        VkAttachmentDescription *attachment_description = &attachment_description_all[color_attachments->count + 1];
+        VkAttachmentDescription *attachment_description = &attachment_description_all[color_attachments_count + 1];
 
         *attachment_description = {};
         attachment_description->format = resolve_attachment->format;
@@ -492,34 +497,38 @@ Bool create_render_pass(VulkanDevice *device, Buffer<AttachmentInfo> *color_atta
         attachment_description->finalLayout = resolve_attachment->final_layout;
     }
 
-    VkAttachmentReference *color_attachment_references = (VkAttachmentReference *)ALLOCA(color_attachments->count * sizeof(VkAttachmentReference));
-    for (Int color_attachment_i = 0; color_attachment_i < color_attachments->count; color_attachment_i++)
+    VkAttachmentReference *color_attachment_references;
+    if (color_attachments_count)
     {
-        VkAttachmentReference *color_attachment_reference = &color_attachment_references[color_attachment_i];
-        AttachmentInfo *attachment = &color_attachments->data[color_attachment_i];
+        color_attachment_references = (VkAttachmentReference *)ALLOCA(color_attachments_count * sizeof(VkAttachmentReference));
+        for (Int color_attachment_i = 0; color_attachment_i < color_attachments_count; color_attachment_i++)
+        {
+            VkAttachmentReference *color_attachment_reference = &color_attachment_references[color_attachment_i];
+            AttachmentInfo *attachment = &color_attachments->data[color_attachment_i];
 
-        color_attachment_reference->attachment = color_attachment_i;
-        color_attachment_reference->layout = attachment->working_layout;
+            color_attachment_reference->attachment = color_attachment_i;
+            color_attachment_reference->layout = attachment->working_layout;
+        }
     }
 
     VkAttachmentReference depth_attachment_reference;
     if (depth_attachment)
     {
-        depth_attachment_reference.attachment = color_attachments->count;
+        depth_attachment_reference.attachment = color_attachments_count;
         depth_attachment_reference.layout = depth_attachment->working_layout;
     }
 
     VkAttachmentReference resolve_attachment_reference;
     if (resolve_attachment)
     {
-        resolve_attachment_reference.attachment = color_attachments->count + 1;
+        resolve_attachment_reference.attachment = color_attachments_count + 1;
         resolve_attachment_reference.layout = resolve_attachment->working_layout;
     }
 
     VkSubpassDescription subpass = {};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = color_attachments->count;
-    subpass.pColorAttachments = color_attachment_references;
+    subpass.colorAttachmentCount = color_attachments_count;
+    subpass.pColorAttachments = color_attachments_count ? color_attachment_references : null;
     subpass.pDepthStencilAttachment = depth_attachment ? &depth_attachment_reference : null;
     subpass.pResolveAttachments = resolve_attachment ? &resolve_attachment_reference : null;
 
@@ -1240,4 +1249,18 @@ Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout descrip
     vkUpdateDescriptorSets(device->handle, 1, &descriptor_set_write, 0, null);
 
     return true;
+}
+
+VkSampleCountFlagBits get_maximum_multisample_count(VulkanDevice *device)
+{
+    VkSampleCountFlagBits multisample_count = VK_SAMPLE_COUNT_64_BIT;
+    while (
+        !(multisample_count & device->physical_device_properties.limits.framebufferColorSampleCounts) ||
+        !(multisample_count & device->physical_device_properties.limits.framebufferDepthSampleCounts) ||
+        !(multisample_count & device->physical_device_properties.limits.sampledImageColorSampleCounts) ||
+        !(multisample_count & device->physical_device_properties.limits.sampledImageDepthSampleCounts))
+    {
+        multisample_count = (VkSampleCountFlagBits)((UInt)multisample_count >> 1);
+    }
+    return multisample_count;
 }

@@ -5,6 +5,7 @@
 #include "asset.cpp"
 #include "window.cpp"
 #include "scene.cpp"
+#include "shadow.cpp"
 #include "debug_ui.cpp"
 #include "debug_collision.cpp"
 
@@ -74,6 +75,7 @@ Void debug_callback(Str message)
 Bool render_vulkan_frame(VulkanDevice *device,
                          VulkanPipeline *scene_pipeline, SceneFrame *scene_frame, VulkanBuffer *scene_uniform_buffer,
                          Board *board, Piece *pieces, GhostPiece *ghost_piece,
+                         VulkanPipeline *shadow_pipeline, ShadowFrame *shadow_frame,
                          VulkanPipeline *debug_ui_pipeline, DebugUIFrame *debug_ui_frame, VulkanBuffer *debug_ui_vertex_buffer, Int debug_ui_character_count,
                          VulkanPipeline *debug_collision_pipeline, DebugCollisionFrame *debug_collision_frame, VulkanBuffer *debug_collision_vertex_buffer)
 {
@@ -155,8 +157,40 @@ Bool render_vulkan_frame(VulkanDevice *device,
 
     vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, null, 0, null, 1, &color_image_memory_barrier);
 
+    // NOTE: Shadow
+    VkClearValue shadow_clear_colors[1] = {{1.0, 0}};
+    VkRenderPassBeginInfo shadow_render_pass_begin_info = {};
+    shadow_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    shadow_render_pass_begin_info.renderPass = shadow_pipeline->render_pass;
+    shadow_render_pass_begin_info.framebuffer = shadow_frame->frame_buffers[image_index];
+    shadow_render_pass_begin_info.renderArea.offset = {0, 0};
+    shadow_render_pass_begin_info.renderArea.extent = {(UInt32)device->swapchain.width, (UInt32)device->swapchain.height};
+    shadow_render_pass_begin_info.clearValueCount = 1;
+    shadow_render_pass_begin_info.pClearValues = shadow_clear_colors;
+
+    vkCmdBeginRenderPass(scene_frame->command_buffer, &shadow_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline->handle);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &scene_frame->vertex_buffer.handle, &offset);
+    vkCmdBindIndexBuffer(scene_frame->command_buffer, scene_frame->index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
+
+    vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline->layout, 0, 1, &shadow_frame->shadow_descriptor_set, 0, null);
+
+    vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline->layout, 1, 1, &scene_frame->board_descriptor_set, 0, null);
+    vkCmdDrawIndexed(scene_frame->command_buffer, board->mesh->index_count, 1, board->mesh->index_offset, board->mesh->vertex_offset, 0);
+
+    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+    {
+        Mesh *mesh = pieces[piece_i].mesh;
+        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
+        vkCmdDrawIndexed(scene_frame->command_buffer, mesh->index_count, 1, mesh->index_offset, mesh->vertex_offset, 0);
+    }
+
+    vkCmdEndRenderPass(scene_frame->command_buffer);
+
     // NOTE: Scene
-    VkClearValue clear_colors[2] = {{0.7, 0.7, 0.7, 0.7},
+    VkClearValue scene_clear_colors[2] = {{0.7, 0.7, 0.7, 0.7},
                                     {1.0, 0}};
     VkRenderPassBeginInfo scene_render_pass_begin_info = {};
     scene_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -165,12 +199,12 @@ Bool render_vulkan_frame(VulkanDevice *device,
     scene_render_pass_begin_info.renderArea.offset = {0, 0};
     scene_render_pass_begin_info.renderArea.extent = {(UInt32)device->swapchain.width, (UInt32)device->swapchain.height};
     scene_render_pass_begin_info.clearValueCount = 2;
-    scene_render_pass_begin_info.pClearValues = clear_colors;
+    scene_render_pass_begin_info.pClearValues = scene_clear_colors;
 
     vkCmdBeginRenderPass(scene_frame->command_buffer, &scene_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->handle);
 
-    VkDeviceSize offset = 0;
+    offset = 0;
     vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &scene_frame->vertex_buffer.handle, &offset);
     vkCmdBindIndexBuffer(scene_frame->command_buffer, scene_frame->index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
 
@@ -410,6 +444,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanPipeline scene_pipeline;
     ASSERT(create_scene_pipeline(&device, &scene_pipeline));
 
+    VulkanPipeline shadow_pipeline;
+    ASSERT(create_shadow_pipeline(&device, &shadow_pipeline));
+
     VulkanPipeline debug_ui_pipeline;
     ASSERT(create_debug_ui_pipeline(&device, &debug_ui_pipeline));
 
@@ -422,6 +459,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanBuffer scene_uniform_buffer;
     ASSERT(create_scene_frame(&device, &scene_pipeline, &board, pieces, &lightmaps, &scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
 
+    ShadowFrame shadow_frame;
+    VulkanBuffer shadow_uniform_buffer;
+    ASSERT(create_shadow_frame(&device, &shadow_pipeline, &shadow_frame, &shadow_uniform_buffer));
+
     DebugUIFrame debug_ui_frame;
     VulkanBuffer debug_ui_vertex_buffer;
     ASSERT(create_debug_ui_frame(&device, &debug_ui_pipeline, &debug_font, &debug_ui_frame, &debug_ui_vertex_buffer));
@@ -431,14 +472,25 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     ASSERT(create_debug_collision_frame(&device, &debug_collision_pipeline, pieces, &debug_collision_frame, &debug_collision_vertex_buffer));
 
     Camera camera;
-    camera.pos = {350, -1600, -450};
-    camera.rot = get_rotation_quaternion(get_basis_x(), -degree_to_radian(65));
+    camera.pos = {350, -1750, -330};
+    camera.rot = get_rotation_quaternion(get_basis_x(), -degree_to_radian(70));
 
     SceneUniformData *scene_uniform_data = get_scene_uniform_data(&device, &scene_uniform_buffer);
     calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
     scene_uniform_data->hemi_light.dir = vec4(-get_basis_y());
     scene_uniform_data->hemi_light.color = Vec4{0.80, 0.85, 0.95, 1};
     scene_uniform_data->hemi_light.opp_color = Vec4{0, 0, 0, 1};
+    scene_uniform_data->dir_light = vec4(normalize(Vec3{-1, 2, -0.5}), 0);
+
+    Vec3 light_camera_pos = -1000 * vec3(scene_uniform_data->dir_light);
+    Mat3 light_camera_rot;
+    light_camera_rot.z = vec3(scene_uniform_data->dir_light);
+    light_camera_rot.x = get_perp_to(light_camera_rot.z);
+    light_camera_rot.y = cross(light_camera_rot.z, light_camera_rot.x);
+
+    ShadowUniformData *shadow_uniform_data = (ShadowUniformData *)shadow_uniform_buffer.data;
+    calculate_shadow_uniform_data(light_camera_pos, light_camera_rot, shadow_uniform_data);
+    ASSERT(upload_buffer(&device, &shadow_uniform_buffer, &shadow_frame.uniform_buffer));
 
     calculate_entity_uniform_data(&board, get_board_uniform_data(&device, &scene_uniform_buffer));
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
@@ -927,6 +979,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
         ASSERT(render_vulkan_frame(&device,
                                    &scene_pipeline, &scene_frame, &scene_uniform_buffer, &board, pieces, ghost_piece_index != -1 ? &ghost_piece : null,
+                                   &shadow_pipeline, &shadow_frame,
                                    &debug_ui_pipeline, &debug_ui_frame, &debug_ui_vertex_buffer, debug_ui_draw_state.character_count,
                                    &debug_collision_pipeline, &debug_collision_frame, &debug_collision_vertex_buffer));
 
