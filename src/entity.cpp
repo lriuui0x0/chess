@@ -38,7 +38,7 @@ struct Entity
     Vec3 scale;
     Vec4 color_overlay;
     Mesh *mesh;
-    Image *lightmap;
+    Int lightmap_index;
     AnimationType animation_type;
     Animation animation;
 };
@@ -50,12 +50,13 @@ struct Board : Entity
 
 #define SQUARE_SIZE (100.0)
 
-Void fill_board_initial_state(Board *board, Mesh *board_mesh)
+Void fill_board_initial_state(Board *board, Mesh *board_mesh, Int lightmap_index)
 {
     board->pos = {0, 0, 0};
     board->rot = get_rotation_quaternion(get_basis_y(), 0);
     board->scale = {-1, -1, 1};
     board->mesh = board_mesh;
+    board->lightmap_index = lightmap_index;
     board->color_overlay = Vec4{1, 1, 1, 1};
     board->animation_type = AnimationType::none;
 
@@ -93,12 +94,12 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
                               Mesh *black_queen_mesh,
                               Mesh *black_king_mesh,
                               Mesh *black_pawn_mesh,
-                              Image *rook_lightmap,
-                              Image *knight_lightmap,
-                              Image *bishop_lightmap,
-                              Image *queen_lightmap,
-                              Image *king_lightmap,
-                              Image *pawn_lightmap)
+                              Int rook_lightmap_index,
+                              Int knight_lightmap_index,
+                              Int bishop_lightmap_index,
+                              Int queen_lightmap_index,
+                              Int king_lightmap_index,
+                              Int pawn_lightmap_index)
 {
     piece->game_piece = game_piece;
     if (game_piece->side == GameSide::white)
@@ -111,7 +112,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::rook:
         {
             piece->mesh = white_rook_mesh;
-            piece->lightmap = rook_lightmap;
+            piece->lightmap_index = rook_lightmap_index;
             if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(0, 0);
@@ -126,7 +127,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::knight:
         {
             piece->mesh = white_knight_mesh;
-            piece->lightmap = knight_lightmap;
+            piece->lightmap_index = knight_lightmap_index;
             if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(0, 1);
@@ -141,7 +142,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::bishop:
         {
             piece->mesh = white_bishop_mesh;
-            piece->lightmap = bishop_lightmap;
+            piece->lightmap_index = bishop_lightmap_index;
             if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(0, 2);
@@ -156,7 +157,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::queen:
         {
             piece->mesh = white_queen_mesh;
-            piece->lightmap = queen_lightmap;
+            piece->lightmap_index = queen_lightmap_index;
             piece->pos = get_square_pos(0, 3);
         }
         break;
@@ -164,7 +165,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::king:
         {
             piece->mesh = white_king_mesh;
-            piece->lightmap = king_lightmap;
+            piece->lightmap_index = king_lightmap_index;
             piece->pos = get_square_pos(0, 4);
         }
         break;
@@ -172,7 +173,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::pawn:
         {
             piece->mesh = white_pawn_mesh;
-            piece->lightmap = pawn_lightmap;
+            piece->lightmap_index = pawn_lightmap_index;
             piece->pos = get_square_pos(1, game_piece->type_index);
         }
         break;
@@ -188,7 +189,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::rook:
         {
             piece->mesh = black_rook_mesh;
-            piece->lightmap = rook_lightmap;
+            piece->lightmap_index = rook_lightmap_index;
             if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(7, 0);
@@ -203,7 +204,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::knight:
         {
             piece->mesh = black_knight_mesh;
-            piece->lightmap = knight_lightmap;
+            piece->lightmap_index = knight_lightmap_index;
             if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(7, 1);
@@ -218,7 +219,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::bishop:
         {
             piece->mesh = black_bishop_mesh;
-            piece->lightmap = bishop_lightmap;
+            piece->lightmap_index = bishop_lightmap_index;
             if (game_piece->type_index == 0)
             {
                 piece->pos = get_square_pos(7, 2);
@@ -233,7 +234,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::queen:
         {
             piece->mesh = black_queen_mesh;
-            piece->lightmap = queen_lightmap;
+            piece->lightmap_index = queen_lightmap_index;
             piece->pos = get_square_pos(7, 3);
         }
         break;
@@ -241,7 +242,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::king:
         {
             piece->mesh = black_king_mesh;
-            piece->lightmap = king_lightmap;
+            piece->lightmap_index = king_lightmap_index;
             piece->pos = get_square_pos(7, 4);
         }
         break;
@@ -249,7 +250,7 @@ Void fill_piece_initial_state(GamePiece *game_piece, Piece *piece,
         case GamePieceType::pawn:
         {
             piece->mesh = black_pawn_mesh;
-            piece->lightmap = pawn_lightmap;
+            piece->lightmap_index = pawn_lightmap_index;
             piece->pos = get_square_pos(6, game_piece->type_index);
         }
         break;
@@ -278,6 +279,7 @@ Void update_ghost_piece(GhostPiece *ghost_piece, Piece *piece, Int row, Int colu
     ghost_piece->rot = piece->rot;
     ghost_piece->scale = piece->scale;
     ghost_piece->mesh = piece->mesh;
+    ghost_piece->lightmap_index = piece->lightmap_index;
 }
 
 Void start_move_animation(Piece *piece, Int row, Int column)

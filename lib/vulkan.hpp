@@ -210,11 +210,14 @@ Bool create_fence(VulkanDevice *device, Bool signaled, VkFence *fence);
 Bool create_buffer(VulkanDevice *device, Int count, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_property, VulkanBuffer *buffer);
 Bool create_image(VulkanDevice *device, Int width, Int height, VkFormat format, VkSampleCountFlagBits multisample_count, VkImageUsageFlags usage, VkMemoryPropertyFlags memory_property, VkImage *image);
 Bool create_image_view(VulkanDevice *device, VkImage image, VkFormat format, VkImageAspectFlags aspect_mask, VkImageView *image_view);
+Bool create_sampler(VulkanDevice *device, VkSampler *sampler);
 Bool allocate_command_buffer(VulkanDevice *device, VkCommandBuffer *command_buffer);
 Void free_command_buffer(VulkanDevice *device, VkCommandBuffer command_buffer);
 
 Bool upload_buffer(VulkanDevice *device, VulkanBuffer *host_buffer, VulkanBuffer *device_buffer);
 Bool upload_texture(VulkanDevice *device, VulkanBuffer *host_buffer, VkImage image, Int width, Int height);
 
-Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout *descriptor_set_layout,
+Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout descriptor_set_layout,
                              VulkanBuffer *uniform_buffer, Int offset, Int range, VkDescriptorSet *descriptor_set);
+Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout descriptor_set_layout,
+                             VkImageView image_view, VkSampler sampler, VkDescriptorSet *descriptor_set);

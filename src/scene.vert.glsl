@@ -25,8 +25,10 @@ layout(set = 1, binding = 0) uniform Entity
 layout(location = 0) in vec3 pos;
 layout(location = 1) in vec3 normal;
 layout(location = 2) in vec3 color;
+layout(location = 3) in vec2 uv;
 
 layout(location = 0) out flat vec4 frag_color;
+layout(location = 1) out vec2 frag_uv;
 
 vec3 phong_shade(vec3 light_dir, vec3 normal_dir)
 {
@@ -51,7 +53,9 @@ void main()
     // shade_color += 0.2 * shade(-vec3(scene.light_dir[2]), normal_dir, vec3(color));
     // shade_color += 0.2 * shade(-vec3(scene.light_dir[3]), normal_dir, vec3(color));
     // frag_color = entity.color * vec4(shade_color, 1);
+
     vec3 normal_dir = vec3(entity.normal_world * vec4(normal, 1));
     frag_color = hemi_shade(scene.hemi_light, normal_dir) * vec4(color, 1) * entity.color_overlay;
+    frag_uv = uv;
     gl_Position = scene.projection * scene.view * entity.world * vec4(pos, 1);
 }

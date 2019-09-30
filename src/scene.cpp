@@ -103,7 +103,7 @@ Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     shaders.count = 2;
     shaders.data = shader_info;
 
-    VertexAttributeInfo vertex_attribute_info[3];
+    VertexAttributeInfo vertex_attribute_info[4];
     vertex_attribute_info[0].count = sizeof(Vec3);
     vertex_attribute_info[0].offset = offsetof(Vertex, pos);
 
@@ -113,8 +113,11 @@ Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     vertex_attribute_info[2].count = sizeof(Vec3);
     vertex_attribute_info[2].offset = offsetof(Vertex, color);
 
+    vertex_attribute_info[3].count = sizeof(Vec2);
+    vertex_attribute_info[3].offset = offsetof(Vertex, uv);
+
     Buffer<VertexAttributeInfo> vertex_attributes;
-    vertex_attributes.count = 3;
+    vertex_attributes.count = 4;
     vertex_attributes.data = vertex_attribute_info;
 
     DescriptorBindingInfo scene_descriptor_binding;
@@ -125,14 +128,20 @@ Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     piece_descriptor_binding.stage = VK_SHADER_STAGE_VERTEX_BIT;
     piece_descriptor_binding.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 
-    DescriptorSetInfo descriptor_set_info[2];
+    DescriptorBindingInfo lightmap_descriptor_binding;
+    lightmap_descriptor_binding.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    lightmap_descriptor_binding.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+
+    DescriptorSetInfo descriptor_set_info[3];
     descriptor_set_info[0].bindings.count = 1;
     descriptor_set_info[0].bindings.data = &scene_descriptor_binding;
     descriptor_set_info[1].bindings.count = 1;
     descriptor_set_info[1].bindings.data = &piece_descriptor_binding;
+    descriptor_set_info[2].bindings.count = 1;
+    descriptor_set_info[2].bindings.data = &lightmap_descriptor_binding;
 
     Buffer<DescriptorSetInfo> descriptor_sets;
-    descriptor_sets.count = 2;
+    descriptor_sets.count = 3;
     descriptor_sets.data = descriptor_set_info;
 
     if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(Vertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets,
@@ -159,11 +168,14 @@ struct SceneFrame
     VulkanBuffer uniform_buffer;
     VkDescriptorSet scene_descriptor_set;
     VkDescriptorSet board_descriptor_set;
+    Array<VkImage> lightmap_images;
+    Array<VkSampler> lightmap_samplers;
+    Array<VkDescriptorSet> lightmap_descriptor_sets;
     Array<VkDescriptorSet> piece_descriptor_sets;
     VkDescriptorSet ghost_piece_descriptor_set;
 };
 
-Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *board, Piece *pieces, SceneFrame *frame,
+Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *board, Piece *pieces, Array<Image> *lightmaps, SceneFrame *frame,
                         VulkanBuffer *host_vertex_buffer, VulkanBuffer *host_index_buffer, VulkanBuffer *host_uniform_buffer)
 {
     VkSampleCountFlagBits multisample_count = get_maximum_multisample_count(device);
@@ -243,16 +255,66 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
         }
     }
 
+    frame->lightmap_images = create_array<VkImage>();
+    frame->lightmap_samplers = create_array<VkSampler>();
+    frame->lightmap_descriptor_sets = create_array<VkDescriptorSet>();
+    for (Int lightmap_i = 0; lightmap_i < lightmaps->count; lightmap_i++)
+    {
+        VkFormat format = VK_FORMAT_R8_UNORM;
+        Image *lightmap = &lightmaps->data[lightmap_i];
+        VkImage *image = frame->lightmap_images.push();
+        VkSampler *sampler = frame->lightmap_samplers.push();
+        VkDescriptorSet *descriptor_set = frame->lightmap_descriptor_sets.push();
+        if (!create_image(device, lightmap->width, lightmap->height,
+                          format, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, image))
+        {
+            return false;
+        }
+
+        Int image_buffer_length = sizeof(lightmap->data[0]) * lightmap->width * lightmap->height;
+        VulkanBuffer host_image_buffer;
+        if (!create_buffer(device, image_buffer_length,
+                           VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &host_image_buffer))
+        {
+            return false;
+        }
+
+        memcpy(host_image_buffer.data, lightmap->data, image_buffer_length);
+
+        if (!upload_texture(device, &host_image_buffer, *image, lightmap->width, lightmap->height))
+        {
+            return false;
+        }
+
+        VkImageView image_view;
+        if (!create_image_view(device, *image, format, VK_IMAGE_ASPECT_COLOR_BIT, &image_view))
+        {
+            return false;
+        }
+
+        if (!create_sampler(device, sampler))
+        {
+            return false;
+        }
+
+        if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[2], image_view, *sampler, descriptor_set))
+        {
+            return false;
+        }
+    }
+
     Int total_vertex_count = 0;
     board->mesh->vertex_offset = total_vertex_count;
     Int total_index_count = 0;
     board->mesh->index_offset = total_index_count;
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
-        pieces[piece_i].mesh->vertex_offset = total_vertex_count;
-        total_vertex_count += pieces[piece_i].mesh->vertex_count;
-        pieces[piece_i].mesh->index_offset = total_index_count;
-        total_index_count += pieces[piece_i].mesh->index_count;
+        Piece *piece = &pieces[piece_i];
+        piece->mesh->vertex_offset = total_vertex_count;
+        total_vertex_count += piece->mesh->vertex_count;
+        piece->mesh->index_offset = total_index_count;
+        total_index_count += piece->mesh->index_count;
     }
 
     Int total_vertex_data_length = sizeof(Vertex) * total_vertex_count;
@@ -303,13 +365,13 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
         return false;
     }
 
-    if (!allocate_descriptor_set(device, &pipeline->descriptor_set_layouts[0], &frame->uniform_buffer,
+    if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[0], &frame->uniform_buffer,
                                  0, scene_uniform_data_length, &frame->scene_descriptor_set))
     {
         return false;
     }
 
-    if (!allocate_descriptor_set(device, &pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
+    if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
                                  scene_uniform_data_length, entity_uniform_data_length, &frame->board_descriptor_set))
     {
         return false;
@@ -319,7 +381,7 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
     frame->piece_descriptor_sets.count = PIECE_COUNT;
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
     {
-        if (!allocate_descriptor_set(device, &pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
+        if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
                                      scene_uniform_data_length + (piece_i + 1) * entity_uniform_data_length, entity_uniform_data_length,
                                      &frame->piece_descriptor_sets[piece_i]))
         {
@@ -327,7 +389,7 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
         }
     }
 
-    if (!allocate_descriptor_set(device, &pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
+    if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
                                  scene_uniform_data_length + (PIECE_COUNT + 1) * entity_uniform_data_length, entity_uniform_data_length,
                                  &frame->ghost_piece_descriptor_set))
     {

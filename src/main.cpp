@@ -177,6 +177,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
     vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 0, 1, &scene_frame->scene_descriptor_set, 0, null);
 
     vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 1, 1, &scene_frame->board_descriptor_set, 0, null);
+    vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 2, 1, &scene_frame->lightmap_descriptor_sets[board->lightmap_index], 0, null);
     vkCmdDrawIndexed(scene_frame->command_buffer, board->mesh->index_count, 1, board->mesh->index_offset, board->mesh->vertex_offset, 0);
 
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
@@ -184,7 +185,9 @@ Bool render_vulkan_frame(VulkanDevice *device,
         if (ghost_piece == null || piece_i != ghost_piece->shadowed_piece_index)
         {
             Mesh *mesh = pieces[piece_i].mesh;
+            Int lightmap_index = pieces[piece_i].lightmap_index;
             vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
+            vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 2, 1, &scene_frame->lightmap_descriptor_sets[lightmap_index], 0, null);
             vkCmdDrawIndexed(scene_frame->command_buffer, mesh->index_count, 1, mesh->index_offset, mesh->vertex_offset, 0);
         }
     }
@@ -193,6 +196,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
     {
         Mesh *mesh = ghost_piece->mesh;
         vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 1, 1, &scene_frame->ghost_piece_descriptor_set, 0, null);
+        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 2, 1, &scene_frame->lightmap_descriptor_sets[ghost_piece->lightmap_index], 0, null);
         vkCmdDrawIndexed(scene_frame->command_buffer, mesh->index_count, 1, mesh->index_offset, mesh->vertex_offset, 0);
     }
 
@@ -320,8 +324,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     Mesh board_mesh;
     ASSERT(read_mesh("../asset/board.asset", &board_mesh));
-    Image board_lightmap;
-    ASSERT(read_image("../asset/board_lightmap.asset", &board_lightmap));
 
     Mesh black_rook_mesh;
     ASSERT(read_mesh("../asset/rook_black.asset", &black_rook_mesh));
@@ -349,18 +351,21 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Mesh white_pawn_mesh;
     ASSERT(read_mesh("../asset/pawn_white.asset", &white_pawn_mesh));
 
-    Image rook_lightmap;
-    ASSERT(read_image("../asset/rook_lightmap.asset", &rook_lightmap));
-    Image knight_lightmap;
-    ASSERT(read_image("../asset/knight_lightmap.asset", &knight_lightmap));
-    Image bishop_lightmap;
-    ASSERT(read_image("../asset/bishop_lightmap.asset", &bishop_lightmap));
-    Image queen_lightmap;
-    ASSERT(read_image("../asset/queen_lightmap.asset", &queen_lightmap));
-    Image king_lightmap;
-    ASSERT(read_image("../asset/king_lightmap.asset", &king_lightmap));
-    Image pawn_lightmap;
-    ASSERT(read_image("../asset/pawn_lightmap.asset", &pawn_lightmap));
+    Array<Image> lightmaps = create_array<Image>();
+    Image *board_lightmap = lightmaps.push();
+    ASSERT(read_image("../asset/board_lightmap.asset", board_lightmap));
+    Image *rook_lightmap = lightmaps.push();
+    ASSERT(read_image("../asset/rook_lightmap.asset", rook_lightmap));
+    Image *knight_lightmap = lightmaps.push();
+    ASSERT(read_image("../asset/knight_lightmap.asset", knight_lightmap));
+    Image *bishop_lightmap = lightmaps.push();
+    ASSERT(read_image("../asset/bishop_lightmap.asset", bishop_lightmap));
+    Image *queen_lightmap = lightmaps.push();
+    ASSERT(read_image("../asset/queen_lightmap.asset", queen_lightmap));
+    Image *king_lightmap = lightmaps.push();
+    ASSERT(read_image("../asset/king_lightmap.asset", king_lightmap));
+    Image *pawn_lightmap = lightmaps.push();
+    ASSERT(read_image("../asset/pawn_lightmap.asset", pawn_lightmap));
 
     Font debug_font;
     ASSERT(read_font("../asset/debug_font.asset", &debug_font));
@@ -368,7 +373,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     GameState game_state = get_initial_game_state();
 
     Board board;
-    fill_board_initial_state(&board, &board_mesh);
+    fill_board_initial_state(&board, &board_mesh, 0);
 
     Piece pieces[PIECE_COUNT];
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
@@ -387,12 +392,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                                  &black_queen_mesh,
                                  &black_king_mesh,
                                  &black_pawn_mesh,
-                                 &rook_lightmap,
-                                 &knight_lightmap,
-                                 &bishop_lightmap,
-                                 &queen_lightmap,
-                                 &king_lightmap,
-                                 &pawn_lightmap);
+                                 1, 2, 3, 4, 5, 6);
     }
 
     GhostPiece ghost_piece;
@@ -420,7 +420,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanBuffer scene_vertex_buffer;
     VulkanBuffer scene_index_buffer;
     VulkanBuffer scene_uniform_buffer;
-    ASSERT(create_scene_frame(&device, &scene_pipeline, &board, pieces, &scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
+    ASSERT(create_scene_frame(&device, &scene_pipeline, &board, pieces, &lightmaps, &scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
 
     DebugUIFrame debug_ui_frame;
     VulkanBuffer debug_ui_vertex_buffer;

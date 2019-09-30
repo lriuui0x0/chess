@@ -246,11 +246,11 @@ Bool create_device(Handle window, VulkanDebugCallback debug_callback, VulkanDevi
     descriptor_pool_size[0].descriptorCount = 48;
 
     descriptor_pool_size[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptor_pool_size[1].descriptorCount = 1;
+    descriptor_pool_size[1].descriptorCount = 16;
 
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
     descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    descriptor_pool_create_info.maxSets = 49;
+    descriptor_pool_create_info.maxSets = 64;
     descriptor_pool_create_info.poolSizeCount = 2;
     descriptor_pool_create_info.pPoolSizes = descriptor_pool_size;
 
@@ -965,6 +965,34 @@ Bool create_image_view(VulkanDevice *device, VkImage image, VkFormat format, VkI
     return true;
 }
 
+Bool create_sampler(VulkanDevice *device, VkSampler *sampler)
+{
+    VkSamplerCreateInfo sampler_create_info = {};
+    sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    sampler_create_info.magFilter = VK_FILTER_LINEAR;
+    sampler_create_info.minFilter = VK_FILTER_LINEAR;
+    sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler_create_info.anisotropyEnable = VK_FALSE;
+    sampler_create_info.maxAnisotropy = 16;
+    sampler_create_info.compareEnable = VK_FALSE;
+    sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
+    sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    sampler_create_info.mipLodBias = 0.0f;
+    sampler_create_info.minLod = 0.0f;
+    sampler_create_info.maxLod = 0.0f;
+    sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    sampler_create_info.unnormalizedCoordinates = VK_FALSE;
+
+    VkResult result_code = vkCreateSampler(device->handle, &sampler_create_info, null, sampler);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+    return true;
+}
+
 Bool allocate_command_buffer(VulkanDevice *device, VkCommandBuffer *command_buffer)
 {
     VkCommandBufferAllocateInfo command_buffer_allocate_info = {};
@@ -1142,7 +1170,7 @@ Bool upload_texture(VulkanDevice *device, VulkanBuffer *host_buffer, VkImage ima
     return true;
 }
 
-Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout *descriptor_set_layout,
+Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout descriptor_set_layout,
                              VulkanBuffer *uniform_buffer, Int offset, Int range, VkDescriptorSet *descriptor_set)
 {
     VkResult result_code;
@@ -1151,7 +1179,7 @@ Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout *descri
     entity_descriptor_set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     entity_descriptor_set_alloc_info.descriptorPool = device->descriptor_pool;
     entity_descriptor_set_alloc_info.descriptorSetCount = 1;
-    entity_descriptor_set_alloc_info.pSetLayouts = descriptor_set_layout;
+    entity_descriptor_set_alloc_info.pSetLayouts = &descriptor_set_layout;
 
     result_code = vkAllocateDescriptorSets(device->handle, &entity_descriptor_set_alloc_info, descriptor_set);
     if (result_code != VK_SUCCESS)
@@ -1172,6 +1200,42 @@ Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout *descri
     descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     descriptor_set_write.descriptorCount = 1;
     descriptor_set_write.pBufferInfo = &descriptor_buffer_info;
+
+    vkUpdateDescriptorSets(device->handle, 1, &descriptor_set_write, 0, null);
+
+    return true;
+}
+
+Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout descriptor_set_layout,
+                             VkImageView image_view, VkSampler sampler, VkDescriptorSet *descriptor_set)
+{
+    VkResult result_code;
+
+    VkDescriptorSetAllocateInfo descriptor_set_alloc_info = {};
+    descriptor_set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    descriptor_set_alloc_info.descriptorPool = device->descriptor_pool;
+    descriptor_set_alloc_info.descriptorSetCount = 1;
+    descriptor_set_alloc_info.pSetLayouts = &descriptor_set_layout;
+
+    result_code = vkAllocateDescriptorSets(device->handle, &descriptor_set_alloc_info, descriptor_set);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkDescriptorImageInfo descriptor_image_info;
+    descriptor_image_info.sampler = sampler;
+    descriptor_image_info.imageView = image_view;
+    descriptor_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet descriptor_set_write = {};
+    descriptor_set_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptor_set_write.dstSet = *descriptor_set;
+    descriptor_set_write.dstBinding = 0;
+    descriptor_set_write.dstArrayElement = 0;
+    descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptor_set_write.descriptorCount = 1;
+    descriptor_set_write.pImageInfo = &descriptor_image_info;
 
     vkUpdateDescriptorSets(device->handle, 1, &descriptor_set_write, 0, null);
 

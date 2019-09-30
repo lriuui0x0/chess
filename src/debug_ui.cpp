@@ -329,56 +329,15 @@ Bool create_debug_ui_frame(VulkanDevice *device, VulkanPipeline *pipeline, Font 
         return false;
     }
 
-    VkSamplerCreateInfo sampler_create_info = {};
-    sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    sampler_create_info.magFilter = VK_FILTER_LINEAR;
-    sampler_create_info.minFilter = VK_FILTER_LINEAR;
-    sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler_create_info.anisotropyEnable = VK_FALSE;
-    sampler_create_info.maxAnisotropy = 16;
-    sampler_create_info.compareEnable = VK_FALSE;
-    sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
-    sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-    sampler_create_info.mipLodBias = 0.0f;
-    sampler_create_info.minLod = 0.0f;
-    sampler_create_info.maxLod = 0.0f;
-    sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-    sampler_create_info.unnormalizedCoordinates = VK_FALSE;
-
-    result_code = vkCreateSampler(device->handle, &sampler_create_info, null, &frame->font_texture_sampler);
-    if (result_code != VK_SUCCESS)
+    if (!create_sampler(device, &frame->font_texture_sampler))
     {
         return false;
     }
 
-    VkDescriptorSetAllocateInfo debug_font_texture_descriptor_set_alloc_info = {};
-    debug_font_texture_descriptor_set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    debug_font_texture_descriptor_set_alloc_info.descriptorPool = device->descriptor_pool;
-    debug_font_texture_descriptor_set_alloc_info.descriptorSetCount = 1;
-    debug_font_texture_descriptor_set_alloc_info.pSetLayouts = &pipeline->descriptor_set_layouts[0];
-
-    result_code = vkAllocateDescriptorSets(device->handle, &debug_font_texture_descriptor_set_alloc_info, &frame->font_texture_descriptor_set);
-    if (result_code != VK_SUCCESS)
+    if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[0], font_texture_view, frame->font_texture_sampler, &frame->font_texture_descriptor_set))
     {
         return false;
     }
-
-    VkDescriptorImageInfo descriptor_image_info;
-    descriptor_image_info.sampler = frame->font_texture_sampler;
-    descriptor_image_info.imageView = font_texture_view;
-    descriptor_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    VkWriteDescriptorSet descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    descriptor_set_write.dstSet = frame->font_texture_descriptor_set;
-    descriptor_set_write.dstBinding = 0;
-    descriptor_set_write.dstArrayElement = 0;
-    descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptor_set_write.descriptorCount = 1;
-    descriptor_set_write.pImageInfo = &descriptor_image_info;
-
-    vkUpdateDescriptorSets(device->handle, 1, &descriptor_set_write, 0, null);
 
     return true;
 }

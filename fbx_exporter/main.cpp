@@ -5,6 +5,13 @@
 #include <cstdio>
 #include "convex_hull.cpp"
 
+Vec2 convert_vec2(FbxVector2 fbx_vec2)
+{
+    Real x = fbx_vec2.mData[0];
+    Real y = fbx_vec2.mData[1];
+    return {x, y};
+}
+
 Vec3 convert_vec3(FbxVector4 fbx_vec4)
 {
     Real x = fbx_vec4.mData[0];
@@ -61,6 +68,10 @@ Void output(Array<Vertex> vertices, Array<UInt32> indices, Vec3 *box_center, Vec
         ASSERT(fwrite(&vertex_color.x, sizeof(Real), 1, output_file) == 1);
         ASSERT(fwrite(&vertex_color.y, sizeof(Real), 1, output_file) == 1);
         ASSERT(fwrite(&vertex_color.z, sizeof(Real), 1, output_file) == 1);
+
+        Vec2 vertex_uv = vertex->uv;
+        ASSERT(fwrite(&vertex_uv.x, sizeof(Real), 1, output_file) == 1);
+        ASSERT(fwrite(&vertex_uv.y, sizeof(Real), 1, output_file) == 1);
     }
 
     ASSERT(fwrite(&indices.count, sizeof(Int32), 1, output_file) == 1);
@@ -107,6 +118,10 @@ int main(Int argc, CStr *argv)
 
     FbxLayerElementMaterial *material_layer = mesh->GetLayer(0)->GetMaterials();
     ASSERT(material_layer);
+    FbxGeometryElementUV *uv_layer = mesh->GetElementUV();
+    ASSERT(uv_layer);
+    ASSERT(uv_layer->GetMappingMode() == FbxLayerElement::eByPolygonVertex);
+    ASSERT(uv_layer->GetReferenceMode() == FbxLayerElement::eIndexToDirect);
 
     Array<Vertex> vertices = create_array<Vertex>();
     Array<UInt32> indices = create_array<UInt32>();
@@ -129,11 +144,14 @@ int main(Int argc, CStr *argv)
             Vec3 vertex_normal = normalize(convert_vec3(fbx_normal));
             FbxVector4 fbx_vertex_pos = mesh->GetControlPointAt(vertex_index);
             Vec3 vertex_pos = convert_vec3(fbx_vertex_pos);
+            FbxVector2 fbx_uv = uv_layer->GetDirectArray().GetAt(vertex_index);
+            Vec2 vertex_uv = convert_vec2(fbx_uv);
 
             Vertex *vertex = vertices.push();
             vertex->pos = vertex_pos;
             vertex->normal = vertex_normal;
             vertex->color = gamma(vertex_color);
+            vertex->uv = vertex_uv;
             *indices.push() = vertices.count - 1;
         }
     }
