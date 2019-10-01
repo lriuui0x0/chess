@@ -3,6 +3,7 @@
 #include "../lib/util.hpp"
 #include "math.cpp"
 #include "entity.cpp"
+#include "shadow.cpp"
 
 struct HemiLight
 {
@@ -13,6 +14,8 @@ struct HemiLight
 
 struct SceneUniformData
 {
+    Mat4 light_view;
+    Mat4 light_projection;
     Mat4 view;
     Mat4 normal_view;
     Mat4 projection;
@@ -119,16 +122,22 @@ Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     lightmap_descriptor_binding.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     lightmap_descriptor_binding.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
-    DescriptorSetInfo descriptor_set_info[3];
+    DescriptorBindingInfo shadow_descriptor_binding;
+    shadow_descriptor_binding.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    shadow_descriptor_binding.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+
+    DescriptorSetInfo descriptor_set_info[4];
     descriptor_set_info[0].bindings.count = 1;
     descriptor_set_info[0].bindings.data = &scene_descriptor_binding;
     descriptor_set_info[1].bindings.count = 1;
     descriptor_set_info[1].bindings.data = &piece_descriptor_binding;
     descriptor_set_info[2].bindings.count = 1;
     descriptor_set_info[2].bindings.data = &lightmap_descriptor_binding;
+    descriptor_set_info[3].bindings.count = 1;
+    descriptor_set_info[3].bindings.data = &shadow_descriptor_binding;
 
     Buffer<DescriptorSetInfo> descriptor_sets;
-    descriptor_sets.count = 3;
+    descriptor_sets.count = 4;
     descriptor_sets.data = descriptor_set_info;
 
     if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(Vertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets,
@@ -160,9 +169,11 @@ struct SceneFrame
     Array<VkDescriptorSet> lightmap_descriptor_sets;
     Array<VkDescriptorSet> piece_descriptor_sets;
     VkDescriptorSet ghost_piece_descriptor_set;
+    VkSampler shadow_sampler;
+    VkDescriptorSet shadow_descriptor_set;
 };
 
-Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *board, Piece *pieces, Array<Image> *lightmaps, SceneFrame *frame,
+Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *board, Piece *pieces, Array<Image> *lightmaps, ShadowFrame *shadow_frame, SceneFrame *frame,
                         VulkanBuffer *host_vertex_buffer, VulkanBuffer *host_index_buffer, VulkanBuffer *host_uniform_buffer)
 {
     VkSampleCountFlagBits multisample_count = get_maximum_multisample_count(device);
@@ -240,6 +251,22 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
         {
             return false;
         }
+    }
+
+    VkImageView shadow_image_view;
+    if (!create_image_view(device, shadow_frame->depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, &shadow_image_view))
+    {
+        return false;
+    }
+
+    if (!create_sampler(device, &frame->shadow_sampler))
+    {
+        return false;
+    }
+
+    if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[2], shadow_image_view, frame->shadow_sampler, &frame->shadow_descriptor_set))
+    {
+        return false;
     }
 
     frame->lightmap_images = create_array<VkImage>();
@@ -413,10 +440,25 @@ EntityUniformData *get_ghost_piece_uniform_data(VulkanDevice *device, VulkanBuff
 
 void calculate_scene_uniform_data(Camera *camera, Int window_width, Int window_height, SceneUniformData *uniform_data)
 {
+    uniform_data->hemi_light.dir = vec4(-get_basis_y());
+    uniform_data->hemi_light.color = Vec4{0.80, 0.85, 0.95, 1};
+    uniform_data->hemi_light.opp_color = Vec4{0, 0, 0, 1};
+    uniform_data->dir_light = vec4(normalize(Vec3{-1, 2, -0.5}), 0);
+
     Mat4 rotation = get_rotation_matrix(camera->rot);
     uniform_data->view = get_view_matrix(camera->pos, vec3(rotation.z), -vec3(rotation.y));
     uniform_data->normal_view = get_normal_view_matrix(camera->pos, vec3(rotation.z), -vec3(rotation.y));
     uniform_data->projection = get_perspective_matrix(degree_to_radian(30), (Real)window_width / (Real)window_height, 10, 10000);
+
+    Vec3 light_camera_pos = -1000 * vec3(uniform_data->dir_light);
+    Mat3 light_camera_rot;
+    light_camera_rot.z = vec3(uniform_data->dir_light);
+    light_camera_rot.x = get_perp_to(light_camera_rot.z);
+    light_camera_rot.y = cross(light_camera_rot.z, light_camera_rot.x);
+
+    uniform_data->light_view = get_view_matrix(light_camera_pos, light_camera_rot.z, -light_camera_rot.y);
+    // NOTE: Keep orthographic projection x:y ratio 4:3 to match window size
+    uniform_data->light_projection = get_orthographic_matrix(-650, 950, -200, 1000, 400, 1100);
 }
 
 void calculate_entity_uniform_data(Entity *entity, EntityUniformData *uniform_data)

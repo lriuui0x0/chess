@@ -9,6 +9,8 @@ struct HemiLight
 
 layout(set = 0, binding = 0) uniform Scene
 {
+    mat4 light_view;
+    mat4 light_projection;
     mat4 view;
     mat4 normal_view;
     mat4 projection;
@@ -30,6 +32,7 @@ layout(location = 3) in vec2 uv;
 
 layout(location = 0) out flat vec4 frag_color;
 layout(location = 1) out vec2 frag_uv;
+layout(location = 2) out vec3 shadow_coord;
 
 vec3 phong_shade(vec3 light_dir, vec3 normal_dir)
 {
@@ -53,5 +56,9 @@ void main()
     vec3 phong_part = phong_shade(vec3(-scene.dir_light), normal_dir);
     frag_color = vec4(0.1 * hemi_part + 0.9 * phong_part, 1) * vec4(color, 1) * entity.color_overlay;
     frag_uv = uv;
-    gl_Position = scene.projection * scene.view * entity.world * vec4(pos, 1);
+    vec4 world_pos = entity.world * vec4(pos, 1);
+    gl_Position = scene.projection * scene.view * world_pos;
+
+    vec4 light_coord = scene.light_projection * scene.light_view * world_pos;
+    shadow_coord = light_coord.xyz / light_coord.w;
 }

@@ -4,17 +4,6 @@
 #include "../lib/util.hpp"
 #include "math.cpp"
 
-struct ShadowVertex
-{
-    Vec3 pos;
-};
-
-struct ShadowUniformData
-{
-    Mat4 view;
-    Mat4 projection;
-};
-
 Bool create_shadow_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
 {
     VkSampleCountFlagBits multisample_count = get_maximum_multisample_count(device);
@@ -58,7 +47,7 @@ Bool create_shadow_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
 
     VertexAttributeInfo vertex_attribute_info[1];
     vertex_attribute_info[0].count = sizeof(Vec3);
-    vertex_attribute_info[0].offset = offsetof(ShadowVertex, pos);
+    vertex_attribute_info[0].offset = offsetof(Vertex, pos);
 
     Buffer<VertexAttributeInfo> vertex_attributes;
     vertex_attributes.count = 1;
@@ -72,7 +61,7 @@ Bool create_shadow_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     piece_descriptor_binding.stage = VK_SHADER_STAGE_VERTEX_BIT;
     piece_descriptor_binding.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 
-    DescriptorSetInfo descriptor_set_info[3];
+    DescriptorSetInfo descriptor_set_info[2];
     descriptor_set_info[0].bindings.count = 1;
     descriptor_set_info[0].bindings.data = &shadow_scene_descriptor_binding;
     descriptor_set_info[1].bindings.count = 1;
@@ -82,7 +71,7 @@ Bool create_shadow_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     descriptor_sets.count = 2;
     descriptor_sets.data = descriptor_set_info;
 
-    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(ShadowVertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets,
+    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(Vertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets,
                          multisample_count, true, false, pipeline))
     {
         return false;
@@ -95,11 +84,9 @@ struct ShadowFrame
 {
     Array<VkFramebuffer> frame_buffers;
     VkImage depth_image;
-    VulkanBuffer uniform_buffer;
-    VkDescriptorSet shadow_descriptor_set;
 };
 
-Bool create_shadow_frame(VulkanDevice *device, VulkanPipeline *pipeline, ShadowFrame *frame, VulkanBuffer *host_uniform_buffer)
+Bool create_shadow_frame(VulkanDevice *device, VulkanPipeline *pipeline, ShadowFrame *frame)
 {
     VkSampleCountFlagBits multisample_count = get_maximum_multisample_count(device);
 
@@ -139,33 +126,5 @@ Bool create_shadow_frame(VulkanDevice *device, VulkanPipeline *pipeline, ShadowF
         }
     }
 
-    Int uniform_data_length = align_up(sizeof(ShadowUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment);
-    if (!create_buffer(device, uniform_data_length,
-                       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                       &frame->uniform_buffer))
-    {
-        return false;
-    }
-
-    if (!create_buffer(device, uniform_data_length,
-                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                       host_uniform_buffer))
-    {
-        return false;
-    }
-
-    if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[0], &frame->uniform_buffer,
-                                 0, uniform_data_length, &frame->shadow_descriptor_set))
-    {
-        return false;
-    }
-
     return true;
-}
-
-Void calculate_shadow_uniform_data(Vec3 camera_pos, Mat3 camera_rot, ShadowUniformData *uniform_data)
-{
-    uniform_data->view = get_view_matrix(camera_pos, camera_rot.z, -camera_rot.y);
-    // NOTE: Keep orthographic projection x:y ratio 4:3 to match window size
-    uniform_data->projection = get_orthographic_matrix(-650, 950, -200, 1000, 400, 1100);
 }

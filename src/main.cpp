@@ -125,7 +125,8 @@ Bool render_vulkan_frame(VulkanDevice *device,
     scene_uniform_buffer_memory_barrier.size = scene_uniform_buffer->count;
     vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, null, 1, &scene_uniform_buffer_memory_barrier, 0, null);
 
-    VkImageMemoryBarrier depth_image_memory_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    VkImageMemoryBarrier depth_image_memory_barrier = {};
+    depth_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     depth_image_memory_barrier.srcAccessMask = 0;
     depth_image_memory_barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     depth_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -141,7 +142,8 @@ Bool render_vulkan_frame(VulkanDevice *device,
 
     vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, 0, 0, null, 0, null, 1, &depth_image_memory_barrier);
 
-    VkImageMemoryBarrier color_image_memory_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    VkImageMemoryBarrier color_image_memory_barrier = {};
+    color_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     color_image_memory_barrier.srcAccessMask = 0;
     color_image_memory_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     color_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -156,6 +158,23 @@ Bool render_vulkan_frame(VulkanDevice *device,
     color_image_memory_barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
     vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, null, 0, null, 1, &color_image_memory_barrier);
+
+    VkImageMemoryBarrier shadow_depth_image_memory_barrier = {};
+    shadow_depth_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    shadow_depth_image_memory_barrier.srcAccessMask = 0;
+    shadow_depth_image_memory_barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    shadow_depth_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    shadow_depth_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    shadow_depth_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    shadow_depth_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    shadow_depth_image_memory_barrier.image = shadow_frame->depth_image;
+    shadow_depth_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    shadow_depth_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+    shadow_depth_image_memory_barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+    shadow_depth_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+    shadow_depth_image_memory_barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, 0, 0, null, 0, null, 1, &shadow_depth_image_memory_barrier);
 
     // NOTE: Shadow
     VkClearValue shadow_clear_colors[1] = {{1.0, 0}};
@@ -175,7 +194,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
     vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &scene_frame->vertex_buffer.handle, &offset);
     vkCmdBindIndexBuffer(scene_frame->command_buffer, scene_frame->index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
 
-    vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline->layout, 0, 1, &shadow_frame->shadow_descriptor_set, 0, null);
+    vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline->layout, 0, 1, &scene_frame->scene_descriptor_set, 0, null);
 
     vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline->layout, 1, 1, &scene_frame->board_descriptor_set, 0, null);
     vkCmdDrawIndexed(scene_frame->command_buffer, board->mesh->index_count, 1, board->mesh->index_offset, board->mesh->vertex_offset, 0);
@@ -191,7 +210,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
 
     // NOTE: Scene
     VkClearValue scene_clear_colors[2] = {{0.7, 0.7, 0.7, 0.7},
-                                    {1.0, 0}};
+                                          {1.0, 0}};
     VkRenderPassBeginInfo scene_render_pass_begin_info = {};
     scene_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     scene_render_pass_begin_info.renderPass = scene_pipeline->render_pass;
@@ -209,6 +228,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
     vkCmdBindIndexBuffer(scene_frame->command_buffer, scene_frame->index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
 
     vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 0, 1, &scene_frame->scene_descriptor_set, 0, null);
+    vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 3, 1, &scene_frame->shadow_descriptor_set, 0, null);
 
     vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 1, 1, &scene_frame->board_descriptor_set, 0, null);
     vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 2, 1, &scene_frame->lightmap_descriptor_sets[board->lightmap_index], 0, null);
@@ -453,15 +473,14 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanPipeline debug_collision_pipeline;
     ASSERT(create_debug_collision_pipeline(&device, &debug_collision_pipeline));
 
+    ShadowFrame shadow_frame;
+    ASSERT(create_shadow_frame(&device, &shadow_pipeline, &shadow_frame));
+
     SceneFrame scene_frame;
     VulkanBuffer scene_vertex_buffer;
     VulkanBuffer scene_index_buffer;
     VulkanBuffer scene_uniform_buffer;
-    ASSERT(create_scene_frame(&device, &scene_pipeline, &board, pieces, &lightmaps, &scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
-
-    ShadowFrame shadow_frame;
-    VulkanBuffer shadow_uniform_buffer;
-    ASSERT(create_shadow_frame(&device, &shadow_pipeline, &shadow_frame, &shadow_uniform_buffer));
+    ASSERT(create_scene_frame(&device, &scene_pipeline, &board, pieces, &lightmaps, &shadow_frame, &scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
 
     DebugUIFrame debug_ui_frame;
     VulkanBuffer debug_ui_vertex_buffer;
@@ -477,20 +496,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     SceneUniformData *scene_uniform_data = get_scene_uniform_data(&device, &scene_uniform_buffer);
     calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
-    scene_uniform_data->hemi_light.dir = vec4(-get_basis_y());
-    scene_uniform_data->hemi_light.color = Vec4{0.80, 0.85, 0.95, 1};
-    scene_uniform_data->hemi_light.opp_color = Vec4{0, 0, 0, 1};
-    scene_uniform_data->dir_light = vec4(normalize(Vec3{-1, 2, -0.5}), 0);
-
-    Vec3 light_camera_pos = -1000 * vec3(scene_uniform_data->dir_light);
-    Mat3 light_camera_rot;
-    light_camera_rot.z = vec3(scene_uniform_data->dir_light);
-    light_camera_rot.x = get_perp_to(light_camera_rot.z);
-    light_camera_rot.y = cross(light_camera_rot.z, light_camera_rot.x);
-
-    ShadowUniformData *shadow_uniform_data = (ShadowUniformData *)shadow_uniform_buffer.data;
-    calculate_shadow_uniform_data(light_camera_pos, light_camera_rot, shadow_uniform_data);
-    ASSERT(upload_buffer(&device, &shadow_uniform_buffer, &shadow_frame.uniform_buffer));
 
     calculate_entity_uniform_data(&board, get_board_uniform_data(&device, &scene_uniform_buffer));
     for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
@@ -919,6 +924,8 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         camera.rot = camera.rot * local_rot;
 
         calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
+        // scene_uniform_data->view = scene_uniform_data->light_view;
+        // scene_uniform_data->projection = scene_uniform_data->light_projection;
         for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
         {
             Piece *piece = &pieces[piece_i];
