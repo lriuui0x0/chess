@@ -6,16 +6,14 @@
 
 Bool create_shadow_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
 {
-    VkSampleCountFlagBits multisample_count = get_maximum_multisample_count(device);
-
     AttachmentInfo depth_attachment;
     depth_attachment.format = VK_FORMAT_D32_SFLOAT;
-    depth_attachment.multisample_count = multisample_count;
+    depth_attachment.multisample_count = VK_SAMPLE_COUNT_1_BIT;
     depth_attachment.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depth_attachment.store_op = VK_ATTACHMENT_STORE_OP_STORE;
     depth_attachment.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
     depth_attachment.working_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depth_attachment.final_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    depth_attachment.final_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     if (!create_render_pass(device, null, &depth_attachment, null, &pipeline->render_pass))
     {
@@ -71,8 +69,12 @@ Bool create_shadow_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     descriptor_sets.count = 2;
     descriptor_sets.data = descriptor_set_info;
 
+    DepthBias depth_bias;
+    depth_bias.const_bias = 1.5;
+    depth_bias.slope_bias = 1.5;
+
     if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(Vertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets,
-                         multisample_count, true, false, pipeline))
+                         VK_SAMPLE_COUNT_1_BIT, true, false, &depth_bias, pipeline))
     {
         return false;
     }
@@ -88,12 +90,9 @@ struct ShadowFrame
 
 Bool create_shadow_frame(VulkanDevice *device, VulkanPipeline *pipeline, ShadowFrame *frame)
 {
-    VkSampleCountFlagBits multisample_count = get_maximum_multisample_count(device);
-
     VkResult result_code;
-
     if (!create_image(device, device->swapchain.width, device->swapchain.height,
-                      VK_FORMAT_D32_SFLOAT, multisample_count, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                      VK_FORMAT_D32_SFLOAT, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &frame->depth_image))
     {
         return false;

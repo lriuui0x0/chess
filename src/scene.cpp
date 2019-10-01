@@ -141,7 +141,7 @@ Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     descriptor_sets.data = descriptor_set_info;
 
     if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(Vertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets,
-                         multisample_count, true, true, pipeline))
+                         multisample_count, true, true, null, pipeline))
     {
         return false;
     }
@@ -264,7 +264,7 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
         return false;
     }
 
-    if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[2], shadow_image_view, frame->shadow_sampler, &frame->shadow_descriptor_set))
+    if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[3], shadow_image_view, frame->shadow_sampler, &frame->shadow_descriptor_set))
     {
         return false;
     }

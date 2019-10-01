@@ -555,7 +555,7 @@ Bool create_pipeline(VulkanDevice *device,
                      Buffer<ShaderInfo> *shaders,
                      Int vertex_stride, Buffer<VertexAttributeInfo> *vertex_attributes, VkPrimitiveTopology primitive_type,
                      Buffer<DescriptorSetInfo> *descriptor_sets,
-                     VkSampleCountFlagBits multisample_count, Bool depth_enable, Bool alpha_blend_enable,
+                     VkSampleCountFlagBits multisample_count, Bool depth_enable, Bool alpha_blend_enable, DepthBias *depth_bias,
                      VulkanPipeline *pipeline)
 {
     VkResult result_code;
@@ -667,10 +667,10 @@ Bool create_pipeline(VulkanDevice *device,
     rasterization_state_info.polygonMode = VK_POLYGON_MODE_FILL;
     rasterization_state_info.cullMode = VK_CULL_MODE_NONE;
     rasterization_state_info.frontFace = VK_FRONT_FACE_CLOCKWISE;
-    rasterization_state_info.depthBiasEnable = VK_FALSE;
-    rasterization_state_info.depthBiasConstantFactor = 0.0f;
-    rasterization_state_info.depthBiasClamp = 0.0f;
-    rasterization_state_info.depthBiasSlopeFactor = 0.0f;
+    rasterization_state_info.depthBiasEnable = depth_bias ? VK_TRUE : VK_FALSE;
+    rasterization_state_info.depthBiasConstantFactor = depth_bias ? depth_bias->const_bias : 0;
+    rasterization_state_info.depthBiasClamp = 0;
+    rasterization_state_info.depthBiasSlopeFactor = depth_bias ? depth_bias->slope_bias : 0;
     rasterization_state_info.lineWidth = 1.0f;
 
     VkPipelineMultisampleStateCreateInfo multisample_state_info = {};

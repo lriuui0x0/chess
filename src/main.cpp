@@ -159,23 +159,6 @@ Bool render_vulkan_frame(VulkanDevice *device,
 
     vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, null, 0, null, 1, &color_image_memory_barrier);
 
-    VkImageMemoryBarrier shadow_depth_image_memory_barrier = {};
-    shadow_depth_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    shadow_depth_image_memory_barrier.srcAccessMask = 0;
-    shadow_depth_image_memory_barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    shadow_depth_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    shadow_depth_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    shadow_depth_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    shadow_depth_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    shadow_depth_image_memory_barrier.image = shadow_frame->depth_image;
-    shadow_depth_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    shadow_depth_image_memory_barrier.subresourceRange.baseMipLevel = 0;
-    shadow_depth_image_memory_barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
-    shadow_depth_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
-    shadow_depth_image_memory_barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
-
-    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, 0, 0, null, 0, null, 1, &shadow_depth_image_memory_barrier);
-
     // NOTE: Shadow
     VkClearValue shadow_clear_colors[1] = {{1.0, 0}};
     VkRenderPassBeginInfo shadow_render_pass_begin_info = {};
@@ -207,6 +190,23 @@ Bool render_vulkan_frame(VulkanDevice *device,
     }
 
     vkCmdEndRenderPass(scene_frame->command_buffer);
+
+    VkImageMemoryBarrier shadow_depth_image_memory_barrier = {};
+    shadow_depth_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    shadow_depth_image_memory_barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    shadow_depth_image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    shadow_depth_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    shadow_depth_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    shadow_depth_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    shadow_depth_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    shadow_depth_image_memory_barrier.image = shadow_frame->depth_image;
+    shadow_depth_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    shadow_depth_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+    shadow_depth_image_memory_barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+    shadow_depth_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+    shadow_depth_image_memory_barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, null, 0, null, 1, &shadow_depth_image_memory_barrier);
 
     // NOTE: Scene
     VkClearValue scene_clear_colors[2] = {{0.7, 0.7, 0.7, 0.7},

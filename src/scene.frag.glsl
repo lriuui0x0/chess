@@ -26,21 +26,25 @@ vec3 gamma_inverse(vec3 color)
     return result;
 }
 
-vec3 shadow(vec3 color)
+float calc_shadow()
 {
-    vec2 shadow_uv = (shadow_coord.xy + vec2(1)) / 2;
-    float closest_depth = texture(shadow_sampler, shadow_uv).r;
-    if (shadow_coord.z > closest_depth)
+    vec2 uv_scale = 1.0 / textureSize(shadow_sampler, 0);
+    float shadow = 0;
+    for (float y = -1; y <= 1; y += 1)
     {
-        return vec3(0);
+        for (float x = -1; x <= 1; x += 1)
+        {
+            vec2 shadow_uv = (shadow_coord.xy + vec2(1)) / 2 + vec2(x, y) * uv_scale;
+            float closest_depth = texture(shadow_sampler, shadow_uv).r;
+            shadow += shadow_coord.z > closest_depth ? 0.7 : 1;
+        }
     }
-    else
-    {
-        return color;
-    }
+    shadow /= 9;
+    return shadow;
 }
 
 void main() {
     float light = texture(lightmap_sampler, frag_uv).r;
-    color = vec4(gamma_inverse(shadow(light * frag_color.rgb)), frag_color.a);
+    float shadow = calc_shadow();
+    color = vec4(gamma_inverse(shadow * light * frag_color.rgb), frag_color.a);
 }

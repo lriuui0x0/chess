@@ -78,7 +78,8 @@ Bool create_debug_collision_pipeline(VulkanDevice *device, VulkanPipeline *pipel
     descriptor_sets.count = 2;
     descriptor_sets.data = descriptor_set_info;
 
-    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(DebugCollisionVertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, &descriptor_sets, VK_SAMPLE_COUNT_1_BIT, false, false, pipeline))
+    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(DebugCollisionVertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, &descriptor_sets,
+                         VK_SAMPLE_COUNT_1_BIT, false, false, null, pipeline))
     {
         return false;
     }

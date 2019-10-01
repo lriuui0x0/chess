@@ -174,6 +174,12 @@ struct AttachmentInfo
     VkImageLayout final_layout;
 };
 
+struct DepthBias
+{
+    Real const_bias;
+    Real slope_bias;
+};
+
 #define MAX_DESCRIPTOR_SET_COUNT (8)
 
 struct VulkanPipeline
@@ -202,7 +208,7 @@ Bool create_pipeline(VulkanDevice *device,
                      Buffer<ShaderInfo> *shaders,
                      Int vertex_stride, Buffer<VertexAttributeInfo> *vertex_attributes, VkPrimitiveTopology primitive_type,
                      Buffer<DescriptorSetInfo> *descriptor_sets,
-                     VkSampleCountFlagBits multisample_count, Bool depth_enable, Bool alpha_blend_enable,
+                     VkSampleCountFlagBits multisample_count, Bool depth_enable, Bool alpha_blend_enable, DepthBias *depth_bias,
                      VulkanPipeline *pipeline);
 
 Bool create_semaphore(VulkanDevice *device, VkSemaphore *semaphore);

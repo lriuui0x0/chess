@@ -235,7 +235,8 @@ Bool create_debug_ui_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     descriptor_sets.count = 1;
     descriptor_sets.data = descriptor_set_info;
 
-    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(DebugUIVertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets, VK_SAMPLE_COUNT_1_BIT, false, true, pipeline))
+    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(DebugUIVertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets,
+                         VK_SAMPLE_COUNT_1_BIT, false, true, null, pipeline))
     {
         return false;
     }
