@@ -1,12 +1,16 @@
 #version 450
 
-layout(set = 0, binding = 0) uniform Scene {
+layout(set = 0, binding = 0) uniform Scene
+{
+    mat4 light_view;
+    mat4 light_projection;
     mat4 view;
     mat4 normal_view;
     mat4 projection;
 } scene;
 
-layout(set = 1, binding = 0) uniform Entity {
+layout(set = 1, binding = 0) uniform Entity
+{
     mat4 world;
     mat4 normal_world;
 } entity;

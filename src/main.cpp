@@ -924,8 +924,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         camera.rot = camera.rot * local_rot;
 
         calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
-        // scene_uniform_data->view = scene_uniform_data->light_view;
-        // scene_uniform_data->projection = scene_uniform_data->light_projection;
         for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
         {
             Piece *piece = &pieces[piece_i];

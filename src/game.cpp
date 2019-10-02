@@ -219,6 +219,7 @@ Bool is_foe_occupied(GameState *state, Int row, Int column)
 struct GameMoveCheck
 {
     Bool is_illegal;
+    Bool is_pawn_promote;
     GameMoveType move_type;
     GamePiece *captured_piece;
     GamePiece *castling_piece;
@@ -479,7 +480,18 @@ GameMoveCheck check_game_move(GameState *state, GamePiece *piece, Int row_to, In
 
     case GamePieceType::pawn:
     {
-        Int direction = piece->side == GameSide::white ? 1 : -1;
+        Int direction;
+        Int final_row;
+        if (piece->side == GameSide::white)
+        {
+            direction = 1;
+            final_row = BOARD_ROW_COUNT - 1;
+        }
+        else
+        {
+            direction = -1;
+            final_row = 0;
+        }
         Int row_change = row_to - piece->row;
         Int column_change = column_to - piece->column;
         Int column_change_abs = ABS(column_change);
@@ -497,6 +509,10 @@ GameMoveCheck check_game_move(GameState *state, GamePiece *piece, Int row_to, In
                      !is_occupied(state, piece->row + direction * 1, piece->column))
             {
                 pawn_orthogonal_move.move_type = GameMoveType::move;
+                if (row_to == final_row)
+                {
+                    pawn_orthogonal_move.is_pawn_promote = true;
+                }
                 return pawn_orthogonal_move;
             }
             else
@@ -511,6 +527,10 @@ GameMoveCheck check_game_move(GameState *state, GamePiece *piece, Int row_to, In
             {
                 pawn_diagonal_move.move_type = GameMoveType::pawn_capture;
                 pawn_diagonal_move.captured_piece = state->board[row_to][column_to];
+                if (row_to == final_row)
+                {
+                    pawn_diagonal_move.is_pawn_promote = true;
+                }
                 return pawn_diagonal_move;
             }
             else if (!is_occupied(state, row_to, column_to) && is_foe_occupied(state, piece->row, column_to))
