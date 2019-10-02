@@ -195,7 +195,7 @@ Array<UInt32> convex_hull_incremental(Array<Vertex> vertices)
     for (Int vertex_i = 0; vertex_i < vertices.count; vertex_i++)
     {
         Vec3 pos = vertices[vertex_i].pos;
-        if (ABS(pos.y) < 0.1)
+        if (ABS(pos.y) < 0.15)
         {
             if (pos.x < base_min_x.x)
             {

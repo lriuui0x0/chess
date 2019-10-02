@@ -94,6 +94,7 @@ int main(Int argc, CStr *argv)
     argv++;
 
     ASSERT(argc == 2 || argc == 3);
+    Bool is_piece = argc == 2;
     CStr input_filename = argv[0];
     CStr output_filename = argv[1];
 
@@ -140,6 +141,10 @@ int main(Int argc, CStr *argv)
             Int uv_index = polygon_index * 3 + polygon_vertex_index;
             FbxVector2 fbx_uv = uv_layer->GetDirectArray().GetAt(uv_layer->GetIndexArray().GetAt(uv_index));
             Vec2 vertex_uv = {(Real)fbx_uv.mData[0], (Real)-fbx_uv.mData[1]};
+            if (is_piece && ABS(vertex_pos.y) < 0.1)
+            {
+                vertex_pos.y = 0.1;
+            }
 
             Vertex *vertex = vertices.push();
             vertex->pos = vertex_pos;
@@ -165,7 +170,7 @@ int main(Int argc, CStr *argv)
     Vec3 box_radius = 0.5 * (max - min);
 
     Array<UInt32> hull_indices;
-    if (argc == 2)
+    if (is_piece)
     {
         hull_indices = convex_hull_incremental(vertices);
     }
