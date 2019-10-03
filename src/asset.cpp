@@ -3,6 +3,7 @@
 #include "../lib/util.hpp"
 #include "math.cpp"
 #include "collision.cpp"
+#incldue "game.cpp"
 
 struct Vertex
 {
@@ -178,5 +179,16 @@ Bool deserialise_image(Str buffer, Image *image)
     }
     image->data = (UInt8 *)malloc(image_data_length);
     memcpy(image->data, buffer.data + pos, image_data_length);
+    return true;
+} 
+
+Bool deserialise_bit_board_table(Str buffer, BitBoardTable *table)
+{
+    if (!buffer.count == sizeof(BitBoardTable))
+    {
+        return false;
+    }
+
+    memcpy(table, buffer.data, sizeof(BitBoardTable));
     return true;
 }

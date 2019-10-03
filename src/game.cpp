@@ -2,6 +2,8 @@
 
 #include "../lib/util.hpp"
 
+typedef UInt64 BitBoard;
+
 enum struct GamePieceType
 {
     rook,
@@ -12,16 +14,21 @@ enum struct GamePieceType
     pawn,
 };
 
-enum struct GameSide
+namespace GameSide
 {
-    white,
-    black,
+enum
+{
+    white = 0,
+    black = 0,
 };
+}
+
+typedef Int GameSideEnum;
 
 struct GamePiece
 {
     Int index;
-    GameSide side;
+    GameSideEnum side;
     GamePieceType type;
     Int type_index;
     Str name;
@@ -55,33 +62,41 @@ struct GameMove
     Int column_to;
 };
 
+// typedef UInt8 GamePiece;
+
 struct GameState
 {
-    GamePiece pieces[PIECE_COUNT];
-    GamePiece *board[BOARD_ROW_COUNT][BOARD_COLUMN_COUNT];
-    GameSide player_side;
-    GameSide current_side;
+    GameBoard board;
+
+    GameSideEnum player_side;
+    GameSideEnum current_side;
     GamePiece *selected_piece;
     Array<GameMove> history;
 };
 
-Int get_row(Int square_index)
+struct GameBoard
 {
-    ASSERT(square_index >= 0 && square_index < BOARD_SQUARE_COUNT);
-    return square_index / 8;
+    GamePiece pieces[BOARD_SQUARE_COUNT];
+    BitBoard side_occupancy[2];
+};
+
+BitBoard get_row(BitBoard square)
+{
+    ASSERT(square >= 0 && square < BOARD_SQUARE_COUNT);
+    return square / BOARD_ROW_COUNT;
 }
 
-Int get_column(Int square_index)
+BitBoard get_column(BitBoard square)
 {
-    ASSERT(square_index >= 0 && square_index < BOARD_SQUARE_COUNT);
-    return square_index % 8;
+    ASSERT(square >= 0 && square < BOARD_SQUARE_COUNT);
+    return square % BOARD_ROW_COUNT;
 }
 
-Int get_square(Int row, Int column)
+BitBoard get_square(BitBoard row, BitBoard column)
 {
     ASSERT(row >= 0 && row < BOARD_ROW_COUNT);
     ASSERT(column >= 0 && column < BOARD_COLUMN_COUNT);
-    return row * 8 + column;
+    return row * BOARD_ROW_COUNT + column;
 }
 
 GameState get_initial_game_state()
@@ -91,38 +106,40 @@ GameState get_initial_game_state()
     state.current_side = GameSide::white;
     state.selected_piece = null;
     state.history = create_array<GameMove>();
+    state.board.side_occupancy[(Int)GameSide::white] = 0;
+    state.board.side_occupancy[(Int)GameSide::black] = 0;
 
-    GamePiece *piece = &state.pieces[0];
+    GamePiece *piece = &state.board.pieces[0];
     *piece = GamePiece{0, GameSide::white, GamePieceType::rook, 0, str("white rook 0"), 0, 0, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     *piece = GamePiece{1, GameSide::white, GamePieceType::knight, 0, str("white knight 0"), 0, 1, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     *piece = GamePiece{2, GameSide::white, GamePieceType::bishop, 0, str("white bishop 0"), 0, 2, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     *piece = GamePiece{3, GameSide::white, GamePieceType::queen, 0, str("white queen"), 0, 3, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     *piece = GamePiece{4, GameSide::white, GamePieceType::king, 0, str("white king"), 0, 4, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     *piece = GamePiece{5, GameSide::white, GamePieceType::bishop, 1, str("white bishop 1"), 0, 5, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     *piece = GamePiece{6, GameSide::white, GamePieceType::knight, 1, str("white knight 1"), 0, 6, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     *piece = GamePiece{7, GameSide::white, GamePieceType::rook, 1, str("white rook 1"), 0, 7, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     for (Int pawn_i = 0; pawn_i < 8; pawn_i++)
@@ -135,40 +152,40 @@ GameState get_initial_game_state()
         number_suffix.data = number_suffix_data;
 
         *piece = GamePiece{8 + pawn_i, GameSide::white, GamePieceType::pawn, pawn_i, concat_str(str("white pawn "), number_suffix), 1, pawn_i, 0};
-        state.board[piece->row][piece->column] = piece;
+        state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
         piece++;
     }
 
     *piece = GamePiece{16, GameSide::black, GamePieceType::rook, 0, str("black rook 0"), 7, 0, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     *piece = GamePiece{17, GameSide::black, GamePieceType::knight, 0, str("black knight 0"), 7, 1, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     *piece = GamePiece{18, GameSide::black, GamePieceType::bishop, 0, str("black bishop 0"), 7, 2, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     *piece = GamePiece{19, GameSide::black, GamePieceType::queen, 0, str("black queen"), 7, 3, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     *piece = GamePiece{20, GameSide::black, GamePieceType::king, 0, str("black king"), 7, 4, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     *piece = GamePiece{21, GameSide::black, GamePieceType::bishop, 1, str("black bishop 1"), 7, 5, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     *piece = GamePiece{22, GameSide::black, GamePieceType::knight, 1, str("black knight 1"), 7, 6, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     *piece = GamePiece{23, GameSide::black, GamePieceType::rook, 1, str("black rook 1"), 7, 7, 0};
-    state.board[piece->row][piece->column] = piece;
+    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
     piece++;
 
     for (Int pawn_i = 0; pawn_i < 8; pawn_i++)
@@ -181,39 +198,43 @@ GameState get_initial_game_state()
         number_suffix.data = number_suffix_data;
 
         *piece = GamePiece{24 + pawn_i, GameSide::black, GamePieceType::pawn, pawn_i, concat_str(str("black pawn "), number_suffix), 6, pawn_i, 0};
-        state.board[piece->row][piece->column] = piece;
+        state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
         piece++;
     }
 
     return state;
 }
 
-Bool is_friend(GameState *state, GamePiece *piece)
+struct SimplePieceTable
 {
-    return piece && piece->side == state->player_side;
-}
+    BitBoard move[64];
+};
 
-Bool is_foe(GameState *state, GamePiece *piece)
+struct SlidingPieceTable
 {
-    return piece && piece->side != state->player_side;
-}
+    BitBoard blocker_mask[64];
+    UInt64 blocker_bit_count[64];
+    UInt64 magic[64];
+    BitBoard move[64][1 << 13];
+};
 
-Bool is_occupied(GameState *state, Int row, Int column)
+struct PawnTable
 {
-    GamePiece *piece = state->board[row][column];
-    return piece != null;
-}
+    BitBoard move[64];
+    BitBoard capture[64];
+};
 
-Bool is_friend_occupied(GameState *state, Int row, Int column)
+struct BitBoardTable
 {
-    GamePiece *piece = state->board[row][column];
-    return piece != null && piece->side == state->player_side;
-}
+    SlidingPieceTable rook_table;
+    SimplePieceTable knight_table;
+    SlidingPieceTable bishop_table;
+    SimplePieceTable king_table;
+    PawnTable pawn_table[2];
+};
 
-Bool is_foe_occupied(GameState *state, Int row, Int column)
+BitBoard check_game_move()
 {
-    GamePiece *piece = state->board[row][column];
-    return piece != null && piece->side != state->player_side;
 }
 
 struct GameMoveCheck

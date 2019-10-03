@@ -41,7 +41,7 @@ Bool read_image(CStr filename, Image *image)
     return true;
 }
 
-Bool read_font(CStr filename, OUT Font *font)
+Bool read_font(CStr filename, Font *font)
 {
     Str file_contents;
     if (!read_file(filename, &file_contents))
@@ -50,6 +50,22 @@ Bool read_font(CStr filename, OUT Font *font)
     }
 
     if (!deserialise_font(file_contents, font))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+Bool read_bit_board_table(CStr filename, BitBoardTable *bit_board_table)
+{
+    Str file_contents;
+    if (!read_file(filename, &file_contents))
+    {
+        return false;
+    }
+
+    if (!deserialise_bit_board_table(file_contents, bit_board_table))
     {
         return false;
     }
@@ -371,6 +387,68 @@ Bool render_vulkan_frame(VulkanDevice *device,
     return true;
 }
 
+struct Input
+{
+    Int mouse_x;
+    Int mouse_y;
+    Bool click_left;
+    Bool click_right;
+
+    Bool keydown_g;
+    Bool keydown_z;
+
+    Bool keydown_d;
+    Bool keyup_d;
+    Bool keydown_a;
+    Bool keyup_a;
+    Bool keydown_q;
+    Bool keyup_q;
+    Bool keydown_e;
+    Bool keyup_e;
+    Bool keydown_w;
+    Bool keyup_w;
+    Bool keydown_s;
+    Bool keyup_s;
+
+    Bool keydown_i;
+    Bool keyup_i;
+    Bool keydown_k;
+    Bool keyup_k;
+    Bool keydown_l;
+    Bool keyup_l;
+    Bool keydown_j;
+    Bool keyup_j;
+    Bool keydown_o;
+    Bool keyup_o;
+    Bool keydown_u;
+    Bool keyup_u;
+};
+
+struct DebugState
+{
+    Bool show_debug_ui;
+    Bool moving_x_pos;
+    Bool moving_x_neg;
+    Bool moving_y_pos;
+    Bool moving_y_neg;
+    Bool moving_z_pos;
+    Bool moving_z_neg;
+    Bool rotating_x_pos;
+    Bool rotating_x_neg;
+    Bool rotating_y_pos;
+    Bool rotating_y_neg;
+    Bool rotating_z_pos;
+    Bool rotating_z_neg;
+};
+
+struct State
+{
+    Int mouse_x;
+    Int mouse_y;
+
+    DebugState debug;
+};
+
 int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int show_code)
 {
     RandomGenerator random_generator;
@@ -423,6 +501,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     Font debug_font;
     ASSERT(read_font("../asset/debug_font.asset", &debug_font));
+
+    BitBoardTable bit_board_table;
+    ASSERT(read_bit_board_table("../asset/bitboard.asset", &bit_board_table));
 
     GameState game_state = get_initial_game_state();
 
@@ -490,9 +571,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanBuffer debug_collision_vertex_buffer;
     ASSERT(create_debug_collision_frame(&device, &debug_collision_pipeline, pieces, &debug_collision_frame, &debug_collision_vertex_buffer));
 
-    Camera camera;
-    camera.pos = {350, -1750, -330};
-    camera.rot = get_rotation_quaternion(get_basis_x(), -degree_to_radian(70));
+    Camera camera = get_scene_camera();
 
     SceneUniformData *scene_uniform_data = get_scene_uniform_data(&device, &scene_uniform_buffer);
     calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
@@ -519,27 +598,11 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     }
     ASSERT(upload_buffer(&device, &debug_collision_vertex_buffer, &debug_collision_frame.vertex_buffer));
 
+    State state = {};
+
     show_window(window);
 
-    Bool moving_x_pos = false;
-    Bool moving_x_neg = false;
-    Bool moving_y_pos = false;
-    Bool moving_y_neg = false;
-    Bool moving_z_pos = false;
-    Bool moving_z_neg = false;
-
-    Bool rotating_x_pos = false;
-    Bool rotating_x_neg = false;
-    Bool rotating_y_pos = false;
-    Bool rotating_y_neg = false;
-    Bool rotating_z_pos = false;
-    Bool rotating_z_neg = false;
-
-    Int mouse_x = 0;
-    Int mouse_y = 0;
-
     Bool is_running = true;
-    Bool show_debug_ui = false;
 
     Int last_hover_row = -1;
     Int last_hover_column = -1;
@@ -548,10 +611,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Real frame_time = 1.0 / 60.0;
     while (is_running)
     {
-        Bool has_click = false;
-        WindowMessageMouseButtonType click_mouse_button;
-
         WindowMessage message;
+        Input input = {};
+        input.mouse_x = -1;
+        input.mouse_y = -1;
         while (get_window_message(window, &message))
         {
             switch (message.type)
@@ -568,55 +631,71 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
                 if (key_code == WindowMessageKeyCode::key_d)
                 {
-                    moving_x_pos = true;
+                    input.keyup_d = true;
+                    input.keydown_d = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_a)
                 {
-                    moving_x_neg = true;
+                    input.keyup_a = false;
+                    input.keydown_a = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_q)
                 {
-                    moving_y_pos = true;
+                    input.keyup_q = false;
+                    input.keydown_q = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_e)
                 {
-                    moving_y_neg = true;
+                    input.keyup_e = false;
+                    input.keydown_e = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_w)
                 {
-                    moving_z_pos = true;
+                    input.keyup_w = false;
+                    input.keydown_w = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_s)
                 {
-                    moving_z_neg = true;
+                    input.keyup_s = false;
+                    input.keydown_s = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_i)
                 {
-                    rotating_x_pos = true;
+                    input.keyup_i = false;
+                    input.keydown_i = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_k)
                 {
-                    rotating_x_neg = true;
+                    input.keyup_k = false;
+                    input.keydown_k = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_l)
                 {
-                    rotating_y_pos = true;
+                    input.keyup_l = false;
+                    input.keydown_l = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_j)
                 {
-                    rotating_y_neg = true;
+                    input.keyup_j = false;
+                    input.keydown_j = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_o)
                 {
-                    rotating_z_pos = true;
+                    input.keyup_o = false;
+                    input.keydown_o = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_u)
                 {
-                    rotating_z_neg = true;
+                    input.keyup_u = false;
+                    input.keydown_u = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_g)
                 {
-                    show_debug_ui = !show_debug_ui;
+                    input.keydown_g = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_z)
+                {
+                    input.keydown_z = true;
                 }
             }
             break;
@@ -627,69 +706,98 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
                 if (key_code == WindowMessageKeyCode::key_d)
                 {
-                    moving_x_pos = false;
+                    input.keydown_d = false;
+                    input.keyup_d = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_a)
                 {
-                    moving_x_neg = false;
+                    input.keydown_a = false;
+                    input.keyup_a = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_q)
                 {
-                    moving_y_pos = false;
+                    input.keydown_q = false;
+                    input.keyup_q = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_e)
                 {
-                    moving_y_neg = false;
+                    input.keydown_e = false;
+                    input.keyup_e = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_w)
                 {
-                    moving_z_pos = false;
+                    input.keydown_w = false;
+                    input.keyup_w = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_s)
                 {
-                    moving_z_neg = false;
+                    input.keydown_s = false;
+                    input.keyup_s = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_i)
                 {
-                    rotating_x_pos = false;
+                    input.keydown_i = false;
+                    input.keyup_i = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_k)
                 {
-                    rotating_x_neg = false;
+                    input.keydown_k = false;
+                    input.keyup_k = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_l)
                 {
-                    rotating_y_pos = false;
+                    input.keydown_l = false;
+                    input.keyup_l = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_j)
                 {
-                    rotating_y_neg = false;
+                    input.keydown_j = false;
+                    input.keyup_j = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_o)
                 {
-                    rotating_z_pos = false;
+                    input.keydown_o = false;
+                    input.keyup_o = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_u)
                 {
-                    rotating_z_neg = false;
+                    input.keydown_u = false;
+                    input.keyup_u = true;
                 }
             }
             break;
 
             case WindowMessageType::mouse_down:
             {
-                has_click = true;
-                click_mouse_button = message.mouse_down_data.button_type;
+                if (message.mouse_down_data.button_type == WindowMessageMouseButtonType::left)
+                {
+                    input.click_left = true;
+                    input.mouse_x = message.mouse_down_data.x;
+                    input.mouse_y = message.mouse_down_data.y;
+                }
+                else if (message.mouse_down_data.button_type == WindowMessageMouseButtonType::right)
+                {
+                    input.click_right = true;
+                }
             }
             break;
 
             case WindowMessageType::mouse_move:
             {
-                mouse_x = message.mouse_move_data.x;
-                mouse_y = message.mouse_move_data.y;
+                input.mouse_x = message.mouse_move_data.x;
+                input.mouse_y = message.mouse_move_data.y;
             }
             break;
             }
+        }
+
+        if (input.mouse_x != -1)
+        {
+            state.mouse_x = input.mouse_x;
+        }
+        if (input.mouse_y != -1)
+        {
+            state.mouse_y = input.mouse_y;
         }
 
         Mat4 inverse_projection;
@@ -697,7 +805,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         Mat4 inverse_view;
         ASSERT(inverse(scene_uniform_data->view, &inverse_view));
 
-        Vec4 mouse_pos_clip = {(Real)mouse_x * 2 / window_width - 1, (Real)mouse_y * 2 / window_height - 1, 0, 1};
+        Vec4 mouse_pos_clip = {(Real)state.mouse_x * 2 / window_width - 1, (Real)state.mouse_y * 2 / window_height - 1, 0, 1};
         Vec3 mouse_pos_world = vec3(perspective_divide(inverse_view * inverse_projection * mouse_pos_clip));
         Ray ray_world;
         ray_world.pos = camera.pos;
@@ -754,7 +862,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         }
 
         // NOTE: Select piece or change piece selection
-        if (has_click && click_mouse_button == WindowMessageMouseButtonType::left)
+        if (input.click_left)
         {
             if (hover_piece &&
                 hover_piece != game_state.selected_piece &&
@@ -771,7 +879,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
         }
         // NOTE: Clear piece selection
-        else if (has_click && click_mouse_button == WindowMessageMouseButtonType::right)
+        else if (input.click_right)
         {
             if (game_state.selected_piece)
             {
@@ -792,7 +900,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         }
 
         // NOTE: Update game move
-        if (has_click && click_mouse_button == WindowMessageMouseButtonType::left)
+        if (input.click_left)
         {
             if (game_state.selected_piece && !game_move_check.is_illegal)
             {
@@ -855,7 +963,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         }
 
         // NOTE: Start ghost piece illegal move feedback
-        if (has_click && click_mouse_button == WindowMessageMouseButtonType::left)
+        if (input.click_left)
         {
             if (ghost_piece_index != -1 && game_move_check.is_illegal)
             {
@@ -865,63 +973,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
         last_hover_row = hover_row;
         last_hover_column = hover_column;
-
-        Vec3 camera_x = rotate(camera.rot, get_basis_x());
-        Vec3 camera_y = rotate(camera.rot, get_basis_y());
-        Vec3 camera_z = rotate(camera.rot, get_basis_z());
-        Real speed = 3;
-        if (moving_x_pos)
-        {
-            camera.pos = camera.pos + speed * camera_x;
-        }
-        if (moving_x_neg)
-        {
-            camera.pos = camera.pos - speed * camera_x;
-        }
-        if (moving_y_pos)
-        {
-            camera.pos = camera.pos + speed * camera_y;
-        }
-        if (moving_y_neg)
-        {
-            camera.pos = camera.pos - speed * camera_y;
-        }
-        if (moving_z_pos)
-        {
-            camera.pos = camera.pos + speed * camera_z;
-        }
-        if (moving_z_neg)
-        {
-            camera.pos = camera.pos - speed * camera_z;
-        }
-
-        Real rotating_speed = degree_to_radian(0.2);
-        Quaternion local_rot = get_identity_quaternion();
-        if (rotating_x_pos)
-        {
-            local_rot = get_rotation_quaternion(get_basis_x(), rotating_speed) * local_rot;
-        }
-        if (rotating_x_neg)
-        {
-            local_rot = get_rotation_quaternion(get_basis_x(), -rotating_speed) * local_rot;
-        }
-        if (rotating_y_pos)
-        {
-            local_rot = get_rotation_quaternion(get_basis_y(), rotating_speed) * local_rot;
-        }
-        if (rotating_y_neg)
-        {
-            local_rot = get_rotation_quaternion(get_basis_y(), -rotating_speed) * local_rot;
-        }
-        if (rotating_z_pos)
-        {
-            local_rot = get_rotation_quaternion(get_basis_z(), rotating_speed) * local_rot;
-        }
-        if (rotating_z_neg)
-        {
-            local_rot = get_rotation_quaternion(get_basis_z(), -rotating_speed) * local_rot;
-        }
-        camera.rot = camera.rot * local_rot;
 
         calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
         for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
@@ -936,10 +987,176 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             calculate_entity_uniform_data(&ghost_piece, get_ghost_piece_uniform_data(&device, &scene_uniform_buffer));
         }
 
-        DebugUIDrawState debug_ui_draw_state;
-        debug_ui_draw_state.character_count = 0;
-        if (show_debug_ui)
+        // NOTE: Debug support
+        DebugUIDrawState debug_ui_draw_state = {};
+        if (input.keydown_g)
         {
+            state.debug.show_debug_ui = !state.debug.show_debug_ui;
+        }
+        if (state.debug.show_debug_ui)
+        {
+            if (input.keydown_z)
+            {
+                camera = get_scene_camera();
+            }
+            else
+            {
+                if (input.keydown_d)
+                {
+                    state.debug.moving_x_pos = true;
+                }
+                else if (input.keyup_d)
+                {
+                    state.debug.moving_x_pos = false;
+                }
+                if (input.keydown_a)
+                {
+                    state.debug.moving_x_neg = true;
+                }
+                else if (input.keyup_a)
+                {
+                    state.debug.moving_x_neg = false;
+                }
+                if (input.keydown_q)
+                {
+                    state.debug.moving_y_pos = true;
+                }
+                else if (input.keyup_q)
+                {
+                    state.debug.moving_y_pos = false;
+                }
+                if (input.keydown_e)
+                {
+                    state.debug.moving_y_neg = true;
+                }
+                else if (input.keyup_e)
+                {
+                    state.debug.moving_y_neg = false;
+                }
+                if (input.keydown_w)
+                {
+                    state.debug.moving_z_pos = true;
+                }
+                else if (input.keyup_w)
+                {
+                    state.debug.moving_z_pos = false;
+                }
+                if (input.keydown_s)
+                {
+                    state.debug.moving_z_neg = true;
+                }
+                else if (input.keyup_s)
+                {
+                    state.debug.moving_z_neg = false;
+                }
+
+                if (input.keydown_i)
+                {
+                    state.debug.rotating_x_pos = true;
+                }
+                else if (input.keyup_i)
+                {
+                    state.debug.rotating_x_pos = false;
+                }
+                if (input.keydown_k)
+                {
+                    state.debug.rotating_x_neg = true;
+                }
+                else if (input.keyup_k)
+                {
+                    state.debug.rotating_x_neg = false;
+                }
+                if (input.keydown_l)
+                {
+                    state.debug.rotating_y_pos = true;
+                }
+                else if (input.keyup_l)
+                {
+                    state.debug.rotating_y_pos = false;
+                }
+                if (input.keydown_j)
+                {
+                    state.debug.rotating_y_neg = true;
+                }
+                else if (input.keyup_j)
+                {
+                    state.debug.rotating_y_neg = false;
+                }
+                if (input.keydown_o)
+                {
+                    state.debug.rotating_z_pos = true;
+                }
+                else if (input.keyup_o)
+                {
+                    state.debug.rotating_z_pos = false;
+                }
+                if (input.keydown_u)
+                {
+                    state.debug.rotating_z_neg = true;
+                }
+                else if (input.keyup_u)
+                {
+                    state.debug.rotating_z_neg = false;
+                }
+
+                Vec3 camera_x = rotate(camera.rot, get_basis_x());
+                Vec3 camera_y = rotate(camera.rot, get_basis_y());
+                Vec3 camera_z = rotate(camera.rot, get_basis_z());
+                Real speed = 8;
+                if (state.debug.moving_x_pos)
+                {
+                    camera.pos = camera.pos + speed * camera_x;
+                }
+                if (state.debug.moving_x_neg)
+                {
+                    camera.pos = camera.pos - speed * camera_x;
+                }
+                if (state.debug.moving_y_pos)
+                {
+                    camera.pos = camera.pos + speed * camera_y;
+                }
+                if (state.debug.moving_y_neg)
+                {
+                    camera.pos = camera.pos - speed * camera_y;
+                }
+                if (state.debug.moving_z_pos)
+                {
+                    camera.pos = camera.pos + speed * camera_z;
+                }
+                if (state.debug.moving_z_neg)
+                {
+                    camera.pos = camera.pos - speed * camera_z;
+                }
+
+                Real rotating_speed = degree_to_radian(0.5);
+                Quaternion local_rot = get_identity_quaternion();
+                if (state.debug.rotating_x_pos)
+                {
+                    local_rot = get_rotation_quaternion(get_basis_x(), rotating_speed) * local_rot;
+                }
+                if (state.debug.rotating_x_neg)
+                {
+                    local_rot = get_rotation_quaternion(get_basis_x(), -rotating_speed) * local_rot;
+                }
+                if (state.debug.rotating_y_pos)
+                {
+                    local_rot = get_rotation_quaternion(get_basis_y(), rotating_speed) * local_rot;
+                }
+                if (state.debug.rotating_y_neg)
+                {
+                    local_rot = get_rotation_quaternion(get_basis_y(), -rotating_speed) * local_rot;
+                }
+                if (state.debug.rotating_z_pos)
+                {
+                    local_rot = get_rotation_quaternion(get_basis_z(), rotating_speed) * local_rot;
+                }
+                if (state.debug.rotating_z_neg)
+                {
+                    local_rot = get_rotation_quaternion(get_basis_z(), -rotating_speed) * local_rot;
+                }
+                camera.rot = camera.rot * local_rot;
+            }
+
             Vec2 debug_ui_start_pos = {-0.95, -0.95};
             debug_ui_draw_state = create_debug_ui_draw_state(&debug_font, window_width, window_height, &debug_ui_vertex_buffer, debug_ui_start_pos);
 

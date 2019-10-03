@@ -12,6 +12,14 @@ struct Camera
     Quaternion rot;
 };
 
+Camera get_scene_camera()
+{
+    Camera camera;
+    camera.pos = {350, -1750, -330};
+    camera.rot = get_rotation_quaternion(get_basis_x(), -degree_to_radian(70));
+    return camera;
+}
+
 struct Animation
 {
     Real t;

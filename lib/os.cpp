@@ -23,7 +23,7 @@ Handle create_window_(Str title, Int client_width, Int client_height, Int window
     WNDCLASSEXA window_class = {};
     window_class.cbSize = sizeof(WNDCLASSEX);
     window_class.style = CS_HREDRAW | CS_VREDRAW;
-    window_class.lpfnWndProc = window_procedure;
+    window_class.lpfnWndProc = window_procedure_;
     window_class.hInstance = module_handle;
     window_class.lpszClassName = (LPCSTR)title.data;
 
