@@ -1,209 +1,7 @@
 #pragma once
-
 #include "../lib/util.hpp"
 
 typedef UInt64 BitBoard;
-
-enum struct GamePieceType
-{
-    rook,
-    knight,
-    bishop,
-    queen,
-    king,
-    pawn,
-};
-
-namespace GameSide
-{
-enum
-{
-    white = 0,
-    black = 0,
-};
-}
-
-typedef Int GameSideEnum;
-
-struct GamePiece
-{
-    Int index;
-    GameSideEnum side;
-    GamePieceType type;
-    Int type_index;
-    Str name;
-    Int row;
-    Int column;
-    Int moves;
-};
-
-#define BOARD_SQUARE_COUNT (64)
-#define BOARD_ROW_COUNT (8)
-#define BOARD_COLUMN_COUNT (8)
-#define PIECE_COUNT (32)
-
-enum struct GameMoveType
-{
-    move,
-    pawn_charge,
-    pawn_capture,
-    en_passant,
-    castling_king,
-    castling_queen,
-};
-
-struct GameMove
-{
-    GameMoveType type;
-    GamePiece *piece;
-    Int row_from;
-    Int column_from;
-    Int row_to;
-    Int column_to;
-};
-
-// typedef UInt8 GamePiece;
-
-struct GameState
-{
-    GameBoard board;
-
-    GameSideEnum player_side;
-    GameSideEnum current_side;
-    GamePiece *selected_piece;
-    Array<GameMove> history;
-};
-
-struct GameBoard
-{
-    GamePiece pieces[BOARD_SQUARE_COUNT];
-    BitBoard side_occupancy[2];
-};
-
-BitBoard get_row(BitBoard square)
-{
-    ASSERT(square >= 0 && square < BOARD_SQUARE_COUNT);
-    return square / BOARD_ROW_COUNT;
-}
-
-BitBoard get_column(BitBoard square)
-{
-    ASSERT(square >= 0 && square < BOARD_SQUARE_COUNT);
-    return square % BOARD_ROW_COUNT;
-}
-
-BitBoard get_square(BitBoard row, BitBoard column)
-{
-    ASSERT(row >= 0 && row < BOARD_ROW_COUNT);
-    ASSERT(column >= 0 && column < BOARD_COLUMN_COUNT);
-    return row * BOARD_ROW_COUNT + column;
-}
-
-GameState get_initial_game_state()
-{
-    GameState state = {};
-    state.player_side = GameSide::white;
-    state.current_side = GameSide::white;
-    state.selected_piece = null;
-    state.history = create_array<GameMove>();
-    state.board.side_occupancy[(Int)GameSide::white] = 0;
-    state.board.side_occupancy[(Int)GameSide::black] = 0;
-
-    GamePiece *piece = &state.board.pieces[0];
-    *piece = GamePiece{0, GameSide::white, GamePieceType::rook, 0, str("white rook 0"), 0, 0, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    *piece = GamePiece{1, GameSide::white, GamePieceType::knight, 0, str("white knight 0"), 0, 1, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    *piece = GamePiece{2, GameSide::white, GamePieceType::bishop, 0, str("white bishop 0"), 0, 2, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    *piece = GamePiece{3, GameSide::white, GamePieceType::queen, 0, str("white queen"), 0, 3, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    *piece = GamePiece{4, GameSide::white, GamePieceType::king, 0, str("white king"), 0, 4, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    *piece = GamePiece{5, GameSide::white, GamePieceType::bishop, 1, str("white bishop 1"), 0, 5, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    *piece = GamePiece{6, GameSide::white, GamePieceType::knight, 1, str("white knight 1"), 0, 6, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    *piece = GamePiece{7, GameSide::white, GamePieceType::rook, 1, str("white rook 1"), 0, 7, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    for (Int pawn_i = 0; pawn_i < 8; pawn_i++)
-    {
-        UInt8 number_suffix_data[2];
-        number_suffix_data[0] = '0' + pawn_i;
-        number_suffix_data[1] = '\0';
-        Str number_suffix;
-        number_suffix.count = 1;
-        number_suffix.data = number_suffix_data;
-
-        *piece = GamePiece{8 + pawn_i, GameSide::white, GamePieceType::pawn, pawn_i, concat_str(str("white pawn "), number_suffix), 1, pawn_i, 0};
-        state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-        piece++;
-    }
-
-    *piece = GamePiece{16, GameSide::black, GamePieceType::rook, 0, str("black rook 0"), 7, 0, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    *piece = GamePiece{17, GameSide::black, GamePieceType::knight, 0, str("black knight 0"), 7, 1, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    *piece = GamePiece{18, GameSide::black, GamePieceType::bishop, 0, str("black bishop 0"), 7, 2, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    *piece = GamePiece{19, GameSide::black, GamePieceType::queen, 0, str("black queen"), 7, 3, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    *piece = GamePiece{20, GameSide::black, GamePieceType::king, 0, str("black king"), 7, 4, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    *piece = GamePiece{21, GameSide::black, GamePieceType::bishop, 1, str("black bishop 1"), 7, 5, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    *piece = GamePiece{22, GameSide::black, GamePieceType::knight, 1, str("black knight 1"), 7, 6, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    *piece = GamePiece{23, GameSide::black, GamePieceType::rook, 1, str("black rook 1"), 7, 7, 0};
-    state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-    piece++;
-
-    for (Int pawn_i = 0; pawn_i < 8; pawn_i++)
-    {
-        UInt8 number_suffix_data[2];
-        number_suffix_data[0] = '0' + pawn_i;
-        number_suffix_data[1] = '\0';
-        Str number_suffix;
-        number_suffix.count = 1;
-        number_suffix.data = number_suffix_data;
-
-        *piece = GamePiece{24 + pawn_i, GameSide::black, GamePieceType::pawn, pawn_i, concat_str(str("black pawn "), number_suffix), 6, pawn_i, 0};
-        state.board.side_occupancy[piece->side] |= get_square(piece->row, piece->column);
-        piece++;
-    }
-
-    return state;
-}
 
 struct SimplePieceTable
 {
@@ -218,420 +16,317 @@ struct SlidingPieceTable
     BitBoard move[64][1 << 13];
 };
 
-struct PawnTable
-{
-    BitBoard move[64];
-    BitBoard capture[64];
-};
-
 struct BitBoardTable
 {
     SlidingPieceTable rook_table;
     SimplePieceTable knight_table;
     SlidingPieceTable bishop_table;
     SimplePieceTable king_table;
-    PawnTable pawn_table[2];
 };
 
-BitBoard check_game_move()
+namespace GamePieceType
 {
+enum
+{
+    rook = 1,
+    knight,
+    bishop,
+    queen,
+    king,
+    pawn,
+};
+}
+typedef Int GamePieceTypeEnum;
+
+namespace GameSide
+{
+enum
+{
+    white,
+    black,
+};
+}
+typedef Int GameSideEnum;
+
+GameSideEnum oppose(GameSideEnum side)
+{
+    return side ^ 1;
 }
 
-struct GameMoveCheck
-{
-    Bool is_illegal;
-    Bool is_pawn_promote;
-    GameMoveType move_type;
-    GamePiece *captured_piece;
-    GamePiece *castling_piece;
-};
+typedef UInt8 GamePiece;
+// #define PIECE_COUNT (16)
 
-GameMoveCheck illegal_move()
+GamePiece get_piece(GamePieceTypeEnum type, GameSideEnum side)
 {
-    GameMoveCheck result = {};
-    result.is_illegal = true;
+    GamePiece result = type | (side << 3);
     return result;
 }
 
-GameMoveCheck general_move(GameState *state, Int row_to, Int column_to)
+GamePieceTypeEnum get_piece_type(GamePiece piece)
 {
-    GameMoveCheck result = {};
-    result.move_type = GameMoveType::move;
-    if (is_foe_occupied(state, row_to, column_to))
-    {
-        result.captured_piece = state->board[row_to][column_to];
-    }
+    GamePieceTypeEnum result = piece & (0x8);
     return result;
 }
 
-GameMoveCheck check_orthogonal_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
+GameSideEnum get_side(GamePiece piece)
 {
-    ASSERT(row_to != piece->row || column_to != piece->column);
+    GameSideEnum result = piece >> 3;
+    return result;
+}
 
-    if (column_to == piece->column)
+struct GamePosition
+{
+    GamePiece board[64];
+    BufferI<Int, 10> pieces[PIECE_COUNT];
+    BitBoard side_occupancy[2];
+};
+
+struct GameState
+{
+    GamePosition position;
+    GameSideEnum player_side;
+    GameSideEnum current_side;
+};
+
+Int get_row(Int square)
+{
+    ASSERT(square >= 0 && square < 64);
+    return square / 8;
+}
+
+Int get_column(Int square)
+{
+    ASSERT(square >= 0 && square < 64);
+    return square % 8;
+}
+
+Int get_square(Int row, Int column)
+{
+    ASSERT(row >= 0 && row < 8);
+    ASSERT(column >= 0 && column < 8);
+    return row * 8 + column;
+}
+
+Void add_piece(GameState *state, Int row, Int column, GameSideEnum side, GamePieceTypeEnum piece_type)
+{
+    Int square = get_square(row, column);
+    GamePiece piece = get_piece(side, piece_type);
+    state->position.board[square] = piece;
+    state->position.pieces[piece].data[state->position.pieces[piece].count++] = square;
+    state->position.side_occupancy[side] |= 1llu << square;
+}
+
+GameState get_initial_game_state()
+{
+    GameState state = {};
+    state.player_side = GameSide::white;
+    state.current_side = GameSide::white;
+
+    add_piece(&state, 0, 0, GameSide::white, GamePieceType::rook);
+    add_piece(&state, 0, 1, GameSide::white, GamePieceType::knight);
+    add_piece(&state, 0, 2, GameSide::white, GamePieceType::bishop);
+    add_piece(&state, 0, 3, GameSide::white, GamePieceType::queen);
+    add_piece(&state, 0, 4, GameSide::white, GamePieceType::king);
+    add_piece(&state, 0, 5, GameSide::white, GamePieceType::bishop);
+    add_piece(&state, 0, 6, GameSide::white, GamePieceType::knight);
+    add_piece(&state, 0, 7, GameSide::white, GamePieceType::rook);
+    for (Int pawn_i = 0; pawn_i < 8; pawn_i++)
     {
-        if (row_to > piece->row)
-        {
-            for (Int row = piece->row + 1; row < row_to; row++)
-            {
-                if (is_occupied(state, row, piece->column))
-                {
-                    return illegal_move();
-                }
-            }
-        }
-        else
-        {
-            for (Int row = piece->row - 1; row > row_to; row--)
-            {
-                if (is_occupied(state, row, piece->column))
-                {
-                    return illegal_move();
-                }
-            }
-        }
-        return general_move(state, row_to, column_to);
+        add_piece(&state, 1, pawn_i, GameSide::white, GamePieceType::pawn);
     }
-    else if (row_to == piece->row)
+
+    add_piece(&state, 7, 0, GameSide::black, GamePieceType::rook);
+    add_piece(&state, 7, 1, GameSide::black, GamePieceType::knight);
+    add_piece(&state, 7, 2, GameSide::black, GamePieceType::bishop);
+    add_piece(&state, 7, 3, GameSide::black, GamePieceType::queen);
+    add_piece(&state, 7, 4, GameSide::black, GamePieceType::king);
+    add_piece(&state, 7, 5, GameSide::black, GamePieceType::bishop);
+    add_piece(&state, 7, 6, GameSide::black, GamePieceType::knight);
+    add_piece(&state, 7, 7, GameSide::black, GamePieceType::rook);
+    for (Int pawn_i = 0; pawn_i < 8; pawn_i++)
     {
-        if (column_to > piece->column)
+        add_piece(&state, 6, pawn_i, GameSide::black, GamePieceType::pawn);
+    }
+
+    return state;
+}
+
+BitBoard get_sliding_piece_move(GameState *state, BitBoard square, GameSideEnum side, SlidingPieceTable *sliding_piece_table)
+{
+    BitBoard occupancy = state->position.side_occupancy[0] | state->position.side_occupancy[1];
+    BitBoard blocker_mask = sliding_piece_table->blocker_mask[square];
+    BitBoard blocker = blocker_mask & occupancy;
+    UInt64 hash = blocker * sliding_piece_table->magic[square];
+    BitBoard move = sliding_piece_table->move[square][hash] & ~state->position.side_occupancy[side];
+    return move;
+}
+
+BitBoard get_simple_piece_move(GameState *state, BitBoard square, GameSideEnum side, SimplePieceTable *simple_piece_table)
+{
+    BitBoard move = simple_piece_table->move[square] & ~state->position.side_occupancy[side];
+    return move;
+}
+
+BitBoard get_pawn_move(GameState *state, BitBoard square, GameSideEnum side)
+{
+    BitBoard occupancy = state->position.side_occupancy[0] | state->position.side_occupancy[1];
+    if (side == GameSide::white)
+    {
+        BitBoard move = 0;
+        move |= (square << 8) & ~occupancy;
+
+        BitBoard start_squares = ~(((UInt64)-1) << 8) << 8;
+        if ((square & start_squares) && move)
         {
-            for (Int column = piece->column + 1; column < column_to; column++)
-            {
-                if (is_occupied(state, piece->row, column))
-                {
-                    return illegal_move();
-                }
-            }
+            move |= (square << 16) & ~occupancy;
         }
-        else
+        return move;
+    }
+    else if (side == GameSide::black)
+    {
+        BitBoard move = 0;
+        move |= (square >> 8) & ~occupancy;
+
+        BitBoard start_squares = ~(((UInt64)-1) >> 8) >> 8;
+        if ((square & start_squares) && move)
         {
-            for (Int column = piece->column - 1; column > column_to; column--)
-            {
-                if (is_occupied(state, piece->row, column))
-                {
-                    return illegal_move();
-                }
-            }
+            move |= (square >> 16) & ~occupancy;
         }
-        return general_move(state, row_to, column_to);
+        return move;
     }
     else
     {
-        return illegal_move();
+        ASSERT(false);
+        return 0;
     }
 }
 
-GameMoveCheck check_diagonal_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
+BitBoard get_pawn_capture(GameState *state, BitBoard square, GameSideEnum side)
 {
-    ASSERT(row_to != piece->row || column_to != piece->column);
-
-    if (row_to - piece->row == column_to - piece->column)
+    BitBoard left_side_mask = 0xfefefefefefefefe;
+    BitBoard right_side_mask = 0x7f7f7f7f7f7f7f7f;
+    if (side == GameSide::white)
     {
-        if (row_to > piece->row)
-        {
-            for (Int row = piece->row + 1, column = piece->column + 1; row < row_to; row++, column++)
-            {
-                if (is_occupied(state, row, column))
-                {
-                    return illegal_move();
-                }
-            }
-        }
-        else
-        {
-            for (Int row = piece->row - 1, column = piece->column - 1; row > row_to; row--, column--)
-            {
-                if (is_occupied(state, row, column))
-                {
-                    return illegal_move();
-                }
-            }
-        }
-        return general_move(state, row_to, column_to);
+        BitBoard move = 0;
+        move |= (square << 7) & state->position.side_occupancy[oppose(side)] & left_side_mask;
+        move |= (square << 9) & state->position.side_occupancy[oppose(side)] & right_side_mask;
+        return move;
     }
-    else if (row_to - piece->row == -(column_to - piece->column))
+    else if (side == GameSide::black)
     {
-        if (row_to > piece->row)
-        {
-            for (Int row = piece->row + 1, column = piece->column - 1; row < row_to; row++, column--)
-            {
-                if (is_occupied(state, row, column))
-                {
-                    return illegal_move();
-                }
-            }
-        }
-        else
-        {
-            for (Int row = piece->row - 1, column = piece->column + 1; row > row_to; row--, column++)
-            {
-                if (is_occupied(state, row, column))
-                {
-                    return illegal_move();
-                }
-            }
-        }
-        return general_move(state, row_to, column_to);
+        BitBoard move = 0;
+        move |= (square >> 7) & state->position.side_occupancy[oppose(side)] & right_side_mask;
+        move |= (square >> 9) & state->position.side_occupancy[oppose(side)] & left_side_mask;
+        return move;
     }
     else
     {
-        return illegal_move();
+        ASSERT(false);
+        return 0;
     }
 }
 
-GameMoveCheck check_game_move(GameState *state, GamePiece *piece, Int row_to, Int column_to)
+BitBoard check_game_move(GameState *state, BitBoard square, BitBoardTable *bit_board_table)
 {
-    if (row_to == piece->row && column_to == piece->column)
-    {
-        return illegal_move();
-    }
+    BitBoard occupancy = state->position.side_occupancy[0] | state->position.side_occupancy[1];
+    ASSERT(bit_count(square) == 1 && (occupancy & square));
 
-    if (is_friend_occupied(state, row_to, column_to))
-    {
-        return illegal_move();
-    }
+    GamePiece piece = state->position.board[square];
+    GamePieceTypeEnum piece_type = get_piece_type(piece);
+    GameSideEnum side = get_side(piece);
 
-    switch (piece->type)
+    switch (piece_type)
     {
     case GamePieceType::rook:
     {
-        return check_orthogonal_move(state, piece, row_to, column_to);
+        BitBoard move = get_sliding_piece_move(state, square, side, &bit_board_table->rook_table);
+        return move;
     }
     break;
 
     case GamePieceType::knight:
     {
-        Int row_change_abs = ABS(row_to - piece->row);
-        Int column_change_abs = ABS(column_to - piece->column);
-        if (row_change_abs == 1 && column_change_abs == 2 || row_change_abs == 2 && column_change_abs == 1)
-        {
-            return general_move(state, row_to, column_to);
-        }
-        else
-        {
-            return illegal_move();
-        }
+        BitBoard move = get_simple_piece_move(state, square, side, &bit_board_table->knight_table);
+        return move;
     }
     break;
 
     case GamePieceType::bishop:
     {
-        return check_diagonal_move(state, piece, row_to, column_to);
+        BitBoard move = get_sliding_piece_move(state, square, side, &bit_board_table->bishop_table);
+        return move;
     }
     break;
 
     case GamePieceType::queen:
     {
-        GameMoveCheck orthogonal_move_check = check_orthogonal_move(state, piece, row_to, column_to);
-        if (orthogonal_move_check.is_illegal)
-        {
-            return check_diagonal_move(state, piece, row_to, column_to);
-        }
-        else
-        {
-            return orthogonal_move_check;
-        }
+        BitBoard rook_move = get_sliding_piece_move(state, square, side, &bit_board_table->rook_table);
+        BitBoard bishop_move = get_sliding_piece_move(state, square, side, &bit_board_table->bishop_table);
+        BitBoard move = rook_move | bishop_move;
+        return move;
     }
     break;
 
     case GamePieceType::king:
     {
-        Int row_change = row_to - piece->row;
-        Int row_change_abs = ABS(row_change);
-        Int column_change = column_to - piece->column;
-        Int column_change_abs = ABS(column_change);
-        if (MAX(row_change_abs, column_change_abs) == 1)
-        {
-            return general_move(state, row_to, column_to);
-        }
-        else if (row_change_abs == 0 && column_change_abs == 2 && piece->moves == 0)
-        {
-            GamePiece *castling_piece;
-            if (column_change > 0)
-            {
-                for (Int column = piece->column + 1; column < BOARD_COLUMN_COUNT - 1; column++)
-                {
-                    if (is_occupied(state, piece->row, column))
-                    {
-                        return illegal_move();
-                    }
-                }
-                castling_piece = state->board[piece->row][BOARD_COLUMN_COUNT - 1];
-            }
-            else
-            {
-                for (Int column = piece->column - 1; column > 0; column--)
-                {
-                    if (is_occupied(state, piece->row, column))
-                    {
-                        return illegal_move();
-                    }
-                }
-                castling_piece = state->board[piece->row][0];
-            }
-
-            if (is_friend(state, castling_piece) &&
-                castling_piece->type == GamePieceType::rook &&
-                castling_piece->moves == 0)
-            {
-                GameMoveCheck castling_move = {};
-                if (column_change > 0)
-                {
-                    castling_move.move_type = GameMoveType::castling_king;
-                }
-                else
-                {
-                    castling_move.move_type = GameMoveType::castling_queen;
-                }
-                castling_move.castling_piece = castling_piece;
-                return castling_move;
-            }
-            else
-            {
-                return illegal_move();
-            }
-        }
-        else
-        {
-            return illegal_move();
-        }
+        BitBoard move = get_simple_piece_move(state, square, side, &bit_board_table->king_table);
+        return move;
     }
     break;
 
     case GamePieceType::pawn:
     {
-        Int direction;
-        Int final_row;
-        if (piece->side == GameSide::white)
-        {
-            direction = 1;
-            final_row = BOARD_ROW_COUNT - 1;
-        }
-        else
-        {
-            direction = -1;
-            final_row = 0;
-        }
-        Int row_change = row_to - piece->row;
-        Int column_change = column_to - piece->column;
-        Int column_change_abs = ABS(column_change);
-        if (column_change == 0)
-        {
-            GameMoveCheck pawn_orthogonal_move = {};
-            if (piece->moves == 0 && row_change == direction * 2 &&
-                !is_occupied(state, piece->row + direction * 1, piece->column) &&
-                !is_occupied(state, piece->row + direction * 2, piece->column))
-            {
-                pawn_orthogonal_move.move_type = GameMoveType::pawn_charge;
-                return pawn_orthogonal_move;
-            }
-            else if (row_change == direction * 1 &&
-                     !is_occupied(state, piece->row + direction * 1, piece->column))
-            {
-                pawn_orthogonal_move.move_type = GameMoveType::move;
-                if (row_to == final_row)
-                {
-                    pawn_orthogonal_move.is_pawn_promote = true;
-                }
-                return pawn_orthogonal_move;
-            }
-            else
-            {
-                return illegal_move();
-            }
-        }
-        else if (column_change_abs == 1 && row_change == direction * 1)
-        {
-            GameMoveCheck pawn_diagonal_move = {};
-            if (is_foe_occupied(state, row_to, column_to))
-            {
-                pawn_diagonal_move.move_type = GameMoveType::pawn_capture;
-                pawn_diagonal_move.captured_piece = state->board[row_to][column_to];
-                if (row_to == final_row)
-                {
-                    pawn_diagonal_move.is_pawn_promote = true;
-                }
-                return pawn_diagonal_move;
-            }
-            else if (!is_occupied(state, row_to, column_to) && is_foe_occupied(state, piece->row, column_to))
-            {
-                if (state->history.count > 0)
-                {
-                    GameMove *last_move = &state->history[state->history.count - 1];
-                    if (last_move->type == GameMoveType::pawn_charge &&
-                        last_move->piece->row == piece->row && last_move->piece->column == column_to)
-                    {
-                        pawn_diagonal_move.move_type = GameMoveType::en_passant;
-                        pawn_diagonal_move.captured_piece = last_move->piece;
-                        return pawn_diagonal_move;
-                    }
-                    else
-                    {
-                        return illegal_move();
-                    }
-                }
-                else
-                {
-                    return illegal_move();
-                }
-            }
-            else
-            {
-                return illegal_move();
-            }
-        }
-        else
-        {
-            return illegal_move();
-        }
+        BitBoard move = get_pawn_move(state, square, side);
+        move |= get_pawn_capture(state, square, side);
+        return move;
     }
     break;
 
     default:
     {
         ASSERT(false);
+        return 0;
     }
     break;
     }
 }
 
-Void move_game_piece(GameState *state, Int row_from, Int column_from, Int row_to, Int column_to)
-{
-    GamePiece *piece = state->board[row_from][column_from];
-    state->board[row_from][column_from] = null;
-    state->board[row_to][column_to] = piece;
-    piece->row = row_to;
-    piece->column = column_to;
-    piece->moves++;
-}
+// Void move_game_piece(GameState *state, Int row_from, Int column_from, Int row_to, Int column_to)
+// {
+//     GamePiece *piece = state->position[row_from][column_from];
+//     state->position[row_from][column_from] = null;
+//     state->position[row_to][column_to] = piece;
+//     piece->row = row_to;
+//     piece->column = column_to;
+//     piece->moves++;
+// }
 
-Void remove_game_piece(GameState *state, Int row, Int column)
-{
-    state->board[row][column] = null;
-}
+// Void remove_game_piece(GameState *state, Int row, Int column)
+// {
+//     state->position[row][column] = null;
+// }
 
-Void record_game_move(GameState *state, GameMoveType move_type, Int row_from, Int column_from, Int row_to, Int column_to)
-{
-    GameMove *move = state->history.push();
-    move->type = move_type;
-    move->piece = state->board[row_from][column_from];
-    move->row_from = row_from;
-    move->column_from = column_from;
-    move->row_to = row_to;
-    move->column_to = column_to;
+// Void record_game_move(GameState *state, GameMoveType move_type, Int row_from, Int column_from, Int row_to, Int column_to)
+// {
+//     GameMove *move = state->history.push();
+//     move->type = move_type;
+//     move->piece = state->board[row_from][column_from];
+//     move->row_from = row_from;
+//     move->column_from = column_from;
+//     move->row_to = row_to;
+//     move->column_to = column_to;
 
-    move_game_piece(state, row_from, column_from, row_to, column_to);
-    if (move_type == GameMoveType::castling_king)
-    {
-        move_game_piece(state, row_from, BOARD_COLUMN_COUNT - 1, row_to, column_to - 1);
-    }
-    else if (move_type == GameMoveType::castling_queen)
-    {
-        move_game_piece(state, row_from, 0, row_to, column_to + 1);
-    }
-    else if (move_type == GameMoveType::en_passant)
-    {
-        remove_game_piece(state, row_from, column_to);
-    }
-}
+//     move_game_piece(state, row_from, column_from, row_to, column_to);
+//     if (move_type == GameMoveType::castling_king)
+//     {
+//         move_game_piece(state, row_from, 8 - 1, row_to, column_to - 1);
+//     }
+//     else if (move_type == GameMoveType::castling_queen)
+//     {
+//         move_game_piece(state, row_from, 0, row_to, column_to + 1);
+//     }
+//     else if (move_type == GameMoveType::en_passant)
+//     {
+//         remove_game_piece(state, row_from, column_to);
+//     }
+// }

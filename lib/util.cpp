@@ -9,6 +9,29 @@ UInt align_up(UInt x, UInt mask)
     return result;
 }
 
+Int bit_count(UInt64 x)
+{
+    Int result = 0;
+    while (x)
+    {
+        UInt64 lsb = x & -x;
+        x -= lsb;
+        result++;
+    }
+    return result;
+}
+
+Int first_set(UInt64 x)
+{
+    Int result = -1;
+    while (x)
+    {
+        result++;
+        x >>= 1;
+    }
+    return result;
+}
+
 constexpr Str str(char const *c_str)
 {
     if (c_str != NULL)

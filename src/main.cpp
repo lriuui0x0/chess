@@ -510,24 +510,28 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Board board;
     fill_board_initial_state(&board, &board_mesh, 0);
 
-    Piece pieces[PIECE_COUNT];
-    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+    Array<Piece> pieces = create_array<Piece>(32);
+    for (Int square = 0; square < 64; square++)
     {
-        Piece *piece = &pieces[piece_i];
-        fill_piece_initial_state(&game_state.pieces[piece_i], piece,
-                                 &white_rook_mesh,
-                                 &white_knight_mesh,
-                                 &white_bishop_mesh,
-                                 &white_queen_mesh,
-                                 &white_king_mesh,
-                                 &white_pawn_mesh,
-                                 &black_rook_mesh,
-                                 &black_knight_mesh,
-                                 &black_bishop_mesh,
-                                 &black_queen_mesh,
-                                 &black_king_mesh,
-                                 &black_pawn_mesh,
-                                 1, 2, 3, 4, 5, 6);
+        Piece *piece = pieces.push();
+        GamePiece game_piece = game_state.position.board[square];
+        if (game_piece)
+        {
+            fill_piece_initial_state(game_piece, piece, square,
+                                     &white_rook_mesh,
+                                     &white_knight_mesh,
+                                     &white_bishop_mesh,
+                                     &white_queen_mesh,
+                                     &white_king_mesh,
+                                     &white_pawn_mesh,
+                                     &black_rook_mesh,
+                                     &black_knight_mesh,
+                                     &black_bishop_mesh,
+                                     &black_queen_mesh,
+                                     &black_king_mesh,
+                                     &black_pawn_mesh,
+                                     1, 2, 3, 4, 5, 6);
+        }
     }
 
     GhostPiece ghost_piece;
@@ -561,7 +565,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanBuffer scene_vertex_buffer;
     VulkanBuffer scene_index_buffer;
     VulkanBuffer scene_uniform_buffer;
-    ASSERT(create_scene_frame(&device, &scene_pipeline, &board, pieces, &lightmaps, &shadow_frame, &scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
+    ASSERT(create_scene_frame(&device, &scene_pipeline, &board, &pieces, &lightmaps, &shadow_frame, &scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
 
     DebugUIFrame debug_ui_frame;
     VulkanBuffer debug_ui_vertex_buffer;
@@ -849,7 +853,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         }
         else
         {
-            for (Int square_i = 0; square_i < BOARD_SQUARE_COUNT; square_i++)
+            for (Int square_i = 0; square_i < 64; square_i++)
             {
                 Real dist = check_box_collision(&ray_world, &board.collision_box[square_i]);
                 if (dist > 0)

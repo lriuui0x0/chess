@@ -53,6 +53,8 @@ Void swap(T *x, T *y)
 }
 
 UInt align_up(UInt x, UInt mask);
+Int bit_count(UInt64 x);
+Int first_set(UInt64 x);
 
 template <typename T>
 struct Buffer
@@ -71,20 +73,11 @@ T &Buffer<T>::operator[](Int index)
 }
 
 template <typename T, Int N>
-struct InlineBuffer
+struct BufferI
 {
     Int count;
     T data[N];
-
-    T &operator[](Int index);
 };
-
-template <typename T, Int N>
-T &InlineBuffer<T, N>::operator[](Int index)
-{
-    ASSERT(index >= 0 && index < N);
-    return this->data[index];
-}
 
 typedef char *CStr;
 typedef Buffer<UInt8> Str;
