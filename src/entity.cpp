@@ -46,7 +46,7 @@ struct Entity
     Vec3 scale;
     Vec4 color_overlay;
     Mesh *mesh;
-    Int lightmap_index;
+    Image *light_map;
     AnimationType animation_type;
     Animation animation;
 };
@@ -58,13 +58,13 @@ struct Board : Entity
 
 #define SQUARE_SIZE (100.0f)
 
-Void fill_board_initial_state(Board *board, Mesh *board_mesh, Int lightmap_index)
+Void fill_board_initial_state(Board *board, Mesh *board_mesh, Image *light_map)
 {
     board->pos = {0, 0, 0};
     board->rot = get_rotation_quaternion(get_basis_y(), 0);
     board->scale = {-1, -1, 1};
     board->mesh = board_mesh;
-    board->lightmap_index = lightmap_index;
+    board->light_map = light_map;
     board->color_overlay = Vec4{1, 1, 1, 1};
     board->animation_type = AnimationType::none;
 
@@ -93,135 +93,28 @@ struct Piece : Entity
     Int square;
 };
 
-Void fill_piece_initial_state(GamePiece game_piece, Piece *piece, Int square,
-                              Mesh *white_rook_mesh,
-                              Mesh *white_knight_mesh,
-                              Mesh *white_bishop_mesh,
-                              Mesh *white_queen_mesh,
-                              Mesh *white_king_mesh,
-                              Mesh *white_pawn_mesh,
-                              Mesh *black_rook_mesh,
-                              Mesh *black_knight_mesh,
-                              Mesh *black_bishop_mesh,
-                              Mesh *black_queen_mesh,
-                              Mesh *black_king_mesh,
-                              Mesh *black_pawn_mesh,
-                              Int rook_lightmap_index,
-                              Int knight_lightmap_index,
-                              Int bishop_lightmap_index,
-                              Int queen_lightmap_index,
-                              Int king_lightmap_index,
-                              Int pawn_lightmap_index)
+Void fill_piece_initial_state(GamePiece game_piece, Piece *piece, Int square, AssetStore *asset_store)
 {
     ASSERT(game_piece != NO_GAME_PIECE);
     GameSideEnum side = get_side(game_piece);
     GamePieceTypeEnum piece_type = get_piece_type(game_piece);
 
     piece->pos = get_square_pos(square);
+    piece->rot = side == GameSide::white ? get_rotation_quaternion(get_basis_y(), 0) : get_rotation_quaternion(get_basis_y(), PI);
+    piece->scale = Vec3{1, -1, 1};
     piece->square = square;
-    if (side == GameSide::white)
-    {
-        piece->rot = get_rotation_quaternion(get_basis_y(), 0);
-        piece->scale = Vec3{1, -1, 1};
-
-        switch (piece_type)
-        {
-        case GamePieceType::rook:
-        {
-            piece->mesh = white_rook_mesh;
-            piece->lightmap_index = rook_lightmap_index;
-        }
-        break;
-
-        case GamePieceType::knight:
-        {
-            piece->mesh = white_knight_mesh;
-            piece->lightmap_index = knight_lightmap_index;
-        }
-        break;
-
-        case GamePieceType::bishop:
-        {
-            piece->mesh = white_bishop_mesh;
-            piece->lightmap_index = bishop_lightmap_index;
-        }
-        break;
-
-        case GamePieceType::queen:
-        {
-            piece->mesh = white_queen_mesh;
-            piece->lightmap_index = queen_lightmap_index;
-        }
-        break;
-
-        case GamePieceType::king:
-        {
-            piece->mesh = white_king_mesh;
-            piece->lightmap_index = king_lightmap_index;
-        }
-        break;
-
-        case GamePieceType::pawn:
-        {
-            piece->mesh = white_pawn_mesh;
-            piece->lightmap_index = pawn_lightmap_index;
-        }
-        break;
-        }
-    }
-    else if (side == GameSide::black)
-    {
-        piece->rot = get_rotation_quaternion(get_basis_y(), PI);
-        piece->scale = {1, -1, 1};
-
-        switch (piece_type)
-        {
-        case GamePieceType::rook:
-        {
-            piece->mesh = black_rook_mesh;
-            piece->lightmap_index = rook_lightmap_index;
-        }
-        break;
-
-        case GamePieceType::knight:
-        {
-            piece->mesh = black_knight_mesh;
-            piece->lightmap_index = knight_lightmap_index;
-        }
-        break;
-
-        case GamePieceType::bishop:
-        {
-            piece->mesh = black_bishop_mesh;
-            piece->lightmap_index = bishop_lightmap_index;
-        }
-        break;
-
-        case GamePieceType::queen:
-        {
-            piece->mesh = black_queen_mesh;
-            piece->lightmap_index = queen_lightmap_index;
-        }
-        break;
-
-        case GamePieceType::king:
-        {
-            piece->mesh = black_king_mesh;
-            piece->lightmap_index = king_lightmap_index;
-        }
-        break;
-
-        case GamePieceType::pawn:
-        {
-            piece->mesh = black_pawn_mesh;
-            piece->lightmap_index = pawn_lightmap_index;
-        }
-        break;
-        }
-    }
-
+    piece->mesh = &asset_store->piece_meshes[side][piece_type];
+    piece->light_map = &asset_store->piece_light_maps[piece_type];
     piece->animation_type = AnimationType::none;
     piece->color_overlay = Vec4{1, 1, 1, 1};
+}
+
+Void update_piece_mesh(Piece *piece, GamePiece game_piece, AssetStore *asset_store)
+{
+    GameSideEnum side = get_side(game_piece);
+    GamePieceTypeEnum piece_type = get_piece_type(game_piece);
+    piece->mesh = &asset_store->piece_meshes[side][piece_type];
+    piece->light_map = &asset_store->piece_light_maps[piece_type];
 }
 
 struct GhostPiece : Entity
@@ -242,7 +135,7 @@ Void update_ghost_piece(GhostPiece *ghost_piece, Piece *piece, Int square)
     ghost_piece->rot = piece->rot;
     ghost_piece->scale = piece->scale;
     ghost_piece->mesh = piece->mesh;
-    ghost_piece->lightmap_index = piece->lightmap_index;
+    ghost_piece->light_map = piece->light_map;
 }
 
 Void start_move_animation(Piece *piece, Int square)

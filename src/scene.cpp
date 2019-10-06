@@ -156,16 +156,57 @@ struct SceneFrame
     VulkanBuffer uniform_buffer;
     VkDescriptorSet scene_descriptor_set;
     VkDescriptorSet board_descriptor_set;
-    Array<VkImage> lightmap_images;
-    Array<VkSampler> lightmap_samplers;
-    Array<VkDescriptorSet> lightmap_descriptor_sets;
     Array<VkDescriptorSet> piece_descriptor_sets;
     VkDescriptorSet ghost_piece_descriptor_set;
     VkSampler shadow_sampler;
     VkDescriptorSet shadow_descriptor_set;
 };
 
-Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *board, Piece *pieces, Array<Image> *lightmaps, ShadowFrame *shadow_frame, SceneFrame *frame,
+Bool create_light_map_image(VulkanDevice *device, Image *light_map, VkDescriptorSetLayout descriptor_set_layout)
+{
+    VkFormat format = VK_FORMAT_R8_UNORM;
+    if (!create_image(device, light_map->width, light_map->height,
+                      format, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &light_map->image))
+    {
+        return false;
+    }
+
+    Int image_buffer_length = sizeof(light_map->data[0]) * light_map->width * light_map->height;
+    VulkanBuffer host_image_buffer;
+    if (!create_buffer(device, image_buffer_length,
+                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &host_image_buffer))
+    {
+        return false;
+    }
+
+    memcpy(host_image_buffer.data, light_map->data, image_buffer_length);
+
+    if (!upload_texture(device, &host_image_buffer, light_map->image, light_map->width, light_map->height))
+    {
+        return false;
+    }
+
+    VkImageView image_view;
+    if (!create_image_view(device, light_map->image, format, VK_IMAGE_ASPECT_COLOR_BIT, &image_view))
+    {
+        return false;
+    }
+
+    if (!create_sampler(device, &light_map->sampler))
+    {
+        return false;
+    }
+
+    if (!allocate_descriptor_set(device, descriptor_set_layout, image_view, light_map->sampler, &light_map->descriptor_set))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *board, Piece *pieces, AssetStore *asset_store, ShadowFrame *shadow_frame, SceneFrame *frame,
                         VulkanBuffer *host_vertex_buffer, VulkanBuffer *host_index_buffer, VulkanBuffer *host_uniform_buffer)
 {
     VkSampleCountFlagBits multisample_count = get_maximum_multisample_count(device);
@@ -249,50 +290,15 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
         return false;
     }
 
-    frame->lightmap_images = create_array<VkImage>();
-    frame->lightmap_samplers = create_array<VkSampler>();
-    frame->lightmap_descriptor_sets = create_array<VkDescriptorSet>();
-    for (Int lightmap_i = 0; lightmap_i < lightmaps->count; lightmap_i++)
+    if (!create_light_map_image(device, &asset_store->board_light_map, pipeline->descriptor_set_layouts[2]))
     {
-        VkFormat format = VK_FORMAT_R8_UNORM;
-        Image *lightmap = &lightmaps->data[lightmap_i];
-        VkImage *image = frame->lightmap_images.push();
-        VkSampler *sampler = frame->lightmap_samplers.push();
-        VkDescriptorSet *descriptor_set = frame->lightmap_descriptor_sets.push();
-        if (!create_image(device, lightmap->width, lightmap->height,
-                          format, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, image))
-        {
-            return false;
-        }
+        return false;
+    }
 
-        Int image_buffer_length = sizeof(lightmap->data[0]) * lightmap->width * lightmap->height;
-        VulkanBuffer host_image_buffer;
-        if (!create_buffer(device, image_buffer_length,
-                           VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &host_image_buffer))
-        {
-            return false;
-        }
-
-        memcpy(host_image_buffer.data, lightmap->data, image_buffer_length);
-
-        if (!upload_texture(device, &host_image_buffer, *image, lightmap->width, lightmap->height))
-        {
-            return false;
-        }
-
-        VkImageView image_view;
-        if (!create_image_view(device, *image, format, VK_IMAGE_ASPECT_COLOR_BIT, &image_view))
-        {
-            return false;
-        }
-
-        if (!create_sampler(device, sampler))
-        {
-            return false;
-        }
-
-        if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[2], image_view, *sampler, descriptor_set))
+    for (Int i = 0; i < GamePieceType::count; i++)
+    {
+        Image *light_map = &asset_store->piece_light_maps[i];
+        if (!create_light_map_image(device, light_map, pipeline->descriptor_set_layouts[2]))
         {
             return false;
         }

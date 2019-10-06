@@ -47,6 +47,8 @@ enum
     queen,
     king,
     pawn,
+
+    count,
 };
 }
 typedef Int GamePieceTypeEnum;
@@ -57,6 +59,8 @@ enum
 {
     white,
     black,
+
+    count,
 };
 }
 typedef Int GameSideEnum;
@@ -71,8 +75,8 @@ typedef UInt8 GamePiece;
 
 GamePiece get_piece(GameSideEnum side, GamePieceTypeEnum piece_type)
 {
-    ASSERT(side >= 0 && side < 2);
-    ASSERT(piece_type >= 0 && piece_type < 6);
+    ASSERT(side >= 0 && side < GameSide::count);
+    ASSERT(piece_type >= 0 && GamePieceType::count);
     GamePiece piece = piece_type | (side << 3);
     return piece;
 }
@@ -81,7 +85,7 @@ GamePieceTypeEnum get_piece_type(GamePiece piece)
 {
     ASSERT(piece != NO_GAME_PIECE);
     GamePieceTypeEnum piece_type = piece & (0x7);
-    ASSERT(piece_type >= 0 && piece_type < 6);
+    ASSERT(piece_type >= 0 && piece_type < GamePieceType::count);
     return piece_type;
 }
 
@@ -89,7 +93,7 @@ GameSideEnum get_side(GamePiece piece)
 {
     ASSERT(piece != NO_GAME_PIECE);
     GameSideEnum side = piece >> 3;
-    ASSERT(side >= 0 && side < 2);
+    ASSERT(side >= 0 && side < GameSide::count);
     return side;
 }
 
@@ -177,14 +181,14 @@ Bool is_empty(GamePiece piece)
 Bool is_friend(GameState *state, GamePiece piece)
 {
     GameSideEnum side = get_side(piece);
-    Bool result = piece != NO_GAME_PIECE && state->player_side == side;
+    Bool result = piece != NO_GAME_PIECE && state->current_side == side;
     return result;
 }
 
 Bool is_foe(GameState *state, GamePiece piece)
 {
     GameSideEnum side = get_side(piece);
-    Bool result = piece != NO_GAME_PIECE && state->player_side != side;
+    Bool result = piece != NO_GAME_PIECE && state->current_side != side;
     return result;
 }
 
@@ -445,17 +449,58 @@ BitBoard check_game_move(GameState *state, Int square, BitBoardTable *bit_board_
     }
 }
 
+BitBoard check_attack_by(GameState *state, Int square, GameSideEnum side, BitBoardTable *bit_board_table)
+{
+    return 0;
+}
+
 typedef UInt16 GameMove;
 
 namespace GameMoveType
 {
 enum
 {
-    castling = 0x1,
-    en_passant = 0x2,
+    general,
+    castling,
+    en_passant,
+    promotion,
 };
 };
 typedef Int GameMoveTypeEnum;
+
+BufferI<GamePieceTypeEnum, 4> promotion_list = {4, {GamePieceType::queen, GamePieceType::rook, GamePieceType::bishop, GamePieceType::knight}};
+
+Int get_square_from(GameMove move)
+{
+    Int result = move & 0x3f;
+    return result;
+}
+
+Int get_square_to(GameMove move)
+{
+    Int result = (move >> 6) & 0x3f;
+    return result;
+}
+
+GameMoveTypeEnum get_move_type(GameMove move)
+{
+    GameMoveTypeEnum result = (move >> 12) & 0x3;
+    return result;
+}
+
+Int get_promotion_piece_index(GameMove move)
+{
+    Int result = (move >> 14) & 0x3;
+    return result;
+}
+
+GameMove add_promotion_piece_type(GameMove move, Int promotion_index)
+{
+    ASSERT(get_move_type(move) == GameMoveType::promotion);
+    ASSERT(promotion_index >= 0 && promotion_index < promotion_list.count);
+    GameMove result = move | (promotion_index << 14);
+    return result;
+}
 
 GameMove get_game_move(GameState *state, GamePiece piece, Int square_from, Int square_to)
 {
@@ -476,26 +521,12 @@ GameMove get_game_move(GameState *state, GamePiece piece, Int square_from, Int s
         {
             move |= GameMoveType::en_passant << 12;
         }
+        else if (bit_square(square_to) & (0xffllu | 0xffllu << 56))
+        {
+            move |= GameMoveType::promotion << 12;
+        }
     }
     return move;
-}
-
-Int get_square_from(GameMove move)
-{
-    Int result = move & 0x3f;
-    return result;
-}
-
-Int get_square_to(GameMove move)
-{
-    Int result = (move >> 6) & 0x3f;
-    return result;
-}
-
-Int get_move_type(GameMove move)
-{
-    Int result = (move >> 12) & 0x3;
-    return result;
 }
 
 Int get_capture_square(GameState *state, GameMove move)
@@ -557,6 +588,8 @@ Void record_game_move(GameState *state, GameMove move)
         remove_game_peice(state, capture_square);
     }
     GamePiece piece = remove_game_peice(state, square_from);
+    GameSideEnum side = get_side(piece);
+    GamePieceTypeEnum piece_type = get_piece_type(piece);
     add_game_piece(state, square_to, piece);
 
     GameMoveTypeEnum move_type = get_move_type(move);
@@ -569,9 +602,14 @@ Void record_game_move(GameState *state, GameMove move)
         ASSERT(get_piece_type(rook_piece) == GamePieceType::rook);
         add_game_piece(state, rook_square_to, rook_piece);
     }
+    else if (move_type == GameMoveType::promotion)
+    {
+        ASSERT(piece_type == GamePieceType::pawn);
+        GamePieceTypeEnum promotion_piece_type = promotion_list[get_promotion_piece_index(move)];
+        GamePiece promotion_piece = get_piece(side, promotion_piece_type);
+        add_game_piece(state, square_to, promotion_piece);
+    }
 
-    GamePieceTypeEnum piece_type = get_piece_type(piece);
-    GameSideEnum side = get_side(piece);
     Int king_square = side == GameSide::white ? 4 : 4 + 56;
     Int rook_square_queen_side = side == GameSide::white ? 0 : 0 + 56;
     Int rook_square_king_side = side == GameSide::white ? 7 : 7 + 56;
@@ -590,7 +628,7 @@ Void record_game_move(GameState *state, GameMove move)
 
     if (piece_type == GamePieceType::pawn && ABS(square_to - square_from) == 16)
     {
-        state->en_passant[side] = square_from;
+        state->en_passant[side] = (square_from + square_to) / 2;
     }
     else
     {

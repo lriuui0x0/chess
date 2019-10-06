@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../lib/util.hpp"
+#include "../lib/vulkan.hpp"
 #include "math.cpp"
 #include "collision.cpp"
 #include "game.cpp"
@@ -157,6 +158,10 @@ struct Image
     Int width;
     Int height;
     UInt8 *data;
+
+    VkImage image;
+    VkSampler sampler;
+    VkDescriptorSet descriptor_set;
 };
 
 Bool deserialise_image(Str buffer, Image *image)
@@ -274,5 +279,127 @@ Bool deserialise_bit_board_table(Str buffer, BitBoardTable *table)
     {
         return false;
     }
+    return true;
+}
+
+struct AssetStore
+{
+    Mesh board_mesh;
+    Mesh piece_meshes[GameSide::count][GamePieceType::count];
+    Image board_light_map;
+    Image piece_light_maps[GamePieceType::count];
+    BitBoardTable bit_board_table;
+    Font debug_font;
+};
+
+Bool load_asset(AssetStore *asset_store)
+{
+    Str file_contents;
+    if (read_file("../asset/board.asset", &file_contents))
+    {
+        if (!deserialise_mesh(file_contents, &asset_store->board_mesh))
+        {
+            return false;
+        }
+    }
+    else
+    {
+        return false;
+    }
+
+    CStr piece_meshes_paths[GameSide::count][GamePieceType::count] = {
+        {
+            "../asset/rook_white.asset",
+            "../asset/knight_white.asset",
+            "../asset/bishop_white.asset",
+            "../asset/queen_white.asset",
+            "../asset/king_white.asset",
+            "../asset/pawn_white.asset",
+        },
+        {
+            "../asset/rook_black.asset",
+            "../asset/knight_black.asset",
+            "../asset/bishop_black.asset",
+            "../asset/queen_black.asset",
+            "../asset/king_black.asset",
+            "../asset/pawn_black.asset",
+        }};
+    for (GameSideEnum side = 0; side < GameSide::count; side++)
+    {
+        for (GamePieceTypeEnum piece_type = 0; piece_type < GamePieceType::count; piece_type++)
+        {
+            if (read_file(piece_meshes_paths[side][piece_type], &file_contents))
+            {
+                if (!deserialise_mesh(file_contents, &asset_store->piece_meshes[side][piece_type]))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+        }
+    }
+
+    if (read_file("../asset/board_lightmap.asset", &file_contents))
+    {
+        if (!deserialise_image(file_contents, &asset_store->board_light_map))
+        {
+            return false;
+        }
+    }
+    else
+    {
+        return false;
+    }
+
+    CStr piece_light_maps_paths[GamePieceType::count] = {
+        "../asset/rook_lightmap.asset",
+        "../asset/knight_lightmap.asset",
+        "../asset/bishop_lightmap.asset",
+        "../asset/queen_lightmap.asset",
+        "../asset/king_lightmap.asset",
+        "../asset/pawn_lightmap.asset",
+    };
+    for (GamePieceTypeEnum piece_type = 0; piece_type < GamePieceType::count; piece_type++)
+    {
+        if (read_file(piece_light_maps_paths[piece_type], &file_contents))
+        {
+            if (!deserialise_image(file_contents, &asset_store->piece_light_maps[piece_type]))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    if (read_file("../asset/bitboard.asset", &file_contents))
+    {
+        if (!deserialise_bit_board_table(file_contents, &asset_store->bit_board_table))
+        {
+            return false;
+        }
+    }
+    else
+    {
+        return false;
+    }
+
+    if (read_file("../asset/debug_font.asset", &file_contents))
+    {
+        if (!deserialise_font(file_contents, &asset_store->debug_font))
+        {
+            return false;
+        }
+    }
+    else
+    {
+        return false;
+    }
+
     return true;
 }

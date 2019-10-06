@@ -10,71 +10,6 @@
 #include "debug_collision.cpp"
 #include "debug_move.cpp"
 
-Bool read_mesh(CStr filename, Mesh *mesh)
-{
-    Str file_contents;
-    if (!read_file(filename, &file_contents))
-    {
-        return false;
-    }
-
-    if (!deserialise_mesh(file_contents, mesh))
-    {
-        return false;
-    }
-
-    return true;
-}
-
-Bool read_image(CStr filename, Image *image)
-{
-    Str file_contents;
-    if (!read_file(filename, &file_contents))
-    {
-        return false;
-    }
-
-    if (!deserialise_image(file_contents, image))
-    {
-        return false;
-    }
-
-    return true;
-}
-
-Bool read_font(CStr filename, Font *font)
-{
-    Str file_contents;
-    if (!read_file(filename, &file_contents))
-    {
-        return false;
-    }
-
-    if (!deserialise_font(file_contents, font))
-    {
-        return false;
-    }
-
-    return true;
-}
-
-BitBoardTable bit_board_table;
-Bool read_bit_board_table(CStr filename, BitBoardTable *bit_board_table)
-{
-    Str file_contents;
-    if (!read_file(filename, &file_contents))
-    {
-        return false;
-    }
-
-    if (!deserialise_bit_board_table(file_contents, bit_board_table))
-    {
-        return false;
-    }
-
-    return true;
-}
-
 Void write_entity_vertex_data(Entity *entity, VulkanBuffer *scene_vertex_buffer, VulkanBuffer *scene_index_buffer)
 {
     Mesh *mesh = entity->mesh;
@@ -266,7 +201,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
     vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 3, 1, &scene_frame->shadow_descriptor_set, 0, null);
 
     vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 1, 1, &scene_frame->board_descriptor_set, 0, null);
-    vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 2, 1, &scene_frame->lightmap_descriptor_sets[board->lightmap_index], 0, null);
+    vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 2, 1, &board->light_map->descriptor_set, 0, null);
     vkCmdDrawIndexed(scene_frame->command_buffer, board->mesh->index_count, 1, board->mesh->index_offset, board->mesh->vertex_offset, 0);
 
     vkCmdEndRenderPass(scene_frame->command_buffer);
@@ -330,9 +265,9 @@ Bool render_vulkan_frame(VulkanDevice *device,
         if (ghost_piece == null || piece != ghost_piece->shadowed_piece)
         {
             Mesh *mesh = pieces[piece_i].mesh;
-            Int lightmap_index = pieces[piece_i].lightmap_index;
+            Image *light_map = pieces[piece_i].light_map;
             vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
-            vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 2, 1, &scene_frame->lightmap_descriptor_sets[lightmap_index], 0, null);
+            vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 2, 1, &light_map->descriptor_set, 0, null);
             vkCmdDrawIndexed(scene_frame->command_buffer, mesh->index_count, 1, mesh->index_offset, mesh->vertex_offset, 0);
         }
     }
@@ -340,8 +275,9 @@ Bool render_vulkan_frame(VulkanDevice *device,
     if (ghost_piece)
     {
         Mesh *mesh = ghost_piece->mesh;
+        Image *light_map = ghost_piece->light_map;
         vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 1, 1, &scene_frame->ghost_piece_descriptor_set, 0, null);
-        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 2, 1, &scene_frame->lightmap_descriptor_sets[ghost_piece->lightmap_index], 0, null);
+        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 2, 1, &light_map->descriptor_set, 0, null);
         vkCmdDrawIndexed(scene_frame->command_buffer, mesh->index_count, 1, mesh->index_offset, mesh->vertex_offset, 0);
     }
 
@@ -598,6 +534,7 @@ struct State
     StatePhaseEnum phase;
     Piece *selected_piece;
     GameMove executing_move;
+    Int promotion_index;
     Int piece_change_count;
     PieceChange piece_changes[2];
     Int last_hover_square;
@@ -658,65 +595,19 @@ Void update_piece_changes(State *state, Piece **piece_mapping)
     }
 }
 
+AssetStore asset_store;
+
 int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int show_code)
 {
     RandomGenerator random_generator;
     random_generator.seed = get_current_timestamp();
 
-    Mesh board_mesh;
-    ASSERT(read_mesh("../asset/board.asset", &board_mesh));
-
-    Mesh black_rook_mesh;
-    ASSERT(read_mesh("../asset/rook_black.asset", &black_rook_mesh));
-    Mesh black_knight_mesh;
-    ASSERT(read_mesh("../asset/knight_black.asset", &black_knight_mesh));
-    Mesh black_bishop_mesh;
-    ASSERT(read_mesh("../asset/bishop_black.asset", &black_bishop_mesh));
-    Mesh black_queen_mesh;
-    ASSERT(read_mesh("../asset/queen_black.asset", &black_queen_mesh));
-    Mesh black_king_mesh;
-    ASSERT(read_mesh("../asset/king_black.asset", &black_king_mesh));
-    Mesh black_pawn_mesh;
-    ASSERT(read_mesh("../asset/pawn_black.asset", &black_pawn_mesh));
-
-    Mesh white_rook_mesh;
-    ASSERT(read_mesh("../asset/rook_white.asset", &white_rook_mesh));
-    Mesh white_knight_mesh;
-    ASSERT(read_mesh("../asset/knight_white.asset", &white_knight_mesh));
-    Mesh white_bishop_mesh;
-    ASSERT(read_mesh("../asset/bishop_white.asset", &white_bishop_mesh));
-    Mesh white_queen_mesh;
-    ASSERT(read_mesh("../asset/queen_white.asset", &white_queen_mesh));
-    Mesh white_king_mesh;
-    ASSERT(read_mesh("../asset/king_white.asset", &white_king_mesh));
-    Mesh white_pawn_mesh;
-    ASSERT(read_mesh("../asset/pawn_white.asset", &white_pawn_mesh));
-
-    Array<Image> lightmaps = create_array<Image>();
-    Image *board_lightmap = lightmaps.push();
-    ASSERT(read_image("../asset/board_lightmap.asset", board_lightmap));
-    Image *rook_lightmap = lightmaps.push();
-    ASSERT(read_image("../asset/rook_lightmap.asset", rook_lightmap));
-    Image *knight_lightmap = lightmaps.push();
-    ASSERT(read_image("../asset/knight_lightmap.asset", knight_lightmap));
-    Image *bishop_lightmap = lightmaps.push();
-    ASSERT(read_image("../asset/bishop_lightmap.asset", bishop_lightmap));
-    Image *queen_lightmap = lightmaps.push();
-    ASSERT(read_image("../asset/queen_lightmap.asset", queen_lightmap));
-    Image *king_lightmap = lightmaps.push();
-    ASSERT(read_image("../asset/king_lightmap.asset", king_lightmap));
-    Image *pawn_lightmap = lightmaps.push();
-    ASSERT(read_image("../asset/pawn_lightmap.asset", pawn_lightmap));
-
-    Font debug_font;
-    ASSERT(read_font("../asset/debug_font.asset", &debug_font));
-
-    ASSERT(read_bit_board_table("../asset/bitboard.asset", &bit_board_table));
+    ASSERT(load_asset(&asset_store));
 
     GameState game_state = get_initial_game_state();
 
     Board board;
-    fill_board_initial_state(&board, &board_mesh, 0);
+    fill_board_initial_state(&board, &asset_store.board_mesh, &asset_store.board_light_map);
 
     Piece pieces[ENTITY_PIECE_COUNT];
     Piece *piece_mapping[64] = {};
@@ -726,20 +617,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         if (!is_empty(game_piece))
         {
             Piece *piece = &pieces[piece_i++];
-            fill_piece_initial_state(game_piece, piece, square,
-                                     &white_rook_mesh,
-                                     &white_knight_mesh,
-                                     &white_bishop_mesh,
-                                     &white_queen_mesh,
-                                     &white_king_mesh,
-                                     &white_pawn_mesh,
-                                     &black_rook_mesh,
-                                     &black_knight_mesh,
-                                     &black_bishop_mesh,
-                                     &black_queen_mesh,
-                                     &black_king_mesh,
-                                     &black_pawn_mesh,
-                                     1, 2, 3, 4, 5, 6);
+            fill_piece_initial_state(game_piece, piece, square, &asset_store);
             piece_mapping[square] = piece;
         }
     }
@@ -778,11 +656,11 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanBuffer scene_vertex_buffer;
     VulkanBuffer scene_index_buffer;
     VulkanBuffer scene_uniform_buffer;
-    ASSERT(create_scene_frame(&device, &scene_pipeline, &board, pieces, &lightmaps, &shadow_frame, &scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
+    ASSERT(create_scene_frame(&device, &scene_pipeline, &board, pieces, &asset_store, &shadow_frame, &scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
 
     DebugUIFrame debug_ui_frame;
     VulkanBuffer debug_ui_vertex_buffer;
-    ASSERT(create_debug_ui_frame(&device, &debug_ui_pipeline, &debug_font, &scene_frame, &debug_ui_frame, &debug_ui_vertex_buffer));
+    ASSERT(create_debug_ui_frame(&device, &debug_ui_pipeline, &asset_store.debug_font, &scene_frame, &debug_ui_frame, &debug_ui_vertex_buffer));
 
     DebugCollisionFrame debug_collision_frame;
     VulkanBuffer debug_collision_vertex_buffer;
@@ -851,7 +729,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
                 if (key_code == WindowMessageKeyCode::key_d)
                 {
-                    input.keyup_d = true;
+                    input.keyup_d = false;
                     input.keydown_d = true;
                 }
                 else if (key_code == WindowMessageKeyCode::key_a)
@@ -1078,20 +956,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
         }
 
-        // NOTE: Record game move
-        if (state.phase == StatePhase::animate)
-        {
-            ASSERT(state.selected_piece);
-            if (state.selected_piece->animation_type == AnimationType::none)
-            {
-                record_game_move(&game_state, state.executing_move);
-                update_piece_changes(&state, piece_mapping);
-
-                state.phase = StatePhase::select;
-                state.selected_piece = null;
-            }
-        }
-
         BitBoard all_moves = 0;
         Bool show_ghost_piece = false;
         if (state.phase == StatePhase::select)
@@ -1116,7 +980,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         else if (state.phase == StatePhase::execute)
         {
             ASSERT(state.selected_piece);
-            all_moves = check_game_move(&game_state, state.selected_piece->square, &bit_board_table);
+            all_moves = check_game_move(&game_state, state.selected_piece->square, &asset_store.bit_board_table);
 
             Bool selection_changed = false;
             // NOTE: Change piece selection
@@ -1220,6 +1084,55 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                     {
                         stop_illegal_flash_animation(&ghost_piece);
                     }
+                }
+            }
+        }
+        else if (state.phase == StatePhase::promote)
+        {
+            // NOTE: Confirm promotion
+            if (input.click_left)
+            {
+                stop_flash_animation(state.selected_piece);
+                GameMove promotion_move = add_promotion_piece_type(state.executing_move, state.promotion_index);
+                record_game_move(&game_state, promotion_move);
+                update_piece_changes(&state, piece_mapping);
+                state.phase = StatePhase::select;
+                state.selected_piece = null;
+                game_state.current_side = oppose(game_state.current_side);
+            }
+            // NOTE: Change promotion
+            else if (input.click_right)
+            {
+                state.promotion_index = (state.promotion_index + 1) % promotion_list.count;
+                GamePiece game_piece = game_state.position.board[state.selected_piece->square];
+                GamePiece promoted_piece = get_piece(get_side(game_piece), promotion_list[state.promotion_index]);
+                update_piece_mesh(state.selected_piece, promoted_piece, &asset_store);
+            }
+        }
+        else if (state.phase == StatePhase::animate)
+        {
+            ASSERT(state.selected_piece);
+            if (state.selected_piece->animation_type == AnimationType::none)
+            {
+                GameMoveTypeEnum move_type = get_move_type(state.executing_move);
+                // NOTE: Start promotion
+                if (move_type == GameMoveType::promotion)
+                {
+                    state.promotion_index = 0;
+                    GamePiece game_piece = game_state.position.board[state.selected_piece->square];
+                    GamePiece promoted_piece = get_piece(get_side(game_piece), promotion_list[state.promotion_index]);
+                    update_piece_mesh(state.selected_piece, promoted_piece, &asset_store);
+                    start_flash_animation(state.selected_piece);
+                    state.phase = StatePhase::promote;
+                }
+                // NOTE: Record game move
+                else
+                {
+                    record_game_move(&game_state, state.executing_move);
+                    update_piece_changes(&state, piece_mapping);
+                    state.phase = StatePhase::select;
+                    state.selected_piece = null;
+                    game_state.current_side = oppose(game_state.current_side);
                 }
             }
         }
@@ -1413,7 +1326,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
             // NOTE: Debug UI
             Vec2 debug_ui_start_pos = {-0.95, -0.95};
-            debug_ui_draw_state = create_debug_ui_draw_state(&debug_font, window_width, window_height, &debug_ui_vertex_buffer, debug_ui_start_pos);
+            debug_ui_draw_state = create_debug_ui_draw_state(&asset_store.debug_font, window_width, window_height, &debug_ui_vertex_buffer, debug_ui_start_pos);
 
             debug_ui_draw_str(&debug_ui_draw_state, str("camera"));
             debug_ui_draw_newline(&debug_ui_draw_state);
@@ -1458,6 +1371,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             {
                 debug_ui_draw_str(&debug_ui_draw_state, str("<no>"));
             }
+            debug_ui_draw_newline(&debug_ui_draw_state);
+
+            debug_ui_draw_str(&debug_ui_draw_state, str("current side: "));
+            debug_ui_draw_str(&debug_ui_draw_state, game_state.current_side == GameSide::white ? str("white") : str("black"));
             debug_ui_draw_newline(&debug_ui_draw_state);
 
             // NOTE: Debug move
