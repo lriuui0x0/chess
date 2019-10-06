@@ -160,17 +160,64 @@ enum
 struct GamePosition
 {
     GamePiece board[64];
-    BitBoard side_occupancy[2];
+    BitBoard occupancy_side[GameSide::count];
+    BitBoard occupancy_piece_type[GamePieceType::count];
 };
+
+struct GameHistoryState
+{
+    Int castling[GameSide::count];
+    Int en_passant;
+    GamePiece captured_piece;
+};
+#define MAX_HISTORY_STATE (1000)
 
 struct GameState
 {
+    BitBoardTable *bit_board_table;
     GamePosition position;
     GameSideEnum player_side;
     GameSideEnum current_side;
-    Int castling[2];
-    Int en_passant[2];
+
+    BufferI<GameHistoryState, MAX_HISTORY_STATE> history_states;
+    Int history_index;
 };
+
+GameHistoryState *get_history_state(GameState *state)
+{
+    ASSERT(state->history_index >= 0 && state->history_index < MAX_HISTORY_STATE);
+    GameHistoryState *history_state = &state->history_states[state->history_index];
+    return history_state;
+}
+
+GameHistoryState *push_history_state(GameState *state)
+{
+    GameHistoryState *old_history_state = get_history_state(state);
+    state->history_index = (state->history_index + 1) % MAX_HISTORY_STATE;
+    state->history_states.count = MIN(MAX_HISTORY_STATE, state->history_states.count + 1);
+    GameHistoryState *history_state = &state->history_states[state->history_index];
+
+    history_state->castling[0] = old_history_state->castling[0];
+    history_state->castling[1] = old_history_state->castling[1];
+    history_state->en_passant = NO_SQUARE;
+    history_state->captured_piece = NO_GAME_PIECE;
+    return history_state;
+}
+
+GameHistoryState *pop_history_state(GameState *state)
+{
+    if (state->history_states.count > 1)
+    {
+        GameHistoryState *history_state = get_history_state(state);
+        state->history_index = (state->history_index - 1 + MAX_HISTORY_STATE) % MAX_HISTORY_STATE;
+        state->history_states.count--;
+        return history_state;
+    }
+    else
+    {
+        return null;
+    }
+}
 
 Bool is_empty(GamePiece piece)
 {
@@ -214,27 +261,36 @@ Int get_square(Int row, Int column)
 Void add_game_piece(GameState *state, Int square, GamePiece piece)
 {
     GameSideEnum side = get_side(piece);
+    GamePieceTypeEnum piece_type = get_piece_type(piece);
     state->position.board[square] = piece;
-    state->position.side_occupancy[side] |= bit_square(square);
+    state->position.occupancy_side[side] |= bit_square(square);
+    state->position.occupancy_piece_type[piece_type] |= bit_square(square);
 }
 
 GamePiece remove_game_peice(GameState *state, Int square)
 {
     GamePiece piece = state->position.board[square];
     GameSideEnum side = get_side(piece);
+    GamePieceTypeEnum piece_type = get_piece_type(piece);
     state->position.board[square] = NO_GAME_PIECE;
-    state->position.side_occupancy[side] &= ~bit_square(square);
+    state->position.occupancy_side[side] &= ~bit_square(square);
+    state->position.occupancy_piece_type[piece_type] &= ~bit_square(square);
     return piece;
 }
 
-GameState get_initial_game_state()
+GameState get_initial_game_state(BitBoardTable *bit_board_table)
 {
     GameState state = {};
+    state.bit_board_table = bit_board_table;
     memset(state.position.board, NO_GAME_PIECE, sizeof(state.position.board));
     state.player_side = GameSide::white;
     state.current_side = GameSide::white;
-    state.castling[0] = state.castling[1] = GameCastlingMask::both_side;
-    state.en_passant[0] = state.en_passant[1] = NO_SQUARE;
+
+    state.history_states.count = 1;
+    GameHistoryState *history_state = get_history_state(&state);
+    history_state->castling[GameSide::white] = history_state->castling[GameSide::black] = GameCastlingMask::both_side;
+    history_state->en_passant = NO_SQUARE;
+    history_state->captured_piece = NO_GAME_PIECE;
 
     add_game_piece(&state, get_square(0, 0), get_piece(GameSide::white, GamePieceType::rook));
     add_game_piece(&state, get_square(0, 1), get_piece(GameSide::white, GamePieceType::knight));
@@ -267,7 +323,7 @@ GameState get_initial_game_state()
 
 BitBoard get_both_occupancy(GameState *state)
 {
-    BitBoard occupancy = state->position.side_occupancy[0] | state->position.side_occupancy[1];
+    BitBoard occupancy = state->position.occupancy_side[0] | state->position.occupancy_side[1];
     return occupancy;
 }
 
@@ -278,13 +334,13 @@ BitBoard check_sliding_piece_move(GameState *state, Int square, GameSideEnum sid
     BitBoard blocker_mask = table_square->blocker_mask;
     BitBoard blocker = blocker_mask & occupancy;
     UInt64 hash = (blocker * table_square->magic) >> (64 - table_square->blocker_bit_count);
-    BitBoard move = table_square->move[hash] & ~state->position.side_occupancy[side];
+    BitBoard move = table_square->move[hash] & ~state->position.occupancy_side[side];
     return move;
 }
 
 BitBoard check_simple_piece_move(GameState *state, Int square, GameSideEnum side, SimplePieceTable *simple_piece_table)
 {
-    BitBoard move = simple_piece_table->move[square] & ~state->position.side_occupancy[side];
+    BitBoard move = simple_piece_table->move[square] & ~state->position.occupancy_side[side];
     return move;
 }
 
@@ -325,12 +381,12 @@ BitBoard check_pawn_move(GameState *state, Int square, GameSideEnum side)
 
 BitBoard check_pawn_capture(GameState *state, Int square, GameSideEnum side)
 {
+    GameHistoryState *history_state = get_history_state(state);
     BitBoard square_bit = bit_square(square);
-    BitBoard oppose_occupancy = state->position.side_occupancy[oppose(side)];
-    Int en_passant_square = state->en_passant[oppose(side)];
-    if (en_passant_square != NO_SQUARE)
+    BitBoard oppose_occupancy = state->position.occupancy_side[oppose(side)];
+    if (history_state->en_passant != NO_SQUARE)
     {
-        oppose_occupancy |= bit_square(en_passant_square);
+        oppose_occupancy |= bit_square(history_state->en_passant);
     }
 
     BitBoard left_side_mask = 0xfefefefefefefefe;
@@ -358,9 +414,10 @@ BitBoard check_pawn_capture(GameState *state, Int square, GameSideEnum side)
 
 BitBoard check_castling_move(GameState *state, GameSideEnum side)
 {
+    GameHistoryState *history_state = get_history_state(state);
     BitBoard occupancy = get_both_occupancy(state);
     BitBoard move = 0;
-    if (state->castling[side] & GameCastlingMask::queen_side)
+    if (history_state->castling[side] & GameCastlingMask::queen_side)
     {
         BitBoard blocker_mask = side == GameSide::white ? 0xellu : 0xellu << 56;
         BitBoard occupancy = get_both_occupancy(state);
@@ -371,7 +428,7 @@ BitBoard check_castling_move(GameState *state, GameSideEnum side)
         }
     }
 
-    if (state->castling[side] & GameCastlingMask::king_side)
+    if (history_state->castling[side] & GameCastlingMask::king_side)
     {
         BitBoard blocker_mask = side == GameSide::white ? 0x60llu : 0x60llu << 56;
         if (!(blocker_mask & occupancy))
@@ -388,9 +445,9 @@ BitBoard check_game_move(GameState *state, Int square, BitBoardTable *bit_board_
     ASSERT(square >= 0 && square < 64);
     GamePiece piece = state->position.board[square];
     ASSERT(!is_empty(piece));
-    GamePieceTypeEnum piece_type = get_piece_type(piece);
-    GameSideEnum side = get_side(piece);
 
+    GameSideEnum side = get_side(piece);
+    GamePieceTypeEnum piece_type = get_piece_type(piece);
     switch (piece_type)
     {
     case GamePieceType::rook:
@@ -449,9 +506,22 @@ BitBoard check_game_move(GameState *state, Int square, BitBoardTable *bit_board_
     }
 }
 
-BitBoard check_attack_by(GameState *state, Int square, GameSideEnum side, BitBoardTable *bit_board_table)
+BitBoard check_attack_by(GameState *state, Int square, GameSideEnum side)
 {
-    return 0;
+    BitBoard attacks = 0;
+    BitBoard rook_attack = check_sliding_piece_move(state, square, side, &state->bit_board_table->rook_table);
+    attacks |= rook_attack & state->position.occupancy_piece_type[GamePieceType::rook];
+    BitBoard knight_attack = check_simple_piece_move(state, square, side, &state->bit_board_table->knight_table);
+    attacks |= knight_attack & state->position.occupancy_piece_type[GamePieceType::knight];
+    BitBoard bishop_attack = check_sliding_piece_move(state, square, side, &state->bit_board_table->bishop_table);
+    attacks |= bishop_attack & state->position.occupancy_piece_type[GamePieceType::bishop];
+    BitBoard queen_attack = rook_attack | bishop_attack;
+    attacks |= queen_attack & state->position.occupancy_piece_type[GamePieceType::queen];
+    BitBoard king_attack = check_simple_piece_move(state, square, side, &state->bit_board_table->king_table);
+    attacks |= king_attack & state->position.occupancy_piece_type[GamePieceType::king];
+    BitBoard pawn_attack = check_pawn_capture(state, square, side);
+    attacks |= pawn_attack & state->position.occupancy_piece_type[GamePieceType::pawn];
+    return attacks;
 }
 
 typedef UInt16 GameMove;
@@ -502,9 +572,11 @@ GameMove add_promotion_piece_type(GameMove move, Int promotion_index)
     return result;
 }
 
-GameMove get_game_move(GameState *state, GamePiece piece, Int square_from, Int square_to)
+GameMove get_game_move(GameState *state, Int square_from, Int square_to)
 {
     GameMove move = square_from | (square_to << 6);
+
+    GamePiece piece = state->position.board[square_from];
     GamePieceTypeEnum piece_type = get_piece_type(piece);
     if (piece_type == GamePieceType::king)
     {
@@ -579,13 +651,15 @@ GameMove get_castling_rook_move(GameMove move)
 
 Void record_game_move(GameState *state, GameMove move)
 {
+    GameHistoryState *history_state = push_history_state(state);
     Int square_from = get_square_from(move);
     Int square_to = get_square_to(move);
     Int capture_square = get_capture_square(state, move);
 
     if (capture_square != NO_SQUARE)
     {
-        remove_game_peice(state, capture_square);
+        history_state->captured_piece = remove_game_peice(state, capture_square);
+        ASSERT(!is_empty(history_state->captured_piece));
     }
     GamePiece piece = remove_game_peice(state, square_from);
     GameSideEnum side = get_side(piece);
@@ -602,7 +676,8 @@ Void record_game_move(GameState *state, GameMove move)
         ASSERT(get_piece_type(rook_piece) == GamePieceType::rook);
         add_game_piece(state, rook_square_to, rook_piece);
     }
-    else if (move_type == GameMoveType::promotion)
+
+    if (move_type == GameMoveType::promotion)
     {
         ASSERT(piece_type == GamePieceType::pawn);
         GamePieceTypeEnum promotion_piece_type = promotion_list[get_promotion_piece_index(move)];
@@ -615,23 +690,103 @@ Void record_game_move(GameState *state, GameMove move)
     Int rook_square_king_side = side == GameSide::white ? 7 : 7 + 56;
     if (square_from == king_square || square_to == king_square)
     {
-        state->castling[side] &= ~GameCastlingMask::both_side;
+        history_state->castling[side] &= ~GameCastlingMask::both_side;
     }
     if (square_from == rook_square_queen_side || square_to == rook_square_queen_side)
     {
-        state->castling[side] &= ~GameCastlingMask::queen_side;
+        history_state->castling[side] &= ~GameCastlingMask::queen_side;
     }
     if (square_from == rook_square_king_side || square_to == rook_square_king_side)
     {
-        state->castling[side] &= ~GameCastlingMask::king_side;
+        history_state->castling[side] &= ~GameCastlingMask::king_side;
     }
 
     if (piece_type == GamePieceType::pawn && ABS(square_to - square_from) == 16)
     {
-        state->en_passant[side] = (square_from + square_to) / 2;
+        history_state->en_passant = (square_from + square_to) / 2;
+    }
+
+    state->current_side = oppose(state->current_side);
+}
+
+Bool rollback_game_move(GameState *state, GameMove move)
+{
+    GameHistoryState *history_state = pop_history_state(state);
+    if (!history_state)
+    {
+        return false;
+    }
+
+    Int square_from = get_square_from(move);
+    Int square_to = get_square_to(move);
+    GameMoveTypeEnum move_type = get_move_type(move);
+
+    GamePiece piece = state->position.board[square_to];
+    GameSideEnum side = get_side(piece);
+    if (move_type == GameMoveType::promotion)
+    {
+        remove_game_peice(state, square_to);
+        GamePiece pawn_piece = get_piece(side, GamePieceType::pawn);
+        add_game_piece(state, square_to, pawn_piece);
+    }
+
+    if (move_type == GameMoveType::castling)
+    {
+        GameMove rook_move = get_castling_rook_move(move);
+        Int rook_square_from = get_square_from(rook_move);
+        Int rook_square_to = get_square_to(rook_move);
+        GamePiece rook_piece = remove_game_peice(state, rook_square_to);
+        ASSERT(get_piece_type(rook_piece) == GamePieceType::rook);
+        add_game_piece(state, rook_square_from, rook_piece);
+    }
+
+    piece = remove_game_peice(state, square_to);
+    add_game_piece(state, square_from, piece);
+    if (history_state->captured_piece != NO_GAME_PIECE)
+    {
+        if (move_type == GameMoveType::en_passant)
+        {
+            Int row_from = get_row(square_from);
+            Int column_to = get_column(square_to);
+            Int en_passant_square = get_square(row_from, column_to);
+            add_game_piece(state, en_passant_square, history_state->captured_piece);
+        }
+        else
+        {
+            add_game_piece(state, square_to, history_state->captured_piece);
+        }
+    }
+
+    state->current_side = oppose(state->current_side);
+    return true;
+}
+
+Bool is_move_legal(GameState *state, GameMove move)
+{
+    Int square_from = get_square_from(move);
+    Int square_to = get_square_to(move);
+    GameMoveTypeEnum move_type = get_move_type(move);
+
+    GamePiece piece = state->position.board[square_from];
+    GameSideEnum side = get_side(piece);
+    if (move_type == GameMoveType::castling)
+    {
+        Int step = square_to > square_from ? 1 : -1;
+        for (Int square = square_from; square <= square_to; square += step)
+        {
+            BitBoard attack_by = check_attack_by(state, square, side);
+            if (attack_by)
+            {
+                return false;
+            }
+        }
+        return true;
     }
     else
     {
-        state->en_passant[side] = NO_SQUARE;
+        record_game_move(state, move);
+        BitBoard attack_by = check_attack_by(state, square_to, side);
+        rollback_game_move(state, move);
+        return !attack_by;
     }
 }

@@ -137,32 +137,32 @@ struct DebugMoveDrawState
     Int count;
 };
 
-Void debug_move_draw(DebugMoveDrawState *draw_state, Int square)
+Void debug_move_draw(DebugMoveDrawState *draw_state, Int square, Vec3 color)
 {
     Vec3 square_pos = get_square_pos(square);
     DebugMoveVertex *vertex = (DebugMoveVertex *)draw_state->vertex_buffer->data + draw_state->count++ * 6;
 
     vertex->pos = Vec3{square_pos.x - SQUARE_SIZE / 2, square_pos.y, square_pos.z - SQUARE_SIZE / 2};
-    vertex->color = Vec3{0, 1, 0};
+    vertex->color = color;
     vertex++;
 
     vertex->pos = Vec3{square_pos.x + SQUARE_SIZE / 2, square_pos.y, square_pos.z + SQUARE_SIZE / 2};
-    vertex->color = Vec3{0, 1, 0};
+    vertex->color = color;
     vertex++;
 
     vertex->pos = Vec3{square_pos.x - SQUARE_SIZE / 2, square_pos.y, square_pos.z + SQUARE_SIZE / 2};
-    vertex->color = Vec3{0, 1, 0};
+    vertex->color = color;
     vertex++;
 
     vertex->pos = Vec3{square_pos.x + SQUARE_SIZE / 2, square_pos.y, square_pos.z + SQUARE_SIZE / 2};
-    vertex->color = Vec3{0, 1, 0};
+    vertex->color = color;
     vertex++;
 
     vertex->pos = Vec3{square_pos.x - SQUARE_SIZE / 2, square_pos.y, square_pos.z - SQUARE_SIZE / 2};
-    vertex->color = Vec3{0, 1, 0};
+    vertex->color = color;
     vertex++;
 
     vertex->pos = Vec3{square_pos.x + SQUARE_SIZE / 2, square_pos.y, square_pos.z - SQUARE_SIZE / 2};
-    vertex->color = Vec3{0, 1, 0};
+    vertex->color = color;
     vertex++;
 }

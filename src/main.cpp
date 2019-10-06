@@ -604,7 +604,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     ASSERT(load_asset(&asset_store));
 
-    GameState game_state = get_initial_game_state();
+    GameState game_state = get_initial_game_state(&asset_store.bit_board_table);
 
     Board board;
     fill_board_initial_state(&board, &asset_store.board_mesh, &asset_store.board_light_map);
@@ -983,6 +983,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             all_moves = check_game_move(&game_state, state.selected_piece->square, &asset_store.bit_board_table);
 
             Bool selection_changed = false;
+            Bool illegal_move = false;
             // NOTE: Change piece selection
             if (input.click_left && hover_piece)
             {
@@ -1009,45 +1010,51 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             {
                 if (input.click_left && hover_square != NO_SQUARE && HAS_FLAG(all_moves, bit_square(hover_square)))
                 {
-                    stop_flash_animation(state.selected_piece);
-
-                    state.piece_change_count = 0;
-                    GamePiece game_piece = game_state.position.board[state.selected_piece->square];
-                    GameMove game_move = get_game_move(&game_state, game_piece, state.selected_piece->square, hover_square);
-                    state.executing_move = game_move;
-
-                    Int capture_square = get_capture_square(&game_state, game_move);
-                    if (capture_square != NO_SQUARE)
+                    GameMove game_move = get_game_move(&game_state, state.selected_piece->square, hover_square);
+                    if (is_move_legal(&game_state, game_move))
                     {
-                        Piece *captured_piece = piece_mapping[capture_square];
-                        start_capture_animation(captured_piece, &random_generator);
-                        state.piece_changes[state.piece_change_count++] = PieceChange{PieceChangeType::remove, capture_square};
-                    }
+                        stop_flash_animation(state.selected_piece);
 
-                    GamePieceTypeEnum piece_type = get_piece_type(game_piece);
-                    GameMoveTypeEnum game_move_type = get_move_type(game_move);
-                    if (piece_type == GamePieceType::knight || game_move_type == GameMoveType::castling)
-                    {
-                        start_jump_animation(state.selected_piece, hover_square);
+                        state.phase = StatePhase::animate;
+                        state.piece_change_count = 0;
+                        state.executing_move = game_move;
+
+                        Int capture_square = get_capture_square(&game_state, game_move);
+                        if (capture_square != NO_SQUARE)
+                        {
+                            Piece *captured_piece = piece_mapping[capture_square];
+                            start_capture_animation(captured_piece, &random_generator);
+                            state.piece_changes[state.piece_change_count++] = PieceChange{PieceChangeType::remove, capture_square};
+                        }
+
+                        GamePiece game_piece = game_state.position.board[state.selected_piece->square];
+                        GamePieceTypeEnum piece_type = get_piece_type(game_piece);
+                        GameMoveTypeEnum game_move_type = get_move_type(game_move);
+                        if (piece_type == GamePieceType::knight || game_move_type == GameMoveType::castling)
+                        {
+                            start_jump_animation(state.selected_piece, hover_square);
+                        }
+                        else
+                        {
+                            start_move_animation(state.selected_piece, hover_square);
+                        }
+                        state.piece_changes[state.piece_change_count++] = PieceChange{PieceChangeType::move, state.selected_piece->square, hover_square};
+
+                        if (game_move_type == GameMoveType::castling)
+                        {
+                            GameMove rook_move = get_castling_rook_move(game_move);
+                            Int rook_square_from = get_square_from(rook_move);
+                            Int rook_square_to = get_square_to(rook_move);
+                            Piece *rook_piece = piece_mapping[rook_square_from];
+                            ASSERT(rook_piece);
+                            start_move_animation(rook_piece, rook_square_to);
+                            state.piece_changes[state.piece_change_count++] = PieceChange{PieceChangeType::move, rook_square_from, rook_square_to};
+                        }
                     }
                     else
                     {
-                        start_move_animation(state.selected_piece, hover_square);
+                        illegal_move = true;
                     }
-                    state.piece_changes[state.piece_change_count++] = PieceChange{PieceChangeType::move, state.selected_piece->square, hover_square};
-
-                    if (game_move_type == GameMoveType::castling)
-                    {
-                        GameMove rook_move = get_castling_rook_move(game_move);
-                        Int rook_square_from = get_square_from(rook_move);
-                        Int rook_square_to = get_square_to(rook_move);
-                        Piece *rook_piece = piece_mapping[rook_square_from];
-                        ASSERT(rook_piece);
-                        start_move_animation(rook_piece, rook_square_to);
-                        state.piece_changes[state.piece_change_count++] = PieceChange{PieceChangeType::move, rook_square_from, rook_square_to};
-                    }
-
-                    state.phase = StatePhase::animate;
                 }
             }
 
@@ -1074,7 +1081,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                     // NOTE: Start ghost piece illegal move feedback
                     if (input.click_left)
                     {
-                        if (!HAS_FLAG(all_moves, bit_square(hover_square)))
+                        if (!HAS_FLAG(all_moves, bit_square(hover_square)) || illegal_move)
                         {
                             start_illegal_flash_animation(&ghost_piece);
                         }
@@ -1098,7 +1105,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 update_piece_changes(&state, piece_mapping);
                 state.phase = StatePhase::select;
                 state.selected_piece = null;
-                game_state.current_side = oppose(game_state.current_side);
             }
             // NOTE: Change promotion
             else if (input.click_right)
@@ -1132,7 +1138,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                     update_piece_changes(&state, piece_mapping);
                     state.phase = StatePhase::select;
                     state.selected_piece = null;
-                    game_state.current_side = oppose(game_state.current_side);
                 }
             }
         }
@@ -1386,7 +1391,11 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 {
                     if (all_moves & bit_square(square))
                     {
-                        debug_move_draw(&debug_move_draw_state, square);
+                        GameMove move = get_game_move(&game_state, state.selected_piece->square, square);
+                        if (is_move_legal(&game_state, move))
+                        {
+                            debug_move_draw(&debug_move_draw_state, square, Vec3{0, 1, 0});
+                        }
                     }
                 }
             }

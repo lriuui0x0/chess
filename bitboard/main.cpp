@@ -372,6 +372,8 @@ BitBoard get_pawn_capture(BitBoard square, Int direction)
 }
 
 SlidingPiece sliding_pieces[2];
+BitBoard rook[64];
+BitBoard bishop[64];
 BitBoard knight[64];
 BitBoard king[64];
 Pawn pawns[2];
@@ -439,7 +441,9 @@ int main(Int argc, CStr *argv)
             }
         }
 
+        rook[square] = get_rook_move(square, 0);
         knight[square] = get_knight_move(square);
+        bishop[square] = get_bishop_move(square, 0);
         king[square] = get_king_move(square);
         pawns[0].move[square] = get_pawn_move(square, 1);
         pawns[0].capture[square] = get_pawn_capture(square, 1);
