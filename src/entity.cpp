@@ -56,7 +56,7 @@ struct Board : Entity
     CollisionBox collision_box[64];
 };
 
-#define SQUARE_SIZE (100.0)
+#define SQUARE_SIZE (100.0f)
 
 Void fill_board_initial_state(Board *board, Mesh *board_mesh, Int lightmap_index)
 {
@@ -74,18 +74,23 @@ Void fill_board_initial_state(Board *board, Mesh *board_mesh, Int lightmap_index
         Int column = get_column(square_i);
 
         CollisionBox *collision_box = &board->collision_box[square_i];
-        collision_box->center = {(Real)(column * SQUARE_SIZE), 0, (Real)(row * SQUARE_SIZE)};
+        collision_box->center = {column * SQUARE_SIZE, 0, row * SQUARE_SIZE};
         collision_box->radius = {SQUARE_SIZE / 2, 0, SQUARE_SIZE / 2};
     }
 }
 
-Vec3 get_square_pos(Int row, Int column)
+Vec3 get_square_pos(Int square)
 {
-    return {(Real)(column * SQUARE_SIZE), 0, (Real)(row * SQUARE_SIZE)};
+    Int row = get_row(square);
+    Int column = get_column(square);
+    return {column * SQUARE_SIZE, 0, row * SQUARE_SIZE};
 }
+
+#define ENTITY_PIECE_COUNT (32)
 
 struct Piece : Entity
 {
+    Int square;
 };
 
 Void fill_piece_initial_state(GamePiece game_piece, Piece *piece, Int square,
@@ -108,12 +113,12 @@ Void fill_piece_initial_state(GamePiece game_piece, Piece *piece, Int square,
                               Int king_lightmap_index,
                               Int pawn_lightmap_index)
 {
+    ASSERT(game_piece != NO_GAME_PIECE);
     GameSideEnum side = get_side(game_piece);
     GamePieceTypeEnum piece_type = get_piece_type(game_piece);
 
-    Int row = get_row(square);
-    Int column = get_column(square);
-    piece->pos = get_square_pos(row, column);
+    piece->pos = get_square_pos(square);
+    piece->square = square;
     if (side == GameSide::white)
     {
         piece->rot = get_rotation_quaternion(get_basis_y(), 0);
@@ -221,7 +226,7 @@ Void fill_piece_initial_state(GamePiece game_piece, Piece *piece, Int square,
 
 struct GhostPiece : Entity
 {
-    Int shadowed_piece_index;
+    Piece *shadowed_piece;
 };
 
 #define GHOST_PIECE_ALPHA (0.7)
@@ -231,29 +236,29 @@ Void fill_ghost_piece_initila_state(GhostPiece *ghost_piece)
     ghost_piece->color_overlay = Vec4{1, 1, 1, GHOST_PIECE_ALPHA};
 }
 
-Void update_ghost_piece(GhostPiece *ghost_piece, Piece *piece, Int row, Int column)
+Void update_ghost_piece(GhostPiece *ghost_piece, Piece *piece, Int square)
 {
-    ghost_piece->pos = get_square_pos(row, column);
+    ghost_piece->pos = get_square_pos(square);
     ghost_piece->rot = piece->rot;
     ghost_piece->scale = piece->scale;
     ghost_piece->mesh = piece->mesh;
     ghost_piece->lightmap_index = piece->lightmap_index;
 }
 
-Void start_move_animation(Piece *piece, Int row, Int column)
+Void start_move_animation(Piece *piece, Int square)
 {
     piece->animation_type = AnimationType::move;
     piece->animation.t = 0;
     piece->animation.pos_from = piece->pos;
-    piece->animation.pos_to = get_square_pos(row, column);
+    piece->animation.pos_to = get_square_pos(square);
 }
 
-Void start_jump_animation(Piece *piece, Int row, Int column)
+Void start_jump_animation(Piece *piece, Int square)
 {
     piece->animation_type = AnimationType::jump;
     piece->animation.t = 0;
     piece->animation.pos_from = piece->pos;
-    piece->animation.pos_to = get_square_pos(row, column);
+    piece->animation.pos_to = get_square_pos(square);
 }
 
 Void start_capture_animation(Piece *piece, RandomGenerator *generator)

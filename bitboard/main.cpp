@@ -16,33 +16,34 @@ UInt64 get_bit_count(UInt64 x)
     return result;
 }
 
-Void print_bit_board(BitBoard board)
-{
-    for (Int i = 63; i >= 0; i--)
-    {
-        printf("%d", board & (1ull << i) ? 1 : 0);
-        if (i % 8 == 0)
-        {
-            printf("\n");
-        }
-    }
-}
-
 UInt64 random64()
 {
     UInt64 u1, u2, u3, u4;
-    u1 = (UInt64)(rand()) & 0xFFFF;
-    u2 = (UInt64)(rand()) & 0xFFFF;
-    u3 = (UInt64)(rand()) & 0xFFFF;
-    u4 = (UInt64)(rand()) & 0xFFFF;
+    u1 = (UInt64)(rand()) & 0xffff;
+    u2 = (UInt64)(rand()) & 0xffff;
+    u3 = (UInt64)(rand()) & 0xffff;
+    u4 = (UInt64)(rand()) & 0xffff;
     return u1 | (u2 << 16) | (u3 << 32) | (u4 << 48);
 }
 
-BitBoard get_square(BitBoard row, BitBoard column)
+BitBoard get_square(Int row, Int column)
 {
     ASSERT(row >= 0 && row < 8);
     ASSERT(column >= 0 && column < 8);
     return 1ull << (row * 8ull + column);
+}
+
+Void print_bit_board(BitBoard board)
+{
+    for (Int row = 7; row >= 0; row--)
+    {
+        for (Int column = 0; column < 8; column++)
+        {
+            BitBoard square = get_square(row, column);
+            printf("%d", board & square ? 1 : 0);
+        }
+        printf("\n");
+    }
 }
 
 BitBoard get_blocker(BitBoard square, UInt64 blocker_mask, UInt64 blocker_bit_count, Int blocker_i)
@@ -66,7 +67,7 @@ UInt64 calc_hash(BitBoard blocker, UInt64 guess, UInt64 blocker_bit_count)
     return hash;
 }
 
-BitBoard get_rook_blocker_mask(BitBoard square)
+BitBoard get_rook_blocker_mask(Int square)
 {
     Int square_row = square / 8;
     Int square_column = square % 8;
@@ -94,7 +95,7 @@ BitBoard get_rook_blocker_mask(BitBoard square)
     return result;
 }
 
-BitBoard get_rook_move(BitBoard square, BitBoard blocker)
+BitBoard get_rook_move(Int square, BitBoard blocker)
 {
     Int square_row = square / 8;
     Int square_column = square % 8;
@@ -146,11 +147,11 @@ struct SlidingPiece
     BitBoard move[64][1 << 13];
     UInt64 magic[64];
 
-    BitBoard (*get_blocker_mask)(BitBoard square);
-    BitBoard (*get_move)(BitBoard square, BitBoard blocker);
+    BitBoard (*get_blocker_mask)(Int square);
+    BitBoard (*get_move)(Int square, BitBoard blocker);
 };
 
-BitBoard get_bishop_blocker_mask(BitBoard square)
+BitBoard get_bishop_blocker_mask(Int square)
 {
     Int square_row = square / 8;
     Int square_column = square % 8;
@@ -178,7 +179,7 @@ BitBoard get_bishop_blocker_mask(BitBoard square)
     return result;
 }
 
-BitBoard get_bishop_move(BitBoard square, BitBoard blocker)
+BitBoard get_bishop_move(Int square, BitBoard blocker)
 {
     Int square_row = square / 8;
     Int square_column = square % 8;
@@ -222,7 +223,7 @@ BitBoard get_bishop_move(BitBoard square, BitBoard blocker)
     return result;
 }
 
-BitBoard get_king_move(BitBoard square)
+BitBoard get_knight_move(Int square)
 {
     Int square_row = square / 8;
     Int square_column = square % 8;
@@ -285,6 +286,27 @@ BitBoard get_king_move(BitBoard square)
     {
         BitBoard square = get_square(row, column);
         result |= square;
+    }
+    return result;
+}
+
+BitBoard get_king_move(Int square)
+{
+    Int square_row = square / 8;
+    Int square_column = square % 8;
+    BitBoard result = 0;
+    for (Int row_diff = -1; row_diff <= 1; row_diff++)
+    {
+        for (Int column_diff = -1; column_diff <= 1; column_diff++)
+        {
+            Int row = square_row + row_diff;
+            Int column = square_column + column_diff;
+            if (row >= 0 && row < 8 && column >= 0 && column < 8 && (row_diff != 0 || column_diff != 0))
+            {
+                BitBoard square = get_square(row, column);
+                result |= square;
+            }
+        }
     }
     return result;
 }
@@ -367,11 +389,11 @@ int main(Int argc, CStr *argv)
 
     for (Int square = 0; square < 64; square++)
     {
-        for (Int piece_type = 0; piece_type <= 0; piece_type++)
+        for (Int piece_type = 0; piece_type <= 1; piece_type++)
         {
             SlidingPiece *sliding_piece = &sliding_pieces[piece_type];
 
-            BitBoard blocker_mask = get_rook_blocker_mask(square);
+            BitBoard blocker_mask = sliding_piece->get_blocker_mask(square);
             sliding_piece->blocker_mask[square] = blocker_mask;
 
             UInt64 blocker_bit_count = get_bit_count(blocker_mask);
@@ -417,7 +439,7 @@ int main(Int argc, CStr *argv)
             }
         }
 
-        knight[square] = get_king_move(square);
+        knight[square] = get_knight_move(square);
         king[square] = get_king_move(square);
         pawns[0].move[square] = get_pawn_move(square, 1);
         pawns[0].capture[square] = get_pawn_capture(square, 1);
@@ -442,7 +464,7 @@ int main(Int argc, CStr *argv)
 
     for (Int square = 0; square < 64; square++)
     {
-        ASSERT(fwrite(&knight[0], sizeof(UInt64), 1, output_file) == 1);
+        ASSERT(fwrite(&knight[square], sizeof(UInt64), 1, output_file) == 1);
     }
 
     for (Int square = 0; square < 64; square++)
@@ -459,15 +481,6 @@ int main(Int argc, CStr *argv)
 
     for (Int square = 0; square < 64; square++)
     {
-        ASSERT(fwrite(&king[0], sizeof(UInt64), 1, output_file) == 1);
-    }
-
-    for (Int i = 0; i < 2; i++)
-    {
-        for (Int square = 0; square < 64; square++)
-        {
-            ASSERT(fwrite(&pawns[i].move[square], sizeof(UInt64), 1, output_file) == 1);
-            ASSERT(fwrite(&pawns[i].capture[square], sizeof(UInt64), 1, output_file) == 1);
-        }
+        ASSERT(fwrite(&king[square], sizeof(UInt64), 1, output_file) == 1);
     }
 }

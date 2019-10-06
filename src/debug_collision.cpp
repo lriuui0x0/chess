@@ -12,14 +12,16 @@ struct DebugCollisionVertex
 
 Bool create_debug_collision_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
 {
+    VkSampleCountFlagBits multisample_count = get_maximum_multisample_count(device); 
+
     AttachmentInfo color_attachment;
     color_attachment.format = device->swapchain.format;
-    color_attachment.multisample_count = VK_SAMPLE_COUNT_1_BIT;
+    color_attachment.multisample_count = multisample_count;
     color_attachment.load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
     color_attachment.store_op = VK_ATTACHMENT_STORE_OP_STORE;
-    color_attachment.initial_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    color_attachment.initial_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     color_attachment.working_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    color_attachment.final_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    color_attachment.final_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     Buffer<AttachmentInfo> color_attachments;
     color_attachments.count = 1;
@@ -79,7 +81,7 @@ Bool create_debug_collision_pipeline(VulkanDevice *device, VulkanPipeline *pipel
     descriptor_sets.data = descriptor_set_info;
 
     if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(DebugCollisionVertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, &descriptor_sets,
-                         VK_SAMPLE_COUNT_1_BIT, false, false, null, pipeline))
+                         multisample_count, false, false, null, pipeline))
     {
         return false;
     }
@@ -90,44 +92,33 @@ Bool create_debug_collision_pipeline(VulkanDevice *device, VulkanPipeline *pipel
 struct DebugCollisionFrame
 {
     VulkanBuffer vertex_buffer;
-    Array<VkFramebuffer> frame_buffers;
+    VkFramebuffer frame_buffer;
 };
 
 #define COLLISION_BOX_VERTEX_COUNT (6 * 4 * 2)
 
-Bool create_debug_collision_frame(VulkanDevice *device, VulkanPipeline *pipeline, Piece *pieces, DebugCollisionFrame *frame, VulkanBuffer *host_vertex_buffer)
+Bool create_debug_collision_frame(VulkanDevice *device, VulkanPipeline *pipeline, Piece *pieces, SceneFrame *scene_frame, DebugCollisionFrame *frame, VulkanBuffer *host_vertex_buffer)
 {
     VkResult result_code;
 
-    frame->frame_buffers = create_array<VkFramebuffer>(device->swapchain.images.count);
-    for (Int image_i = 0; image_i < device->swapchain.images.count; image_i++)
+    VkImageView attachments[1] = {scene_frame->color_image_view};
+    VkFramebufferCreateInfo frame_buffer_create_info = {};
+    frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    frame_buffer_create_info.renderPass = pipeline->render_pass;
+    frame_buffer_create_info.attachmentCount = 1;
+    frame_buffer_create_info.pAttachments = attachments;
+    frame_buffer_create_info.width = device->swapchain.width;
+    frame_buffer_create_info.height = device->swapchain.height;
+    frame_buffer_create_info.layers = 1;
+
+    result_code = vkCreateFramebuffer(device->handle, &frame_buffer_create_info, null, &frame->frame_buffer);
+    if (result_code != VK_SUCCESS)
     {
-        VkImageView image_view;
-        if (!create_image_view(device, device->swapchain.images[image_i], device->swapchain.format, VK_IMAGE_ASPECT_COLOR_BIT, &image_view))
-        {
-            return false;
-        }
-
-        VkImageView attachments[1] = {image_view};
-        VkFramebufferCreateInfo frame_buffer_create_info = {};
-        frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        frame_buffer_create_info.renderPass = pipeline->render_pass;
-        frame_buffer_create_info.attachmentCount = 1;
-        frame_buffer_create_info.pAttachments = attachments;
-        frame_buffer_create_info.width = device->swapchain.width;
-        frame_buffer_create_info.height = device->swapchain.height;
-        frame_buffer_create_info.layers = 1;
-
-        VkFramebuffer *frame_buffer = frame->frame_buffers.push();
-        result_code = vkCreateFramebuffer(device->handle, &frame_buffer_create_info, null, frame_buffer);
-        if (result_code != VK_SUCCESS)
-        {
-            return false;
-        }
+        return false;
     }
 
     Int total_vertex_data_length = 0;
-    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+    for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
     {
         Piece *piece = &pieces[piece_i];
         total_vertex_data_length += sizeof(DebugCollisionVertex) * (COLLISION_BOX_VERTEX_COUNT + piece->mesh->collision_hull_vertex_count * 2);

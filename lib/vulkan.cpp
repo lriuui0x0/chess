@@ -404,7 +404,7 @@ Bool create_swapchain(VulkanDevice *device, Int width, Int height, Int desired_i
     swapchain_create_info.imageExtent.width = (UInt32)width;
     swapchain_create_info.imageExtent.height = (UInt32)height;
     swapchain_create_info.imageArrayLayers = 1;
-    swapchain_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    swapchain_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     swapchain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     swapchain_create_info.queueFamilyIndexCount = 0;
     swapchain_create_info.pQueueFamilyIndices = null;

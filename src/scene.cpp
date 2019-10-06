@@ -37,9 +37,9 @@ Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     AttachmentInfo color_attachment;
     color_attachment.format = device->swapchain.format;
     color_attachment.multisample_count = multisample_count;
-    color_attachment.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    color_attachment.load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
     color_attachment.store_op = VK_ATTACHMENT_STORE_OP_STORE;
-    color_attachment.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    color_attachment.initial_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     color_attachment.working_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     color_attachment.final_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
@@ -56,16 +56,7 @@ Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     depth_attachment.working_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     depth_attachment.final_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-    AttachmentInfo resolve_attachment;
-    resolve_attachment.format = device->swapchain.format;
-    resolve_attachment.multisample_count = VK_SAMPLE_COUNT_1_BIT;
-    resolve_attachment.load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    resolve_attachment.store_op = VK_ATTACHMENT_STORE_OP_STORE;
-    resolve_attachment.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-    resolve_attachment.working_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    resolve_attachment.final_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    if (!create_render_pass(device, &color_attachments, &depth_attachment, &resolve_attachment, &pipeline->render_pass))
+    if (!create_render_pass(device, &color_attachments, &depth_attachment, null, &pipeline->render_pass))
     {
         return false;
     }
@@ -151,14 +142,15 @@ Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
 
 struct SceneFrame
 {
-    Array<VkFramebuffer> frame_buffers;
     VkCommandBuffer command_buffer;
     VkSemaphore image_aquired_semaphore;
     VkSemaphore render_finished_semaphore;
     VkFence frame_finished_fence;
 
     VkImage color_image;
+    VkImageView color_image_view;
     VkImage depth_image;
+    VkFramebuffer frame_buffer;
     VulkanBuffer vertex_buffer;
     VulkanBuffer index_buffer;
     VulkanBuffer uniform_buffer;
@@ -201,14 +193,13 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
     }
 
     if (!create_image(device, device->swapchain.width, device->swapchain.height,
-                      device->swapchain.format, multisample_count, VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                      device->swapchain.format, multisample_count, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &frame->color_image))
     {
         return false;
     }
 
-    VkImageView color_image_view;
-    if (!create_image_view(device, frame->color_image, device->swapchain.format, VK_IMAGE_ASPECT_COLOR_BIT, &color_image_view))
+    if (!create_image_view(device, frame->color_image, device->swapchain.format, VK_IMAGE_ASPECT_COLOR_BIT, &frame->color_image_view))
     {
         return false;
     }
@@ -226,31 +217,20 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
         return false;
     }
 
-    frame->frame_buffers = create_array<VkFramebuffer>(device->swapchain.images.count);
-    for (Int image_i = 0; image_i < device->swapchain.images.count; image_i++)
+    VkImageView attachments[2] = {frame->color_image_view, depth_image_view};
+    VkFramebufferCreateInfo frame_buffer_create_info = {};
+    frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    frame_buffer_create_info.renderPass = pipeline->render_pass;
+    frame_buffer_create_info.attachmentCount = 2;
+    frame_buffer_create_info.pAttachments = attachments;
+    frame_buffer_create_info.width = device->swapchain.width;
+    frame_buffer_create_info.height = device->swapchain.height;
+    frame_buffer_create_info.layers = 1;
+
+    result_code = vkCreateFramebuffer(device->handle, &frame_buffer_create_info, null, &frame->frame_buffer);
+    if (result_code != VK_SUCCESS)
     {
-        VkImageView image_view;
-        if (!create_image_view(device, device->swapchain.images[image_i], device->swapchain.format, VK_IMAGE_ASPECT_COLOR_BIT, &image_view))
-        {
-            return false;
-        }
-
-        VkImageView attachments[3] = {color_image_view, depth_image_view, image_view};
-        VkFramebufferCreateInfo frame_buffer_create_info = {};
-        frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        frame_buffer_create_info.renderPass = pipeline->render_pass;
-        frame_buffer_create_info.attachmentCount = 3;
-        frame_buffer_create_info.pAttachments = attachments;
-        frame_buffer_create_info.width = device->swapchain.width;
-        frame_buffer_create_info.height = device->swapchain.height;
-        frame_buffer_create_info.layers = 1;
-
-        VkFramebuffer *frame_buffer = frame->frame_buffers.push();
-        result_code = vkCreateFramebuffer(device->handle, &frame_buffer_create_info, null, frame_buffer);
-        if (result_code != VK_SUCCESS)
-        {
-            return false;
-        }
+        return false;
     }
 
     VkImageView shadow_image_view;
@@ -322,7 +302,7 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
     board->mesh->vertex_offset = total_vertex_count;
     Int total_index_count = 0;
     board->mesh->index_offset = total_index_count;
-    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+    for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
     {
         Piece *piece = &pieces[piece_i];
         piece->mesh->vertex_offset = total_vertex_count;
@@ -335,7 +315,7 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
     Int total_index_data_length = sizeof(UInt32) * total_index_count;
     Int scene_uniform_data_length = align_up(sizeof(SceneUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment);
     Int entity_uniform_data_length = align_up(sizeof(EntityUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment);
-    Int total_uniform_data_length = scene_uniform_data_length + entity_uniform_data_length * (PIECE_COUNT + 2);
+    Int total_uniform_data_length = scene_uniform_data_length + entity_uniform_data_length * (ENTITY_PIECE_COUNT + 2);
 
     if (!create_buffer(device, total_vertex_data_length,
                        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -391,9 +371,9 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
         return false;
     }
 
-    frame->piece_descriptor_sets = create_array<VkDescriptorSet>(PIECE_COUNT);
-    frame->piece_descriptor_sets.count = PIECE_COUNT;
-    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+    frame->piece_descriptor_sets = create_array<VkDescriptorSet>(ENTITY_PIECE_COUNT);
+    frame->piece_descriptor_sets.count = ENTITY_PIECE_COUNT;
+    for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
     {
         if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
                                      scene_uniform_data_length + (piece_i + 1) * entity_uniform_data_length, entity_uniform_data_length,
@@ -404,7 +384,7 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
     }
 
     if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
-                                 scene_uniform_data_length + (PIECE_COUNT + 1) * entity_uniform_data_length, entity_uniform_data_length,
+                                 scene_uniform_data_length + (ENTITY_PIECE_COUNT + 1) * entity_uniform_data_length, entity_uniform_data_length,
                                  &frame->ghost_piece_descriptor_set))
     {
         return false;
@@ -434,7 +414,7 @@ EntityUniformData *get_piece_uniform_data(VulkanDevice *device, VulkanBuffer *un
 EntityUniformData *get_ghost_piece_uniform_data(VulkanDevice *device, VulkanBuffer *uniform_buffer)
 {
     Int offset = align_up(sizeof(SceneUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment);
-    offset += align_up(sizeof(EntityUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment) * (PIECE_COUNT + 1);
+    offset += align_up(sizeof(EntityUniformData), device->physical_device_properties.limits.minUniformBufferOffsetAlignment) * (ENTITY_PIECE_COUNT + 1);
     return (EntityUniformData *)(uniform_buffer->data + offset);
 }
 

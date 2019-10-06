@@ -77,7 +77,16 @@ struct BufferI
 {
     Int count;
     T data[N];
+
+    T &operator[](Int index);
 };
+
+template <typename T, Int N>
+T &BufferI<T, N>::operator[](Int index)
+{
+    ASSERT(index >= 0 && index < this->count);
+    return this->data[index];
+}
 
 typedef char *CStr;
 typedef Buffer<UInt8> Str;

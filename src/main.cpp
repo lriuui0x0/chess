@@ -8,6 +8,7 @@
 #include "shadow.cpp"
 #include "debug_ui.cpp"
 #include "debug_collision.cpp"
+#include "debug_move.cpp"
 
 Bool read_mesh(CStr filename, Mesh *mesh)
 {
@@ -57,6 +58,7 @@ Bool read_font(CStr filename, Font *font)
     return true;
 }
 
+BitBoardTable bit_board_table;
 Bool read_bit_board_table(CStr filename, BitBoardTable *bit_board_table)
 {
     Str file_contents;
@@ -92,8 +94,10 @@ Bool render_vulkan_frame(VulkanDevice *device,
                          VulkanPipeline *scene_pipeline, SceneFrame *scene_frame, VulkanBuffer *scene_uniform_buffer,
                          Board *board, Piece *pieces, GhostPiece *ghost_piece,
                          VulkanPipeline *shadow_pipeline, ShadowFrame *shadow_frame,
+                         Bool show_debug,
                          VulkanPipeline *debug_ui_pipeline, DebugUIFrame *debug_ui_frame, VulkanBuffer *debug_ui_vertex_buffer, Int debug_ui_character_count,
-                         VulkanPipeline *debug_collision_pipeline, DebugCollisionFrame *debug_collision_frame, VulkanBuffer *debug_collision_vertex_buffer)
+                         VulkanPipeline *debug_collision_pipeline, DebugCollisionFrame *debug_collision_frame, VulkanBuffer *debug_collision_vertex_buffer,
+                         VulkanPipeline *debug_move_pipeline, DebugMoveFrame *debug_move_frame, VulkanBuffer *debug_move_vertex_buffer, Int debug_move_count)
 {
     VkResult result_code;
     result_code = vkWaitForFences(device->handle, 1, &scene_frame->frame_finished_fence, false, UINT64_MAX);
@@ -108,12 +112,13 @@ Bool render_vulkan_frame(VulkanDevice *device,
         return false;
     }
 
-    Int image_index;
-    result_code = vkAcquireNextImageKHR(device->handle, device->swapchain.handle, UINT64_MAX, scene_frame->image_aquired_semaphore, VK_NULL_HANDLE, (UInt32 *)&image_index);
+    Int present_image_index;
+    result_code = vkAcquireNextImageKHR(device->handle, device->swapchain.handle, UINT64_MAX, scene_frame->image_aquired_semaphore, VK_NULL_HANDLE, (UInt32 *)&present_image_index);
     if (result_code != VK_SUCCESS)
     {
         return false;
     }
+    VkImage present_image = device->swapchain.images[present_image_index];
 
     VkCommandBufferBeginInfo command_buffer_begin_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -141,50 +146,16 @@ Bool render_vulkan_frame(VulkanDevice *device,
     scene_uniform_buffer_memory_barrier.size = scene_uniform_buffer->count;
     vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, null, 1, &scene_uniform_buffer_memory_barrier, 0, null);
 
-    VkImageMemoryBarrier depth_image_memory_barrier = {};
-    depth_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    depth_image_memory_barrier.srcAccessMask = 0;
-    depth_image_memory_barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    depth_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depth_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depth_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    depth_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    depth_image_memory_barrier.image = scene_frame->depth_image;
-    depth_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    depth_image_memory_barrier.subresourceRange.baseMipLevel = 0;
-    depth_image_memory_barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
-    depth_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
-    depth_image_memory_barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
-
-    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, 0, 0, null, 0, null, 1, &depth_image_memory_barrier);
-
-    VkImageMemoryBarrier color_image_memory_barrier = {};
-    color_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    color_image_memory_barrier.srcAccessMask = 0;
-    color_image_memory_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    color_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    color_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    color_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    color_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    color_image_memory_barrier.image = scene_frame->color_image;
-    color_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    color_image_memory_barrier.subresourceRange.baseMipLevel = 0;
-    color_image_memory_barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
-    color_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
-    color_image_memory_barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
-
-    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, null, 0, null, 1, &color_image_memory_barrier);
-
     // NOTE: Shadow
-    VkClearValue shadow_clear_colors[1] = {{1.0, 0}};
+    VkClearValue depth_clear_color = {1.0, 0};
     VkRenderPassBeginInfo shadow_render_pass_begin_info = {};
     shadow_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     shadow_render_pass_begin_info.renderPass = shadow_pipeline->render_pass;
-    shadow_render_pass_begin_info.framebuffer = shadow_frame->frame_buffers[image_index];
+    shadow_render_pass_begin_info.framebuffer = shadow_frame->frame_buffer;
     shadow_render_pass_begin_info.renderArea.offset = {0, 0};
     shadow_render_pass_begin_info.renderArea.extent = {(UInt32)device->swapchain.width, (UInt32)device->swapchain.height};
     shadow_render_pass_begin_info.clearValueCount = 1;
-    shadow_render_pass_begin_info.pClearValues = shadow_clear_colors;
+    shadow_render_pass_begin_info.pClearValues = &depth_clear_color;
 
     vkCmdBeginRenderPass(scene_frame->command_buffer, &shadow_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline->handle);
@@ -198,7 +169,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
     vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline->layout, 1, 1, &scene_frame->board_descriptor_set, 0, null);
     vkCmdDrawIndexed(scene_frame->command_buffer, board->mesh->index_count, 1, board->mesh->index_offset, board->mesh->vertex_offset, 0);
 
-    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+    for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
     {
         Mesh *mesh = pieces[piece_i].mesh;
         vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
@@ -218,19 +189,67 @@ Bool render_vulkan_frame(VulkanDevice *device,
     shadow_depth_image_memory_barrier.image = shadow_frame->depth_image;
     shadow_depth_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
     shadow_depth_image_memory_barrier.subresourceRange.baseMipLevel = 0;
-    shadow_depth_image_memory_barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+    shadow_depth_image_memory_barrier.subresourceRange.levelCount = 1;
     shadow_depth_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
-    shadow_depth_image_memory_barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
-
+    shadow_depth_image_memory_barrier.subresourceRange.layerCount = 1;
     vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, null, 0, null, 1, &shadow_depth_image_memory_barrier);
 
-    // NOTE: Scene
-    VkClearValue scene_clear_colors[2] = {{0.7, 0.7, 0.7, 0.7},
-                                          {1.0, 0}};
+    VkImageMemoryBarrier depth_image_memory_barrier = {};
+    depth_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    depth_image_memory_barrier.srcAccessMask = 0;
+    depth_image_memory_barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    depth_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depth_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depth_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    depth_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    depth_image_memory_barrier.image = scene_frame->depth_image;
+    depth_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    depth_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+    depth_image_memory_barrier.subresourceRange.levelCount = 1;
+    depth_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+    depth_image_memory_barrier.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, 0, 0, null, 0, null, 1, &depth_image_memory_barrier);
+
+    VkImageMemoryBarrier color_image_memory_barrier = {};
+    color_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    color_image_memory_barrier.srcAccessMask = 0;
+    color_image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    color_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    color_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    color_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    color_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    color_image_memory_barrier.image = scene_frame->color_image;
+    color_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    color_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+    color_image_memory_barrier.subresourceRange.levelCount = 1;
+    color_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+    color_image_memory_barrier.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, null, 0, null, 1, &color_image_memory_barrier);
+
+    VkClearColorValue clear_color = {0.7, 0.7, 0.7, 1};
+    vkCmdClearColorImage(scene_frame->command_buffer, scene_frame->color_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_color, 1, &color_image_memory_barrier.subresourceRange);
+
+    color_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    color_image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    color_image_memory_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    color_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    color_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    color_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    color_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    color_image_memory_barrier.image = scene_frame->color_image;
+    color_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    color_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+    color_image_memory_barrier.subresourceRange.levelCount = 1;
+    color_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+    color_image_memory_barrier.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, null, 0, null, 1, &color_image_memory_barrier);
+
+    // NOTE: Board
+    VkClearValue scene_clear_colors[2] = {{}, depth_clear_color};
     VkRenderPassBeginInfo scene_render_pass_begin_info = {};
     scene_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     scene_render_pass_begin_info.renderPass = scene_pipeline->render_pass;
-    scene_render_pass_begin_info.framebuffer = scene_frame->frame_buffers[image_index];
+    scene_render_pass_begin_info.framebuffer = scene_frame->frame_buffer;
     scene_render_pass_begin_info.renderArea.offset = {0, 0};
     scene_render_pass_begin_info.renderArea.extent = {(UInt32)device->swapchain.width, (UInt32)device->swapchain.height};
     scene_render_pass_begin_info.clearValueCount = 2;
@@ -250,9 +269,65 @@ Bool render_vulkan_frame(VulkanDevice *device,
     vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 2, 1, &scene_frame->lightmap_descriptor_sets[board->lightmap_index], 0, null);
     vkCmdDrawIndexed(scene_frame->command_buffer, board->mesh->index_count, 1, board->mesh->index_offset, board->mesh->vertex_offset, 0);
 
-    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+    vkCmdEndRenderPass(scene_frame->command_buffer);
+
+    // NOTE: Debug Move
+    if (show_debug && debug_move_count > 0)
     {
-        if (ghost_piece == null || piece_i != ghost_piece->shadowed_piece_index)
+        VkBufferCopy debug_move_vertex_buffer_copy = {};
+        debug_move_vertex_buffer_copy.srcOffset = 0;
+        debug_move_vertex_buffer_copy.dstOffset = 0;
+        debug_move_vertex_buffer_copy.size = sizeof(DebugMoveVertex) * debug_move_count * 6;
+        vkCmdCopyBuffer(scene_frame->command_buffer, debug_move_vertex_buffer->handle, debug_move_frame->vertex_buffer.handle, 1, &debug_move_vertex_buffer_copy);
+
+        VkBufferMemoryBarrier debug_move_vertex_buffer_memory_barrier = {};
+        debug_move_vertex_buffer_memory_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        debug_move_vertex_buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        debug_move_vertex_buffer_memory_barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+        debug_move_vertex_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        debug_move_vertex_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        debug_move_vertex_buffer_memory_barrier.buffer = debug_move_frame->vertex_buffer.handle;
+        debug_move_vertex_buffer_memory_barrier.offset = 0;
+        debug_move_vertex_buffer_memory_barrier.size = sizeof(DebugMoveVertex) * debug_move_count * 6;
+        vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, null, 1, &debug_move_vertex_buffer_memory_barrier, 0, null);
+
+        VkRenderPassBeginInfo debug_move_render_pass_begin_info = {};
+        debug_move_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        debug_move_render_pass_begin_info.renderPass = debug_move_pipeline->render_pass;
+        debug_move_render_pass_begin_info.framebuffer = debug_move_frame->frame_buffer;
+        debug_move_render_pass_begin_info.renderArea.offset = {0, 0};
+        debug_move_render_pass_begin_info.renderArea.extent = {(UInt32)device->swapchain.width, (UInt32)device->swapchain.height};
+        debug_move_render_pass_begin_info.clearValueCount = 0;
+        debug_move_render_pass_begin_info.pClearValues = null;
+
+        vkCmdBeginRenderPass(scene_frame->command_buffer, &debug_move_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_move_pipeline->handle);
+
+        offset = 0;
+        vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &debug_move_frame->vertex_buffer.handle, &offset);
+
+        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_move_pipeline->layout, 0, 1, &scene_frame->scene_descriptor_set, 0, null);
+
+        vkCmdDraw(scene_frame->command_buffer, debug_move_count * 6, 1, 0, 0);
+
+        vkCmdEndRenderPass(scene_frame->command_buffer);
+    }
+
+    // NOTE: Pieces
+    vkCmdBeginRenderPass(scene_frame->command_buffer, &scene_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->handle);
+
+    offset = 0;
+    vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &scene_frame->vertex_buffer.handle, &offset);
+    vkCmdBindIndexBuffer(scene_frame->command_buffer, scene_frame->index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
+
+    vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 0, 1, &scene_frame->scene_descriptor_set, 0, null);
+    vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 3, 1, &scene_frame->shadow_descriptor_set, 0, null);
+
+    for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
+    {
+        Piece *piece = &pieces[piece_i];
+        if (ghost_piece == null || piece != ghost_piece->shadowed_piece)
         {
             Mesh *mesh = pieces[piece_i].mesh;
             Int lightmap_index = pieces[piece_i].lightmap_index;
@@ -272,13 +347,13 @@ Bool render_vulkan_frame(VulkanDevice *device,
 
     vkCmdEndRenderPass(scene_frame->command_buffer);
 
-    // NOTE: Debug collision
-    if (debug_ui_character_count > 0)
+    if (show_debug)
     {
+        // NOTE: Debug collision
         VkRenderPassBeginInfo debug_collision_render_pass_begin_info = {};
         debug_collision_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         debug_collision_render_pass_begin_info.renderPass = debug_collision_pipeline->render_pass;
-        debug_collision_render_pass_begin_info.framebuffer = debug_collision_frame->frame_buffers[image_index];
+        debug_collision_render_pass_begin_info.framebuffer = debug_collision_frame->frame_buffer;
         debug_collision_render_pass_begin_info.renderArea.offset = {0, 0};
         debug_collision_render_pass_begin_info.renderArea.extent = {(UInt32)device->swapchain.width, (UInt32)device->swapchain.height};
         debug_collision_render_pass_begin_info.clearValueCount = 0;
@@ -291,7 +366,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
         vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &debug_collision_frame->vertex_buffer.handle, &offset);
 
         Int vertex_offset = 0;
-        for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+        for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
         {
             Mesh *mesh = pieces[piece_i].mesh;
             Int vertex_count = COLLISION_BOX_VERTEX_COUNT + mesh->collision_hull_vertex_count * 2;
@@ -305,7 +380,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
     }
 
     // NOTE: Debug UI
-    if (debug_ui_character_count > 0)
+    if (show_debug && debug_ui_character_count > 0)
     {
         VkBufferCopy debug_ui_vertex_buffer_copy = {};
         debug_ui_vertex_buffer_copy.srcOffset = 0;
@@ -327,7 +402,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
         VkRenderPassBeginInfo debug_ui_render_pass_begin_info = {};
         debug_ui_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         debug_ui_render_pass_begin_info.renderPass = debug_ui_pipeline->render_pass;
-        debug_ui_render_pass_begin_info.framebuffer = debug_ui_frame->frame_buffers[image_index];
+        debug_ui_render_pass_begin_info.framebuffer = debug_ui_frame->frame_buffer;
         debug_ui_render_pass_begin_info.renderArea.offset = {0, 0};
         debug_ui_render_pass_begin_info.renderArea.extent = {(UInt32)device->swapchain.width, (UInt32)device->swapchain.height};
         debug_ui_render_pass_begin_info.clearValueCount = 0;
@@ -341,10 +416,72 @@ Bool render_vulkan_frame(VulkanDevice *device,
 
         vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_ui_pipeline->layout, 0, 1, &debug_ui_frame->font_texture_descriptor_set, 0, null);
 
-        vkCmdDraw(scene_frame->command_buffer, debug_ui_character_count * 2 * 3, 1, 0, 0);
+        vkCmdDraw(scene_frame->command_buffer, debug_ui_character_count * 6, 1, 0, 0);
 
         vkCmdEndRenderPass(scene_frame->command_buffer);
     }
+
+    // NOTE: Resolve
+    color_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    color_image_memory_barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    color_image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    color_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    color_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    color_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    color_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    color_image_memory_barrier.image = scene_frame->color_image;
+    color_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    color_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+    color_image_memory_barrier.subresourceRange.levelCount = 1;
+    color_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+    color_image_memory_barrier.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, null, 0, null, 1, &color_image_memory_barrier);
+
+    VkImageMemoryBarrier present_image_memory_barrier = {};
+    present_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    present_image_memory_barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    present_image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    present_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    present_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    present_image_memory_barrier.srcQueueFamilyIndex = device->present_queue_index;
+    present_image_memory_barrier.dstQueueFamilyIndex = device->graphics_queue_index;
+    present_image_memory_barrier.image = present_image;
+    present_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    present_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+    present_image_memory_barrier.subresourceRange.levelCount = 1;
+    present_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+    present_image_memory_barrier.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, null, 0, null, 1, &present_image_memory_barrier);
+
+    VkImageResolve resolve_region;
+    resolve_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    resolve_region.srcSubresource.mipLevel = 0;
+    resolve_region.srcSubresource.baseArrayLayer = 0;
+    resolve_region.srcSubresource.layerCount = 1;
+    resolve_region.srcOffset = {0, 0};
+    resolve_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    resolve_region.dstSubresource.mipLevel = 0;
+    resolve_region.dstSubresource.baseArrayLayer = 0;
+    resolve_region.dstSubresource.layerCount = 1;
+    resolve_region.dstOffset = {0, 0};
+    resolve_region.extent = {(UInt32)device->swapchain.width, (UInt32)device->swapchain.height};
+    vkCmdResolveImage(scene_frame->command_buffer, scene_frame->color_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                      present_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &resolve_region);
+
+    present_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    present_image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    present_image_memory_barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    present_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    present_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    present_image_memory_barrier.srcQueueFamilyIndex = device->graphics_queue_index;
+    present_image_memory_barrier.dstQueueFamilyIndex = device->present_queue_index;
+    present_image_memory_barrier.image = present_image;
+    present_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    present_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+    present_image_memory_barrier.subresourceRange.levelCount = 1;
+    present_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+    present_image_memory_barrier.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, null, 0, null, 1, &present_image_memory_barrier);
 
     result_code = vkEndCommandBuffer(scene_frame->command_buffer);
     if (result_code != VK_SUCCESS)
@@ -375,7 +512,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
     present_info.pWaitSemaphores = &scene_frame->render_finished_semaphore;
     present_info.swapchainCount = 1;
     present_info.pSwapchains = &device->swapchain.handle;
-    present_info.pImageIndices = (UInt32 *)&image_index,
+    present_info.pImageIndices = (UInt32 *)&present_image_index,
     present_info.pResults = null;
 
     result_code = vkQueuePresentKHR(device->present_queue, &present_info);
@@ -424,9 +561,48 @@ struct Input
     Bool keyup_u;
 };
 
-struct DebugState
+namespace PieceChangeType
 {
-    Bool show_debug_ui;
+enum
+{
+    remove,
+    move,
+};
+};
+typedef Int PieceChangeTypeEnum;
+
+struct PieceChange
+{
+    PieceChangeTypeEnum change_type;
+    Int square_from;
+    Int square_to;
+};
+
+namespace StatePhase
+{
+enum
+{
+    select,
+    execute,
+    animate,
+    promote,
+};
+}
+typedef Int StatePhaseEnum;
+
+struct State
+{
+    Int mouse_x;
+    Int mouse_y;
+
+    StatePhaseEnum phase;
+    Piece *selected_piece;
+    GameMove executing_move;
+    Int piece_change_count;
+    PieceChange piece_changes[2];
+    Int last_hover_square;
+
+    Bool show_debug;
     Bool moving_x_pos;
     Bool moving_x_neg;
     Bool moving_y_pos;
@@ -441,13 +617,46 @@ struct DebugState
     Bool rotating_z_neg;
 };
 
-struct State
+Piece *remove_piece(Piece **piece_mapping, Int square)
 {
-    Int mouse_x;
-    Int mouse_y;
+    ASSERT(square >= 0 && square < 64);
+    Piece *piece = piece_mapping[square];
+    piece->square = NO_SQUARE;
+    piece_mapping[square] = null;
+    return piece;
+}
 
-    DebugState debug;
-};
+Void add_piece(Piece **piece_mapping, Int square, Piece *piece)
+{
+    ASSERT(square >= 0 && square < 64);
+    ASSERT(piece);
+    piece_mapping[square] = piece;
+    piece->square = square;
+}
+
+Void update_piece_changes(State *state, Piece **piece_mapping)
+{
+    ASSERT(state->piece_change_count >= 1 && state->piece_change_count <= 2);
+    for (Int i = 0; i < state->piece_change_count; i++)
+    {
+        PieceChange *piece_change = &state->piece_changes[i];
+        switch (piece_change->change_type)
+        {
+        case PieceChangeType::remove:
+        {
+            remove_piece(piece_mapping, piece_change->square_from);
+        }
+        break;
+
+        case PieceChangeType::move:
+        {
+            Piece *piece = remove_piece(piece_mapping, piece_change->square_from);
+            add_piece(piece_mapping, piece_change->square_to, piece);
+        }
+        break;
+        }
+    }
+}
 
 int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int show_code)
 {
@@ -502,7 +711,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Font debug_font;
     ASSERT(read_font("../asset/debug_font.asset", &debug_font));
 
-    BitBoardTable bit_board_table;
     ASSERT(read_bit_board_table("../asset/bitboard.asset", &bit_board_table));
 
     GameState game_state = get_initial_game_state();
@@ -510,13 +718,14 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Board board;
     fill_board_initial_state(&board, &board_mesh, 0);
 
-    Array<Piece> pieces = create_array<Piece>(32);
-    for (Int square = 0; square < 64; square++)
+    Piece pieces[ENTITY_PIECE_COUNT];
+    Piece *piece_mapping[64] = {};
+    for (Int square = 0, piece_i = 0; square < 64; square++)
     {
-        Piece *piece = pieces.push();
         GamePiece game_piece = game_state.position.board[square];
-        if (game_piece)
+        if (!is_empty(game_piece))
         {
+            Piece *piece = &pieces[piece_i++];
             fill_piece_initial_state(game_piece, piece, square,
                                      &white_rook_mesh,
                                      &white_knight_mesh,
@@ -531,6 +740,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                                      &black_king_mesh,
                                      &black_pawn_mesh,
                                      1, 2, 3, 4, 5, 6);
+            piece_mapping[square] = piece;
         }
     }
 
@@ -558,6 +768,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanPipeline debug_collision_pipeline;
     ASSERT(create_debug_collision_pipeline(&device, &debug_collision_pipeline));
 
+    VulkanPipeline debug_move_pipeline;
+    ASSERT(create_debug_move_pipeline(&device, &debug_move_pipeline));
+
     ShadowFrame shadow_frame;
     ASSERT(create_shadow_frame(&device, &shadow_pipeline, &shadow_frame));
 
@@ -565,15 +778,19 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanBuffer scene_vertex_buffer;
     VulkanBuffer scene_index_buffer;
     VulkanBuffer scene_uniform_buffer;
-    ASSERT(create_scene_frame(&device, &scene_pipeline, &board, &pieces, &lightmaps, &shadow_frame, &scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
+    ASSERT(create_scene_frame(&device, &scene_pipeline, &board, pieces, &lightmaps, &shadow_frame, &scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
 
     DebugUIFrame debug_ui_frame;
     VulkanBuffer debug_ui_vertex_buffer;
-    ASSERT(create_debug_ui_frame(&device, &debug_ui_pipeline, &debug_font, &debug_ui_frame, &debug_ui_vertex_buffer));
+    ASSERT(create_debug_ui_frame(&device, &debug_ui_pipeline, &debug_font, &scene_frame, &debug_ui_frame, &debug_ui_vertex_buffer));
 
     DebugCollisionFrame debug_collision_frame;
     VulkanBuffer debug_collision_vertex_buffer;
-    ASSERT(create_debug_collision_frame(&device, &debug_collision_pipeline, pieces, &debug_collision_frame, &debug_collision_vertex_buffer));
+    ASSERT(create_debug_collision_frame(&device, &debug_collision_pipeline, pieces, &scene_frame, &debug_collision_frame, &debug_collision_vertex_buffer));
+
+    DebugMoveFrame debug_move_frame;
+    VulkanBuffer debug_move_vertex_buffer;
+    ASSERT(create_debug_move_frame(&device, &debug_move_pipeline, &scene_frame, &debug_move_frame, &debug_move_vertex_buffer));
 
     Camera camera = get_scene_camera();
 
@@ -581,14 +798,14 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
 
     calculate_entity_uniform_data(&board, get_board_uniform_data(&device, &scene_uniform_buffer));
-    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+    for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
     {
         Piece *piece = &pieces[piece_i];
         calculate_entity_uniform_data(piece, get_piece_uniform_data(&device, &scene_uniform_buffer, piece_i));
     }
 
     write_entity_vertex_data(&board, &scene_vertex_buffer, &scene_index_buffer);
-    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+    for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
     {
         write_entity_vertex_data(&pieces[piece_i], &scene_vertex_buffer, &scene_index_buffer);
     }
@@ -596,20 +813,19 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     ASSERT(upload_buffer(&device, &scene_index_buffer, &scene_frame.index_buffer));
 
     DebugCollisionVertex *vertex = (DebugCollisionVertex *)debug_collision_vertex_buffer.data;
-    for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+    for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
     {
         vertex = write_collision_data(pieces[piece_i].mesh, vertex);
     }
     ASSERT(upload_buffer(&device, &debug_collision_vertex_buffer, &debug_collision_frame.vertex_buffer));
 
     State state = {};
+    state.phase = StatePhase::select;
+    state.last_hover_square = NO_SQUARE;
 
     show_window(window);
 
     Bool is_running = true;
-
-    Int last_hover_row = -1;
-    Int last_hover_column = -1;
 
     UInt64 last_timestamp = get_current_timestamp();
     Real frame_time = 1.0 / 60.0;
@@ -816,9 +1032,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         ray_world.dir = normalize(mouse_pos_world - camera.pos);
 
         // NOTE: Calculate hovered piece
-        GamePiece *hover_piece = null;
+        Piece *hover_piece = null;
         Real min_dist = 10000000;
-        for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+        for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
         {
             EntityUniformData *uniform_data = get_piece_uniform_data(&device, &scene_uniform_buffer, piece_i);
             Mat4 inverse_world;
@@ -838,154 +1054,186 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 if (convex_hull_dist >= 0)
                 {
                     min_dist = convex_hull_dist;
-                    hover_piece = &game_state.pieces[piece_i];
+                    hover_piece = piece;
                 }
             }
         }
 
         // NOTE: Calculate hovered square
-        Int hover_row = -1;
-        Int hover_column = -1;
+        Int hover_square = NO_SQUARE;
         if (hover_piece)
         {
-            hover_row = hover_piece->row;
-            hover_column = hover_piece->column;
+            hover_square = hover_piece->square;
         }
         else
         {
-            for (Int square_i = 0; square_i < 64; square_i++)
+            for (Int square = 0; square < 64; square++)
             {
-                Real dist = check_box_collision(&ray_world, &board.collision_box[square_i]);
+                Real dist = check_box_collision(&ray_world, &board.collision_box[square]);
                 if (dist > 0)
                 {
-                    hover_row = get_row(square_i);
-                    hover_column = get_column(square_i);
+                    hover_square = square;
                     break;
                 }
             }
         }
 
-        // NOTE: Select piece or change piece selection
-        if (input.click_left)
+        // NOTE: Record game move
+        if (state.phase == StatePhase::animate)
         {
-            if (hover_piece &&
-                hover_piece != game_state.selected_piece &&
-                is_friend(&game_state, hover_piece) &&
-                pieces[hover_piece->index].animation_type == AnimationType::none)
+            ASSERT(state.selected_piece);
+            if (state.selected_piece->animation_type == AnimationType::none)
             {
-                if (game_state.selected_piece)
+                record_game_move(&game_state, state.executing_move);
+                update_piece_changes(&state, piece_mapping);
+
+                state.phase = StatePhase::select;
+                state.selected_piece = null;
+            }
+        }
+
+        BitBoard all_moves = 0;
+        Bool show_ghost_piece = false;
+        if (state.phase == StatePhase::select)
+        {
+            ASSERT(!state.selected_piece);
+            // NOTE: Select piece
+            if (input.click_left)
+            {
+                if (hover_piece)
                 {
-                    stop_flash_animation(&pieces[game_state.selected_piece->index]);
+                    GamePiece game_piece = game_state.position.board[hover_piece->square];
+                    ASSERT(!is_empty(game_piece));
+                    if (is_friend(&game_state, game_piece))
+                    {
+                        start_flash_animation(hover_piece);
+                        state.selected_piece = hover_piece;
+                        state.phase = StatePhase::execute;
+                    }
                 }
-
-                game_state.selected_piece = hover_piece;
-                start_flash_animation(&pieces[game_state.selected_piece->index]);
             }
         }
-        // NOTE: Clear piece selection
-        else if (input.click_right)
+        else if (state.phase == StatePhase::execute)
         {
-            if (game_state.selected_piece)
+            ASSERT(state.selected_piece);
+            all_moves = check_game_move(&game_state, state.selected_piece->square, &bit_board_table);
+
+            Bool selection_changed = false;
+            // NOTE: Change piece selection
+            if (input.click_left && hover_piece)
             {
-                stop_flash_animation(&pieces[game_state.selected_piece->index]);
-                game_state.selected_piece = null;
-            }
-        }
-
-        // NOTE: Check game move
-        GameMoveCheck game_move_check;
-        if (game_state.selected_piece && hover_row != -1 && hover_column != -1)
-        {
-            game_move_check = check_game_move(&game_state, game_state.selected_piece, hover_row, hover_column);
-        }
-        else
-        {
-            game_move_check.is_illegal = true;
-        }
-
-        // NOTE: Update game move
-        if (input.click_left)
-        {
-            if (game_state.selected_piece && !game_move_check.is_illegal)
-            {
-                record_game_move(&game_state, game_move_check.move_type, game_state.selected_piece->row, game_state.selected_piece->column, hover_row, hover_column);
-
-                Piece *piece = &pieces[game_state.selected_piece->index];
-                stop_flash_animation(piece);
-                if (game_state.selected_piece->type == GamePieceType::knight ||
-                    game_move_check.move_type == GameMoveType::castling_king ||
-                    game_move_check.move_type == GameMoveType::castling_queen)
+                GamePiece game_piece = game_state.position.board[hover_piece->square];
+                ASSERT(!is_empty(game_piece));
+                if (state.selected_piece->square != hover_piece->square && is_friend(&game_state, game_piece))
                 {
-                    start_jump_animation(piece, game_state.selected_piece->row, game_state.selected_piece->column);
+                    stop_flash_animation(state.selected_piece);
+                    start_flash_animation(hover_piece);
+                    state.selected_piece = hover_piece;
+                    selection_changed = true;
                 }
-                else
-                {
-                    start_move_animation(piece, game_state.selected_piece->row, game_state.selected_piece->column);
-                }
-
-                if (game_move_check.move_type == GameMoveType::castling_king ||
-                    game_move_check.move_type == GameMoveType::castling_queen)
-                {
-                    Piece *castling_piece = &pieces[game_move_check.castling_piece->index];
-                    start_move_animation(castling_piece, game_move_check.castling_piece->row, game_move_check.castling_piece->column);
-                }
-
-                if (game_move_check.captured_piece)
-                {
-                    Piece *captured_piece = &pieces[game_move_check.captured_piece->index];
-                    start_capture_animation(captured_piece, &random_generator);
-                }
-
-                game_state.selected_piece = null;
             }
-        }
-
-        // NOTE: Calculate ghost piece
-        Int ghost_piece_index = -1;
-        if (game_state.selected_piece &&
-            hover_row != -1 && hover_column != -1)
-        {
-            if (!is_occupied(&game_state, hover_row, hover_column))
+            // NOTE: Clear piece selection
+            else if (input.click_right)
             {
-                ghost_piece_index = game_state.selected_piece->index;
-                update_ghost_piece(&ghost_piece, &pieces[game_state.selected_piece->index], hover_row, hover_column);
-                ghost_piece.shadowed_piece_index = -1;
+                stop_flash_animation(state.selected_piece);
+                state.selected_piece = null;
+                state.phase = StatePhase::select;
             }
-            else if (is_foe_occupied(&game_state, hover_row, hover_column))
+
+            // NOTE: Update game move
+            if (state.phase == StatePhase::execute && !selection_changed)
             {
-                ghost_piece_index = game_state.selected_piece->index;
-                update_ghost_piece(&ghost_piece, &pieces[game_state.selected_piece->index], hover_row, hover_column);
-                ghost_piece.shadowed_piece_index = game_state.board[hover_row][hover_column]->index;
+                if (input.click_left && hover_square != NO_SQUARE && HAS_FLAG(all_moves, bit_square(hover_square)))
+                {
+                    stop_flash_animation(state.selected_piece);
+
+                    state.piece_change_count = 0;
+                    GamePiece game_piece = game_state.position.board[state.selected_piece->square];
+                    GameMove game_move = get_game_move(&game_state, game_piece, state.selected_piece->square, hover_square);
+                    state.executing_move = game_move;
+
+                    Int capture_square = get_capture_square(&game_state, game_move);
+                    if (capture_square != NO_SQUARE)
+                    {
+                        Piece *captured_piece = piece_mapping[capture_square];
+                        start_capture_animation(captured_piece, &random_generator);
+                        state.piece_changes[state.piece_change_count++] = PieceChange{PieceChangeType::remove, capture_square};
+                    }
+
+                    GamePieceTypeEnum piece_type = get_piece_type(game_piece);
+                    GameMoveTypeEnum game_move_type = get_move_type(game_move);
+                    if (piece_type == GamePieceType::knight || game_move_type == GameMoveType::castling)
+                    {
+                        start_jump_animation(state.selected_piece, hover_square);
+                    }
+                    else
+                    {
+                        start_move_animation(state.selected_piece, hover_square);
+                    }
+                    state.piece_changes[state.piece_change_count++] = PieceChange{PieceChangeType::move, state.selected_piece->square, hover_square};
+
+                    if (game_move_type == GameMoveType::castling)
+                    {
+                        GameMove rook_move = get_castling_rook_move(game_move);
+                        Int rook_square_from = get_square_from(rook_move);
+                        Int rook_square_to = get_square_to(rook_move);
+                        Piece *rook_piece = piece_mapping[rook_square_from];
+                        ASSERT(rook_piece);
+                        start_move_animation(rook_piece, rook_square_to);
+                        state.piece_changes[state.piece_change_count++] = PieceChange{PieceChangeType::move, rook_square_from, rook_square_to};
+                    }
+
+                    state.phase = StatePhase::animate;
+                }
             }
-        }
 
-        // NOTE: Clear ghost piece illegal move feedback
-        if (hover_row != last_hover_row || hover_column != last_hover_column ||
-            ghost_piece_index == -1)
-        {
-            stop_illegal_flash_animation(&ghost_piece);
-        }
-
-        // NOTE: Start ghost piece illegal move feedback
-        if (input.click_left)
-        {
-            if (ghost_piece_index != -1 && game_move_check.is_illegal)
+            // NOTE: Calculate ghost piece
+            if (state.phase == StatePhase::execute && !selection_changed)
             {
-                start_illegal_flash_animation(&ghost_piece);
+                if (hover_square != NO_SQUARE)
+                {
+                    GamePiece game_piece = game_state.position.board[hover_square];
+                    if (is_empty(game_piece))
+                    {
+                        show_ghost_piece = true;
+                        update_ghost_piece(&ghost_piece, state.selected_piece, hover_square);
+                        ghost_piece.shadowed_piece = null;
+                    }
+                    else if (is_foe(&game_state, game_piece))
+                    {
+                        show_ghost_piece = true;
+                        update_ghost_piece(&ghost_piece, state.selected_piece, hover_square);
+                        ghost_piece.shadowed_piece = piece_mapping[hover_square];
+                        ASSERT(ghost_piece.shadowed_piece);
+                    }
+
+                    // NOTE: Start ghost piece illegal move feedback
+                    if (input.click_left)
+                    {
+                        if (!HAS_FLAG(all_moves, bit_square(hover_square)))
+                        {
+                            start_illegal_flash_animation(&ghost_piece);
+                        }
+                    }
+                    // NOTE: Clear ghost piece illegal move feedback
+                    else if (!show_ghost_piece || hover_square != state.last_hover_square)
+                    {
+                        stop_illegal_flash_animation(&ghost_piece);
+                    }
+                }
             }
         }
 
-        last_hover_row = hover_row;
-        last_hover_column = hover_column;
+        state.last_hover_square = hover_square;
 
         calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
-        for (Int piece_i = 0; piece_i < PIECE_COUNT; piece_i++)
+        for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
         {
             Piece *piece = &pieces[piece_i];
             update_animation(piece, frame_time);
             calculate_entity_uniform_data(piece, get_piece_uniform_data(&device, &scene_uniform_buffer, piece_i));
         }
-        if (ghost_piece_index != -1)
+        if (show_ghost_piece)
         {
             update_animation(&ghost_piece, frame_time);
             calculate_entity_uniform_data(&ghost_piece, get_ghost_piece_uniform_data(&device, &scene_uniform_buffer));
@@ -993,12 +1241,14 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
         // NOTE: Debug support
         DebugUIDrawState debug_ui_draw_state = {};
+        DebugMoveDrawState debug_move_draw_state = {};
         if (input.keydown_g)
         {
-            state.debug.show_debug_ui = !state.debug.show_debug_ui;
+            state.show_debug = !state.show_debug;
         }
-        if (state.debug.show_debug_ui)
+        if (state.show_debug)
         {
+            // NOTE: Debug camera
             if (input.keydown_z)
             {
                 camera = get_scene_camera();
@@ -1007,160 +1257,161 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             {
                 if (input.keydown_d)
                 {
-                    state.debug.moving_x_pos = true;
+                    state.moving_x_pos = true;
                 }
                 else if (input.keyup_d)
                 {
-                    state.debug.moving_x_pos = false;
+                    state.moving_x_pos = false;
                 }
                 if (input.keydown_a)
                 {
-                    state.debug.moving_x_neg = true;
+                    state.moving_x_neg = true;
                 }
                 else if (input.keyup_a)
                 {
-                    state.debug.moving_x_neg = false;
+                    state.moving_x_neg = false;
                 }
                 if (input.keydown_q)
                 {
-                    state.debug.moving_y_pos = true;
+                    state.moving_y_pos = true;
                 }
                 else if (input.keyup_q)
                 {
-                    state.debug.moving_y_pos = false;
+                    state.moving_y_pos = false;
                 }
                 if (input.keydown_e)
                 {
-                    state.debug.moving_y_neg = true;
+                    state.moving_y_neg = true;
                 }
                 else if (input.keyup_e)
                 {
-                    state.debug.moving_y_neg = false;
+                    state.moving_y_neg = false;
                 }
                 if (input.keydown_w)
                 {
-                    state.debug.moving_z_pos = true;
+                    state.moving_z_pos = true;
                 }
                 else if (input.keyup_w)
                 {
-                    state.debug.moving_z_pos = false;
+                    state.moving_z_pos = false;
                 }
                 if (input.keydown_s)
                 {
-                    state.debug.moving_z_neg = true;
+                    state.moving_z_neg = true;
                 }
                 else if (input.keyup_s)
                 {
-                    state.debug.moving_z_neg = false;
+                    state.moving_z_neg = false;
                 }
 
                 if (input.keydown_i)
                 {
-                    state.debug.rotating_x_pos = true;
+                    state.rotating_x_pos = true;
                 }
                 else if (input.keyup_i)
                 {
-                    state.debug.rotating_x_pos = false;
+                    state.rotating_x_pos = false;
                 }
                 if (input.keydown_k)
                 {
-                    state.debug.rotating_x_neg = true;
+                    state.rotating_x_neg = true;
                 }
                 else if (input.keyup_k)
                 {
-                    state.debug.rotating_x_neg = false;
+                    state.rotating_x_neg = false;
                 }
                 if (input.keydown_l)
                 {
-                    state.debug.rotating_y_pos = true;
+                    state.rotating_y_pos = true;
                 }
                 else if (input.keyup_l)
                 {
-                    state.debug.rotating_y_pos = false;
+                    state.rotating_y_pos = false;
                 }
                 if (input.keydown_j)
                 {
-                    state.debug.rotating_y_neg = true;
+                    state.rotating_y_neg = true;
                 }
                 else if (input.keyup_j)
                 {
-                    state.debug.rotating_y_neg = false;
+                    state.rotating_y_neg = false;
                 }
                 if (input.keydown_o)
                 {
-                    state.debug.rotating_z_pos = true;
+                    state.rotating_z_pos = true;
                 }
                 else if (input.keyup_o)
                 {
-                    state.debug.rotating_z_pos = false;
+                    state.rotating_z_pos = false;
                 }
                 if (input.keydown_u)
                 {
-                    state.debug.rotating_z_neg = true;
+                    state.rotating_z_neg = true;
                 }
                 else if (input.keyup_u)
                 {
-                    state.debug.rotating_z_neg = false;
+                    state.rotating_z_neg = false;
                 }
 
                 Vec3 camera_x = rotate(camera.rot, get_basis_x());
                 Vec3 camera_y = rotate(camera.rot, get_basis_y());
                 Vec3 camera_z = rotate(camera.rot, get_basis_z());
                 Real speed = 8;
-                if (state.debug.moving_x_pos)
+                if (state.moving_x_pos)
                 {
                     camera.pos = camera.pos + speed * camera_x;
                 }
-                if (state.debug.moving_x_neg)
+                if (state.moving_x_neg)
                 {
                     camera.pos = camera.pos - speed * camera_x;
                 }
-                if (state.debug.moving_y_pos)
+                if (state.moving_y_pos)
                 {
                     camera.pos = camera.pos + speed * camera_y;
                 }
-                if (state.debug.moving_y_neg)
+                if (state.moving_y_neg)
                 {
                     camera.pos = camera.pos - speed * camera_y;
                 }
-                if (state.debug.moving_z_pos)
+                if (state.moving_z_pos)
                 {
                     camera.pos = camera.pos + speed * camera_z;
                 }
-                if (state.debug.moving_z_neg)
+                if (state.moving_z_neg)
                 {
                     camera.pos = camera.pos - speed * camera_z;
                 }
 
                 Real rotating_speed = degree_to_radian(0.5);
                 Quaternion local_rot = get_identity_quaternion();
-                if (state.debug.rotating_x_pos)
+                if (state.rotating_x_pos)
                 {
                     local_rot = get_rotation_quaternion(get_basis_x(), rotating_speed) * local_rot;
                 }
-                if (state.debug.rotating_x_neg)
+                if (state.rotating_x_neg)
                 {
                     local_rot = get_rotation_quaternion(get_basis_x(), -rotating_speed) * local_rot;
                 }
-                if (state.debug.rotating_y_pos)
+                if (state.rotating_y_pos)
                 {
                     local_rot = get_rotation_quaternion(get_basis_y(), rotating_speed) * local_rot;
                 }
-                if (state.debug.rotating_y_neg)
+                if (state.rotating_y_neg)
                 {
                     local_rot = get_rotation_quaternion(get_basis_y(), -rotating_speed) * local_rot;
                 }
-                if (state.debug.rotating_z_pos)
+                if (state.rotating_z_pos)
                 {
                     local_rot = get_rotation_quaternion(get_basis_z(), rotating_speed) * local_rot;
                 }
-                if (state.debug.rotating_z_neg)
+                if (state.rotating_z_neg)
                 {
                     local_rot = get_rotation_quaternion(get_basis_z(), -rotating_speed) * local_rot;
                 }
                 camera.rot = camera.rot * local_rot;
             }
 
+            // NOTE: Debug UI
             Vec2 debug_ui_start_pos = {-0.95, -0.95};
             debug_ui_draw_state = create_debug_ui_draw_state(&debug_font, window_width, window_height, &debug_ui_vertex_buffer, debug_ui_start_pos);
 
@@ -1176,12 +1427,14 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             debug_ui_draw_vec4(&debug_ui_draw_state, vec4(camera.rot));
             debug_ui_draw_newline(&debug_ui_draw_state);
 
-            debug_ui_draw_indent(&debug_ui_draw_state, -1);
+            debug_ui_draw_indent(&debug_ui_draw_state, NO_SQUARE);
 
             debug_ui_draw_str(&debug_ui_draw_state, str("selected piece: "));
-            if (game_state.selected_piece)
+            if (state.selected_piece)
             {
-                debug_ui_draw_str(&debug_ui_draw_state, game_state.selected_piece->name);
+                GamePiece game_piece = game_state.position.board[state.selected_piece->square];
+                Str piece_name = get_game_piece_name(game_piece);
+                debug_ui_draw_str(&debug_ui_draw_state, piece_name);
             }
             else
             {
@@ -1190,24 +1443,45 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             debug_ui_draw_newline(&debug_ui_draw_state);
 
             debug_ui_draw_str(&debug_ui_draw_state, str("selected square: "));
-            if (hover_row != -1 && hover_column != -1)
+            if (hover_square != NO_SQUARE)
             {
-                debug_ui_draw_int(&debug_ui_draw_state, hover_row + 1);
+                Int row = get_row(hover_square);
+                Int column = get_column(hover_square);
+                debug_ui_draw_int(&debug_ui_draw_state, hover_square);
+                debug_ui_draw_str(&debug_ui_draw_state, str(" ("));
+                debug_ui_draw_int(&debug_ui_draw_state, row);
                 debug_ui_draw_str(&debug_ui_draw_state, str(", "));
-                debug_ui_draw_int(&debug_ui_draw_state, hover_column + 1);
+                debug_ui_draw_int(&debug_ui_draw_state, column);
+                debug_ui_draw_str(&debug_ui_draw_state, str(")"));
             }
             else
             {
                 debug_ui_draw_str(&debug_ui_draw_state, str("<no>"));
             }
             debug_ui_draw_newline(&debug_ui_draw_state);
+
+            // NOTE: Debug move
+            if (state.phase == StatePhase::execute)
+            {
+                debug_move_draw_state.vertex_buffer = &debug_move_vertex_buffer;
+                debug_move_draw_state.count = 0;
+                for (Int square = 0; square < 64; square++)
+                {
+                    if (all_moves & bit_square(square))
+                    {
+                        debug_move_draw(&debug_move_draw_state, square);
+                    }
+                }
+            }
         }
 
         ASSERT(render_vulkan_frame(&device,
-                                   &scene_pipeline, &scene_frame, &scene_uniform_buffer, &board, pieces, ghost_piece_index != -1 ? &ghost_piece : null,
+                                   &scene_pipeline, &scene_frame, &scene_uniform_buffer, &board, pieces, show_ghost_piece ? &ghost_piece : null,
                                    &shadow_pipeline, &shadow_frame,
+                                   state.show_debug,
                                    &debug_ui_pipeline, &debug_ui_frame, &debug_ui_vertex_buffer, debug_ui_draw_state.character_count,
-                                   &debug_collision_pipeline, &debug_collision_frame, &debug_collision_vertex_buffer));
+                                   &debug_collision_pipeline, &debug_collision_frame, &debug_collision_vertex_buffer,
+                                   &debug_move_pipeline, &debug_move_frame, &debug_move_vertex_buffer, debug_move_draw_state.count));
 
         UInt64 current_timestamp = get_current_timestamp();
         Real64 elapsed_time = get_elapsed_time(current_timestamp - last_timestamp);

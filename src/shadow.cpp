@@ -84,8 +84,8 @@ Bool create_shadow_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
 
 struct ShadowFrame
 {
-    Array<VkFramebuffer> frame_buffers;
     VkImage depth_image;
+    VkFramebuffer frame_buffer;
 };
 
 Bool create_shadow_frame(VulkanDevice *device, VulkanPipeline *pipeline, ShadowFrame *frame)
@@ -104,25 +104,20 @@ Bool create_shadow_frame(VulkanDevice *device, VulkanPipeline *pipeline, ShadowF
         return false;
     }
 
-    frame->frame_buffers = create_array<VkFramebuffer>(device->swapchain.images.count);
-    for (Int image_i = 0; image_i < device->swapchain.images.count; image_i++)
-    {
-        VkImageView attachments[1] = {depth_image_view};
-        VkFramebufferCreateInfo frame_buffer_create_info = {};
-        frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        frame_buffer_create_info.renderPass = pipeline->render_pass;
-        frame_buffer_create_info.attachmentCount = 1;
-        frame_buffer_create_info.pAttachments = attachments;
-        frame_buffer_create_info.width = device->swapchain.width;
-        frame_buffer_create_info.height = device->swapchain.height;
-        frame_buffer_create_info.layers = 1;
+    VkImageView attachments[1] = {depth_image_view};
+    VkFramebufferCreateInfo frame_buffer_create_info = {};
+    frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    frame_buffer_create_info.renderPass = pipeline->render_pass;
+    frame_buffer_create_info.attachmentCount = 1;
+    frame_buffer_create_info.pAttachments = attachments;
+    frame_buffer_create_info.width = device->swapchain.width;
+    frame_buffer_create_info.height = device->swapchain.height;
+    frame_buffer_create_info.layers = 1;
 
-        VkFramebuffer *frame_buffer = frame->frame_buffers.push();
-        result_code = vkCreateFramebuffer(device->handle, &frame_buffer_create_info, null, frame_buffer);
-        if (result_code != VK_SUCCESS)
-        {
-            return false;
-        }
+    result_code = vkCreateFramebuffer(device->handle, &frame_buffer_create_info, null, &frame->frame_buffer);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
     }
 
     return true;

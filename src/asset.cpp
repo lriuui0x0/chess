@@ -3,7 +3,7 @@
 #include "../lib/util.hpp"
 #include "math.cpp"
 #include "collision.cpp"
-#incldue "game.cpp"
+#include "game.cpp"
 
 struct Vertex
 {
@@ -180,15 +180,99 @@ Bool deserialise_image(Str buffer, Image *image)
     image->data = (UInt8 *)malloc(image_data_length);
     memcpy(image->data, buffer.data + pos, image_data_length);
     return true;
-} 
+}
 
 Bool deserialise_bit_board_table(Str buffer, BitBoardTable *table)
 {
-    if (!buffer.count == sizeof(BitBoardTable))
+    Int move_data_length;
+    Int pos = 0;
+    for (Int square = 0; square < 64; square++)
+    {
+        SlidingPieceTableSquare *table_square = &table->rook_table.board[square];
+        if (buffer.count < pos + 8)
+        {
+            return false;
+        }
+        table_square->blocker_mask = *(BitBoard *)(buffer.data + pos);
+        pos += 8;
+
+        if (buffer.count < pos + 8)
+        {
+            return false;
+        }
+        table_square->blocker_bit_count = *(UInt64 *)(buffer.data + pos);
+        pos += 8;
+
+        if (buffer.count < pos + 8)
+        {
+            return false;
+        }
+        table_square->magic = *(UInt64 *)(buffer.data + pos);
+        pos += 8;
+
+        move_data_length = sizeof(BitBoard) * (1 << table_square->blocker_bit_count);
+        if (buffer.count < pos + move_data_length)
+        {
+            return false;
+        }
+        table_square->move = (BitBoard *)malloc(move_data_length);
+        memcpy(table_square->move, buffer.data + pos, move_data_length);
+        pos += move_data_length;
+    }
+
+    move_data_length = sizeof(BitBoard) * 64;
+    if (buffer.count < pos + move_data_length)
     {
         return false;
     }
+    memcpy(&table->knight_table.move, buffer.data + pos, move_data_length);
+    pos += move_data_length;
 
-    memcpy(table, buffer.data, sizeof(BitBoardTable));
+    for (Int square = 0; square < 64; square++)
+    {
+        SlidingPieceTableSquare *table_square = &table->bishop_table.board[square];
+        if (buffer.count < pos + 8)
+        {
+            return false;
+        }
+        table_square->blocker_mask = *(BitBoard *)(buffer.data + pos);
+        pos += 8;
+
+        if (buffer.count < pos + 8)
+        {
+            return false;
+        }
+        table_square->blocker_bit_count = *(UInt64 *)(buffer.data + pos);
+        pos += 8;
+
+        if (buffer.count < pos + 8)
+        {
+            return false;
+        }
+        table_square->magic = *(UInt64 *)(buffer.data + pos);
+        pos += 8;
+
+        move_data_length = sizeof(BitBoard) * (1 << table_square->blocker_bit_count);
+        if (buffer.count < pos + move_data_length)
+        {
+            return false;
+        }
+        table_square->move = (BitBoard *)malloc(move_data_length);
+        memcpy(table_square->move, buffer.data + pos, move_data_length);
+        pos += move_data_length;
+    }
+
+    move_data_length = sizeof(BitBoard) * 64;
+    if (buffer.count < pos + move_data_length)
+    {
+        return false;
+    }
+    memcpy(&table->king_table.move, buffer.data + pos, move_data_length);
+    pos += move_data_length;
+
+    if (buffer.count != pos)
+    {
+        return false;
+    }
     return true;
 }

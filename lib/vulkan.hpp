@@ -60,6 +60,7 @@
     VK_FUNC(vkCmdBindIndexBuffer)          \
     VK_FUNC(vkCmdDrawIndexed)              \
     VK_FUNC(vkCmdEndRenderPass)            \
+    VK_FUNC(vkCmdResolveImage)             \
     VK_FUNC(vkDestroyShaderModule)         \
     VK_FUNC(vkDestroyPipelineLayout)       \
     VK_FUNC(vkDestroyPipeline)             \
@@ -115,7 +116,7 @@ VK_FUNC_LIST_DEVICE
 struct VulkanSwapchain
 {
     VkSwapchainKHR handle;
-    InlineBuffer<VkImage, MAX_SWAPCHAIN_IMAGE_COUNT> images;
+    BufferI<VkImage, MAX_SWAPCHAIN_IMAGE_COUNT> images;
     Int width;
     Int height;
     VkFormat format;
@@ -187,7 +188,7 @@ struct VulkanPipeline
     VkPipeline handle;
     VkRenderPass render_pass;
     VkPipelineLayout layout;
-    InlineBuffer<VkDescriptorSetLayout, MAX_DESCRIPTOR_SET_COUNT> descriptor_set_layouts;
+    BufferI<VkDescriptorSetLayout, MAX_DESCRIPTOR_SET_COUNT> descriptor_set_layouts;
 };
 
 struct VulkanBuffer
