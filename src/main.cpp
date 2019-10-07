@@ -10,6 +10,56 @@
 #include "debug_collision.cpp"
 #include "debug_move.cpp"
 
+Str get_game_piece_name(GamePiece piece)
+{
+    GameSideEnum side = get_side(piece);
+    GamePieceTypeEnum piece_type = get_piece_type(piece);
+    switch (piece_type)
+    {
+    case GamePieceType::rook:
+    {
+        return side == GameSide::white ? str("white rook") : str("black rook");
+    }
+    break;
+
+    case GamePieceType::knight:
+    {
+        return side == GameSide::white ? str("white knight") : str("black knight");
+    }
+    break;
+
+    case GamePieceType::bishop:
+    {
+        return side == GameSide::white ? str("white bishop") : str("black bishop");
+    }
+    break;
+
+    case GamePieceType::queen:
+    {
+        return side == GameSide::white ? str("white queen") : str("black queen");
+    }
+    break;
+
+    case GamePieceType::king:
+    {
+        return side == GameSide::white ? str("white king") : str("black king");
+    }
+    break;
+
+    case GamePieceType::pawn:
+    {
+        return side == GameSide::white ? str("white pawn") : str("black pawn");
+    }
+    break;
+
+    default:
+    {
+        ASSERT(false);
+        return str("");
+    }
+    }
+}
+
 Void write_entity_vertex_data(Entity *entity, VulkanBuffer *scene_vertex_buffer, VulkanBuffer *scene_index_buffer)
 {
     Mesh *mesh = entity->mesh;
@@ -27,7 +77,7 @@ Void debug_callback(Str message)
 
 Bool render_vulkan_frame(VulkanDevice *device,
                          VulkanPipeline *scene_pipeline, SceneFrame *scene_frame, VulkanBuffer *scene_uniform_buffer,
-                         Board *board, Piece *pieces, GhostPiece *ghost_piece,
+                         Board *board, PieceManager *piece_manager, GhostPiece *ghost_piece,
                          VulkanPipeline *shadow_pipeline, ShadowFrame *shadow_frame,
                          Bool show_debug,
                          VulkanPipeline *debug_ui_pipeline, DebugUIFrame *debug_ui_frame, VulkanBuffer *debug_ui_vertex_buffer, Int debug_ui_character_count,
@@ -106,9 +156,13 @@ Bool render_vulkan_frame(VulkanDevice *device,
 
     for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
     {
-        Mesh *mesh = pieces[piece_i].mesh;
-        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
-        vkCmdDrawIndexed(scene_frame->command_buffer, mesh->index_count, 1, mesh->index_offset, mesh->vertex_offset, 0);
+        Piece *piece = &piece_manager->pieces[piece_i];
+        if (piece->square != NO_SQUARE)
+        {
+            Mesh *mesh = piece->mesh;
+            vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
+            vkCmdDrawIndexed(scene_frame->command_buffer, mesh->index_count, 1, mesh->index_offset, mesh->vertex_offset, 0);
+        }
     }
 
     vkCmdEndRenderPass(scene_frame->command_buffer);
@@ -261,11 +315,11 @@ Bool render_vulkan_frame(VulkanDevice *device,
 
     for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
     {
-        Piece *piece = &pieces[piece_i];
-        if (ghost_piece == null || piece != ghost_piece->shadowed_piece)
+        Piece *piece = &piece_manager->pieces[piece_i];
+        if (piece->square != NO_SQUARE && (ghost_piece == null || piece != ghost_piece->shadowed_piece))
         {
-            Mesh *mesh = pieces[piece_i].mesh;
-            Image *light_map = pieces[piece_i].light_map;
+            Mesh *mesh = piece->mesh;
+            Image *light_map = piece->light_map;
             vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
             vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scene_pipeline->layout, 2, 1, &light_map->descriptor_set, 0, null);
             vkCmdDrawIndexed(scene_frame->command_buffer, mesh->index_count, 1, mesh->index_offset, mesh->vertex_offset, 0);
@@ -304,12 +358,15 @@ Bool render_vulkan_frame(VulkanDevice *device,
         Int vertex_offset = 0;
         for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
         {
-            Mesh *mesh = pieces[piece_i].mesh;
-            Int vertex_count = COLLISION_BOX_VERTEX_COUNT + mesh->collision_hull_vertex_count * 2;
-
-            vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_collision_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
-            vkCmdDraw(scene_frame->command_buffer, vertex_count, 1, vertex_offset, 0);
-            vertex_offset += vertex_count;
+            Piece *piece = &piece_manager->pieces[piece_i];
+            if (piece->square != NO_SQUARE)
+            {
+                Mesh *mesh = piece->mesh;
+                Int vertex_count = COLLISION_BOX_VERTEX_COUNT + mesh->collision_hull_vertex_count * 2;
+                vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_collision_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
+                vkCmdDraw(scene_frame->command_buffer, vertex_count, 1, vertex_offset, 0);
+                vertex_offset += vertex_count;
+            }
         }
 
         vkCmdEndRenderPass(scene_frame->command_buffer);
@@ -469,6 +526,7 @@ struct Input
 
     Bool keydown_g;
     Bool keydown_z;
+    Bool keydown_r;
 
     Bool keydown_d;
     Bool keyup_d;
@@ -510,8 +568,8 @@ typedef Int PieceChangeTypeEnum;
 struct PieceChange
 {
     PieceChangeTypeEnum change_type;
-    Int square_from;
-    Int square_to;
+    Square square_from;
+    Square square_to;
 };
 
 namespace StatePhase
@@ -535,9 +593,7 @@ struct State
     Piece *selected_piece;
     GameMove executing_move;
     Int promotion_index;
-    Int piece_change_count;
-    PieceChange piece_changes[2];
-    Int last_hover_square;
+    Square last_hover_square;
 
     Bool show_debug;
     Bool moving_x_pos;
@@ -554,47 +610,6 @@ struct State
     Bool rotating_z_neg;
 };
 
-Piece *remove_piece(Piece **piece_mapping, Int square)
-{
-    ASSERT(square >= 0 && square < 64);
-    Piece *piece = piece_mapping[square];
-    piece->square = NO_SQUARE;
-    piece_mapping[square] = null;
-    return piece;
-}
-
-Void add_piece(Piece **piece_mapping, Int square, Piece *piece)
-{
-    ASSERT(square >= 0 && square < 64);
-    ASSERT(piece);
-    piece_mapping[square] = piece;
-    piece->square = square;
-}
-
-Void update_piece_changes(State *state, Piece **piece_mapping)
-{
-    ASSERT(state->piece_change_count >= 1 && state->piece_change_count <= 2);
-    for (Int i = 0; i < state->piece_change_count; i++)
-    {
-        PieceChange *piece_change = &state->piece_changes[i];
-        switch (piece_change->change_type)
-        {
-        case PieceChangeType::remove:
-        {
-            remove_piece(piece_mapping, piece_change->square_from);
-        }
-        break;
-
-        case PieceChangeType::move:
-        {
-            Piece *piece = remove_piece(piece_mapping, piece_change->square_from);
-            add_piece(piece_mapping, piece_change->square_to, piece);
-        }
-        break;
-        }
-    }
-}
-
 AssetStore asset_store;
 
 int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int show_code)
@@ -609,18 +624,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     Board board;
     fill_board_initial_state(&board, &asset_store.board_mesh, &asset_store.board_light_map);
 
-    Piece pieces[ENTITY_PIECE_COUNT];
-    Piece *piece_mapping[64] = {};
-    for (Int square = 0, piece_i = 0; square < 64; square++)
-    {
-        GamePiece game_piece = game_state.position.board[square];
-        if (!is_empty(game_piece))
-        {
-            Piece *piece = &pieces[piece_i++];
-            fill_piece_initial_state(game_piece, piece, square, &asset_store);
-            piece_mapping[square] = piece;
-        }
-    }
+    PieceManager piece_manager;
+    piece_manager.asset_store = &asset_store;
+    fill_piece_manager_initial_state(&piece_manager, &game_state);
 
     GhostPiece ghost_piece;
     fill_ghost_piece_initila_state(&ghost_piece);
@@ -656,7 +662,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanBuffer scene_vertex_buffer;
     VulkanBuffer scene_index_buffer;
     VulkanBuffer scene_uniform_buffer;
-    ASSERT(create_scene_frame(&device, &scene_pipeline, &board, pieces, &asset_store, &shadow_frame, &scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
+    ASSERT(create_scene_frame(&device, &scene_pipeline, &board, &piece_manager, &asset_store, &shadow_frame, &scene_frame, &scene_vertex_buffer, &scene_index_buffer, &scene_uniform_buffer));
 
     DebugUIFrame debug_ui_frame;
     VulkanBuffer debug_ui_vertex_buffer;
@@ -664,7 +670,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     DebugCollisionFrame debug_collision_frame;
     VulkanBuffer debug_collision_vertex_buffer;
-    ASSERT(create_debug_collision_frame(&device, &debug_collision_pipeline, pieces, &scene_frame, &debug_collision_frame, &debug_collision_vertex_buffer));
+    ASSERT(create_debug_collision_frame(&device, &debug_collision_pipeline, &piece_manager, &scene_frame, &debug_collision_frame, &debug_collision_vertex_buffer));
 
     DebugMoveFrame debug_move_frame;
     VulkanBuffer debug_move_vertex_buffer;
@@ -678,14 +684,14 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     calculate_entity_uniform_data(&board, get_board_uniform_data(&device, &scene_uniform_buffer));
     for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
     {
-        Piece *piece = &pieces[piece_i];
+        Piece *piece = &piece_manager.pieces[piece_i];
         calculate_entity_uniform_data(piece, get_piece_uniform_data(&device, &scene_uniform_buffer, piece_i));
     }
 
     write_entity_vertex_data(&board, &scene_vertex_buffer, &scene_index_buffer);
     for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
     {
-        write_entity_vertex_data(&pieces[piece_i], &scene_vertex_buffer, &scene_index_buffer);
+        write_entity_vertex_data(&piece_manager.pieces[piece_i], &scene_vertex_buffer, &scene_index_buffer);
     }
     ASSERT(upload_buffer(&device, &scene_vertex_buffer, &scene_frame.vertex_buffer));
     ASSERT(upload_buffer(&device, &scene_index_buffer, &scene_frame.index_buffer));
@@ -693,7 +699,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     DebugCollisionVertex *vertex = (DebugCollisionVertex *)debug_collision_vertex_buffer.data;
     for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
     {
-        vertex = write_collision_data(pieces[piece_i].mesh, vertex);
+        vertex = write_collision_data(piece_manager.pieces[piece_i].mesh, vertex);
     }
     ASSERT(upload_buffer(&device, &debug_collision_vertex_buffer, &debug_collision_frame.vertex_buffer));
 
@@ -794,6 +800,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 else if (key_code == WindowMessageKeyCode::key_z)
                 {
                     input.keydown_z = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_r)
+                {
+                    input.keydown_r = true;
                 }
             }
             break;
@@ -914,38 +924,41 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         Real min_dist = 10000000;
         for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
         {
-            EntityUniformData *uniform_data = get_piece_uniform_data(&device, &scene_uniform_buffer, piece_i);
-            Mat4 inverse_world;
-            ASSERT(inverse(uniform_data->world, &inverse_world));
-
-            Vec3 camera_pos_local = vec3(inverse_world * vec4(camera.pos));
-            Vec3 mouse_pos_local = vec3(inverse_world * vec4(mouse_pos_world));
-            Ray ray_local;
-            ray_local.pos = camera_pos_local;
-            ray_local.dir = normalize(mouse_pos_local - camera_pos_local);
-
-            Piece *piece = &pieces[piece_i];
-            Real box_dist = check_box_collision(&ray_local, &piece->mesh->collision_box);
-            if (box_dist >= 0 && box_dist < min_dist)
+            Piece *piece = &piece_manager.pieces[piece_i];
+            if (piece->square != NO_SQUARE)
             {
-                Real convex_hull_dist = check_convex_hull_collision(&ray_local, piece->mesh->collision_hull_vertex_count, piece->mesh->collision_hull_vertex_data);
-                if (convex_hull_dist >= 0)
+                EntityUniformData *uniform_data = get_piece_uniform_data(&device, &scene_uniform_buffer, piece_i);
+                Mat4 inverse_world;
+                ASSERT(inverse(uniform_data->world, &inverse_world));
+
+                Vec3 camera_pos_local = vec3(inverse_world * vec4(camera.pos));
+                Vec3 mouse_pos_local = vec3(inverse_world * vec4(mouse_pos_world));
+                Ray ray_local;
+                ray_local.pos = camera_pos_local;
+                ray_local.dir = normalize(mouse_pos_local - camera_pos_local);
+
+                Real box_dist = check_box_collision(&ray_local, &piece->mesh->collision_box);
+                if (box_dist >= 0 && box_dist < min_dist)
                 {
-                    min_dist = convex_hull_dist;
-                    hover_piece = piece;
+                    Real convex_hull_dist = check_convex_hull_collision(&ray_local, piece->mesh->collision_hull_vertex_count, piece->mesh->collision_hull_vertex_data);
+                    if (convex_hull_dist >= 0)
+                    {
+                        min_dist = convex_hull_dist;
+                        hover_piece = piece;
+                    }
                 }
             }
         }
 
         // NOTE: Calculate hovered square
-        Int hover_square = NO_SQUARE;
+        Square hover_square = NO_SQUARE;
         if (hover_piece)
         {
             hover_square = hover_piece->square;
         }
         else
         {
-            for (Int square = 0; square < 64; square++)
+            for (Square square = 0; square < 64; square++)
             {
                 Real dist = check_box_collision(&ray_world, &board.collision_box[square]);
                 if (dist > 0)
@@ -961,12 +974,30 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         if (state.phase == StatePhase::select)
         {
             ASSERT(!state.selected_piece);
+            // NOTE: Undo
+            if (input.keydown_z)
+            {
+                GameMove move;
+                if (undo(&game_state, &move))
+                {
+                    rollback_move(&piece_manager, move);
+                }
+            }
+            // NOTE: Redo
+            else if (input.keydown_r)
+            {
+                GameMove move;
+                if (redo(&game_state, &move))
+                {
+                    record_move(&piece_manager, move);
+                }
+            }
             // NOTE: Select piece
-            if (input.click_left)
+            else if (input.click_left)
             {
                 if (hover_piece)
                 {
-                    GamePiece game_piece = game_state.position.board[hover_piece->square];
+                    GamePiece game_piece = game_state.board[hover_piece->square];
                     ASSERT(!is_empty(game_piece));
                     if (is_friend(&game_state, game_piece))
                     {
@@ -987,7 +1018,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             // NOTE: Change piece selection
             if (input.click_left && hover_piece)
             {
-                GamePiece game_piece = game_state.position.board[hover_piece->square];
+                GamePiece game_piece = game_state.board[hover_piece->square];
                 ASSERT(!is_empty(game_piece));
                 if (state.selected_piece->square != hover_piece->square && is_friend(&game_state, game_piece))
                 {
@@ -998,7 +1029,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 }
             }
             // NOTE: Clear piece selection
-            else if (input.click_right)
+            else if (input.click_right || input.keydown_z)
             {
                 stop_flash_animation(state.selected_piece);
                 state.selected_piece = null;
@@ -1016,18 +1047,16 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                         stop_flash_animation(state.selected_piece);
 
                         state.phase = StatePhase::animate;
-                        state.piece_change_count = 0;
                         state.executing_move = game_move;
 
-                        Int capture_square = get_capture_square(&game_state, game_move);
+                        Square capture_square = get_capture_square(game_move);
                         if (capture_square != NO_SQUARE)
                         {
-                            Piece *captured_piece = piece_mapping[capture_square];
-                            start_capture_animation(captured_piece, &random_generator);
-                            state.piece_changes[state.piece_change_count++] = PieceChange{PieceChangeType::remove, capture_square};
+                            Piece *captured_piece = piece_manager.piece_mapping[capture_square];
+                            start_capture_animation(captured_piece);
                         }
 
-                        GamePiece game_piece = game_state.position.board[state.selected_piece->square];
+                        GamePiece game_piece = game_state.board[state.selected_piece->square];
                         GamePieceTypeEnum piece_type = get_piece_type(game_piece);
                         GameMoveTypeEnum game_move_type = get_move_type(game_move);
                         if (piece_type == GamePieceType::knight || game_move_type == GameMoveType::castling)
@@ -1038,17 +1067,15 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                         {
                             start_move_animation(state.selected_piece, hover_square);
                         }
-                        state.piece_changes[state.piece_change_count++] = PieceChange{PieceChangeType::move, state.selected_piece->square, hover_square};
 
                         if (game_move_type == GameMoveType::castling)
                         {
                             GameMove rook_move = get_castling_rook_move(game_move);
-                            Int rook_square_from = get_square_from(rook_move);
-                            Int rook_square_to = get_square_to(rook_move);
-                            Piece *rook_piece = piece_mapping[rook_square_from];
+                            Square rook_square_from = get_from(rook_move);
+                            Square rook_square_to = get_to(rook_move);
+                            Piece *rook_piece = piece_manager.piece_mapping[rook_square_from];
                             ASSERT(rook_piece);
                             start_move_animation(rook_piece, rook_square_to);
-                            state.piece_changes[state.piece_change_count++] = PieceChange{PieceChangeType::move, rook_square_from, rook_square_to};
                         }
                     }
                     else
@@ -1063,7 +1090,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             {
                 if (hover_square != NO_SQUARE)
                 {
-                    GamePiece game_piece = game_state.position.board[hover_square];
+                    GamePiece game_piece = game_state.board[hover_square];
                     if (is_empty(game_piece))
                     {
                         show_ghost_piece = true;
@@ -1074,7 +1101,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                     {
                         show_ghost_piece = true;
                         update_ghost_piece(&ghost_piece, state.selected_piece, hover_square);
-                        ghost_piece.shadowed_piece = piece_mapping[hover_square];
+                        ghost_piece.shadowed_piece = piece_manager.piece_mapping[hover_square];
                         ASSERT(ghost_piece.shadowed_piece);
                     }
 
@@ -1096,13 +1123,23 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         }
         else if (state.phase == StatePhase::promote)
         {
-            // NOTE: Confirm promotion
-            if (input.click_left)
+            // NOTE: Undo partial promotion
+            if (input.keydown_z)
             {
                 stop_flash_animation(state.selected_piece);
-                GameMove promotion_move = add_promotion_piece_type(state.executing_move, state.promotion_index);
-                record_game_move(&game_state, promotion_move);
-                update_piece_changes(&state, piece_mapping);
+                GameMove promotion_move = add_promotion_index(state.executing_move, state.promotion_index);
+                record_move(&piece_manager, promotion_move);
+                rollback_move(&piece_manager, promotion_move);
+                state.phase = StatePhase::select;
+                state.selected_piece = null;
+            }
+            // NOTE: Confirm promotion
+            else if (input.click_left)
+            {
+                stop_flash_animation(state.selected_piece);
+                GameMove promotion_move = add_promotion_index(state.executing_move, state.promotion_index);
+                record_game_move_with_history(&game_state, promotion_move);
+                record_move(&piece_manager, promotion_move);
                 state.phase = StatePhase::select;
                 state.selected_piece = null;
             }
@@ -1110,9 +1147,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             else if (input.click_right)
             {
                 state.promotion_index = (state.promotion_index + 1) % promotion_list.count;
-                GamePiece game_piece = game_state.position.board[state.selected_piece->square];
-                GamePiece promoted_piece = get_piece(get_side(game_piece), promotion_list[state.promotion_index]);
-                update_piece_mesh(state.selected_piece, promoted_piece, &asset_store);
+                GamePiece game_piece = game_state.board[state.selected_piece->square];
+                GamePiece promoted_piece = get_game_piece(get_side(game_piece), promotion_list[state.promotion_index]);
+                set_piece_mesh(&piece_manager, state.selected_piece, promoted_piece);
             }
         }
         else if (state.phase == StatePhase::animate)
@@ -1125,17 +1162,17 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 if (move_type == GameMoveType::promotion)
                 {
                     state.promotion_index = 0;
-                    GamePiece game_piece = game_state.position.board[state.selected_piece->square];
-                    GamePiece promoted_piece = get_piece(get_side(game_piece), promotion_list[state.promotion_index]);
-                    update_piece_mesh(state.selected_piece, promoted_piece, &asset_store);
+                    GamePiece game_piece = game_state.board[state.selected_piece->square];
+                    GamePiece promoted_piece = get_game_piece(get_side(game_piece), promotion_list[state.promotion_index]);
+                    set_piece_mesh(&piece_manager, state.selected_piece, promoted_piece);
                     start_flash_animation(state.selected_piece);
                     state.phase = StatePhase::promote;
                 }
                 // NOTE: Record game move
                 else
                 {
-                    record_game_move(&game_state, state.executing_move);
-                    update_piece_changes(&state, piece_mapping);
+                    record_game_move_with_history(&game_state, state.executing_move);
+                    record_move(&piece_manager, state.executing_move);
                     state.phase = StatePhase::select;
                     state.selected_piece = null;
                 }
@@ -1147,9 +1184,12 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
         for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
         {
-            Piece *piece = &pieces[piece_i];
-            update_animation(piece, frame_time);
-            calculate_entity_uniform_data(piece, get_piece_uniform_data(&device, &scene_uniform_buffer, piece_i));
+            Piece *piece = &piece_manager.pieces[piece_i];
+            if (piece->square != NO_SQUARE)
+            {
+                update_animation(piece, frame_time);
+                calculate_entity_uniform_data(piece, get_piece_uniform_data(&device, &scene_uniform_buffer, piece_i));
+            }
         }
         if (show_ghost_piece)
         {
@@ -1350,7 +1390,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             debug_ui_draw_str(&debug_ui_draw_state, str("selected piece: "));
             if (state.selected_piece)
             {
-                GamePiece game_piece = game_state.position.board[state.selected_piece->square];
+                GamePiece game_piece = game_state.board[state.selected_piece->square];
                 Str piece_name = get_game_piece_name(game_piece);
                 debug_ui_draw_str(&debug_ui_draw_state, piece_name);
             }
@@ -1363,8 +1403,8 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             debug_ui_draw_str(&debug_ui_draw_state, str("selected square: "));
             if (hover_square != NO_SQUARE)
             {
-                Int row = get_row(hover_square);
-                Int column = get_column(hover_square);
+                Square row = get_row(hover_square);
+                Square column = get_column(hover_square);
                 debug_ui_draw_int(&debug_ui_draw_state, hover_square);
                 debug_ui_draw_str(&debug_ui_draw_state, str(" ("));
                 debug_ui_draw_int(&debug_ui_draw_state, row);
@@ -1387,7 +1427,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             {
                 debug_move_draw_state.vertex_buffer = &debug_move_vertex_buffer;
                 debug_move_draw_state.count = 0;
-                for (Int square = 0; square < 64; square++)
+                for (Square square = 0; square < 64; square++)
                 {
                     if (all_moves & bit_square(square))
                     {
@@ -1402,7 +1442,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         }
 
         ASSERT(render_vulkan_frame(&device,
-                                   &scene_pipeline, &scene_frame, &scene_uniform_buffer, &board, pieces, show_ghost_piece ? &ghost_piece : null,
+                                   &scene_pipeline, &scene_frame, &scene_uniform_buffer, &board, &piece_manager, show_ghost_piece ? &ghost_piece : null,
                                    &shadow_pipeline, &shadow_frame,
                                    state.show_debug,
                                    &debug_ui_pipeline, &debug_ui_frame, &debug_ui_vertex_buffer, debug_ui_draw_state.character_count,

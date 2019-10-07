@@ -25,8 +25,6 @@ struct Animation
     Real t;
     Vec3 pos_from;
     Vec3 pos_to;
-    Quaternion rot_from;
-    Quaternion rot_to;
 };
 
 enum struct AnimationType
@@ -86,35 +84,162 @@ Vec3 get_square_pos(Int square)
     return {column * SQUARE_SIZE, 0, row * SQUARE_SIZE};
 }
 
-#define ENTITY_PIECE_COUNT (32)
-
 struct Piece : Entity
 {
-    Int square;
+    Square square;
 };
 
-Void fill_piece_initial_state(GamePiece game_piece, Piece *piece, Int square, AssetStore *asset_store)
+#define ENTITY_PIECE_COUNT (32)
+struct PieceManager
 {
-    ASSERT(game_piece != NO_GAME_PIECE);
+    AssetStore *asset_store;
+    Piece pieces[ENTITY_PIECE_COUNT];
+    Piece *piece_mapping[64];
+};
+
+Void set_piece_mesh(PieceManager *piece_manager, Piece *piece, GamePiece game_piece)
+{
+    ASSERT(piece && !is_empty(game_piece));
     GameSideEnum side = get_side(game_piece);
     GamePieceTypeEnum piece_type = get_piece_type(game_piece);
+    piece->mesh = &piece_manager->asset_store->piece_meshes[side][piece_type];
+    piece->light_map = &piece_manager->asset_store->piece_light_maps[piece_type];
+}
 
+Void fill_piece_initial_state(PieceManager* piece_manager, Piece *piece, GamePiece game_piece, Square square)
+{
+    ASSERT(piece && !is_empty(game_piece));
+    GameSideEnum side = get_side(game_piece);
+    piece->square = square;
     piece->pos = get_square_pos(square);
     piece->rot = side == GameSide::white ? get_rotation_quaternion(get_basis_y(), 0) : get_rotation_quaternion(get_basis_y(), PI);
     piece->scale = Vec3{1, -1, 1};
-    piece->square = square;
-    piece->mesh = &asset_store->piece_meshes[side][piece_type];
-    piece->light_map = &asset_store->piece_light_maps[piece_type];
     piece->animation_type = AnimationType::none;
     piece->color_overlay = Vec4{1, 1, 1, 1};
+    set_piece_mesh(piece_manager, piece, game_piece);
 }
 
-Void update_piece_mesh(Piece *piece, GamePiece game_piece, AssetStore *asset_store)
+Void fill_piece_manager_initial_state(PieceManager *piece_manager, GameState *game_state)
 {
-    GameSideEnum side = get_side(game_piece);
-    GamePieceTypeEnum piece_type = get_piece_type(game_piece);
-    piece->mesh = &asset_store->piece_meshes[side][piece_type];
-    piece->light_map = &asset_store->piece_light_maps[piece_type];
+    Int piece_i = 0;
+    for (Int square = 0; square < 64; square++)
+    {
+        GamePiece game_piece = game_state->board[square];
+        if (!is_empty(game_piece))
+        {
+            Piece *piece = &piece_manager->pieces[piece_i++];
+            fill_piece_initial_state(piece_manager, piece, game_piece, square);
+            piece_manager->piece_mapping[square] = piece;
+        }
+        else
+        {
+            piece_manager->piece_mapping[square] = null;
+        }
+    }
+
+    for (; piece_i < ENTITY_PIECE_COUNT; piece_i++)
+    {
+        Piece *piece = &piece_manager->pieces[piece_i];
+        piece->square = NO_SQUARE;
+    }
+}
+
+Void add_piece(PieceManager *piece_manager, Square square, Piece *piece)
+{
+    ASSERT(square >= 0 && square < 64);
+    ASSERT(piece);
+    ASSERT(!piece_manager->piece_mapping[square]);
+    piece_manager->piece_mapping[square] = piece;
+    piece->square = square;
+    piece->pos = get_square_pos(square);
+}
+
+Piece *remove_piece(PieceManager *piece_manager, Square square)
+{
+    ASSERT(square >= 0 && square < 64);
+    Piece *piece = piece_manager->piece_mapping[square];
+    ASSERT(piece);
+    piece->square = NO_SQUARE;
+    piece_manager->piece_mapping[square] = null;
+    return piece;
+}
+
+Void record_move(PieceManager *piece_manager, GameMove move)
+{
+    Square capture_square = get_capture_square(move);
+    if (capture_square != NO_SQUARE)
+    {
+        remove_piece(piece_manager, capture_square);
+    }
+
+    Square square_from = get_from(move);
+    Square square_to = get_to(move);
+    Piece *piece = remove_piece(piece_manager, square_from);
+    add_piece(piece_manager, square_to, piece);
+
+    GameMoveTypeEnum move_type = get_move_type(move);
+    if (move_type == GameMoveType::castling)
+    {
+        GameMove rook_move = get_castling_rook_move(move);
+        Square rook_square_from = get_from(rook_move);
+        Square rook_square_to = get_to(rook_move);
+        Piece *rook_piece = remove_piece(piece_manager, rook_square_from);
+        add_piece(piece_manager, rook_square_to, rook_piece);
+    }
+
+    if (move_type == GameMoveType::promotion)
+    {
+        GameSideEnum side = get_side(move);
+        Int promotion_index = get_promotion_index(move);
+        GamePiece promoted_piece = get_game_piece(side, promotion_list[promotion_index]);
+        Piece *piece = piece_manager->piece_mapping[square_to];
+        set_piece_mesh(piece_manager, piece, promoted_piece);
+    }
+}
+
+Void rollback_move(PieceManager *piece_manager, GameMove move)
+{
+    Square square_from = get_from(move);
+    Square square_to = get_to(move);
+    GameMoveTypeEnum move_type = get_move_type(move);
+    if (move_type == GameMoveType::promotion)
+    {
+        GameSideEnum side = get_side(move);
+        GamePiece pawn_piece = get_game_piece(side, GamePieceType::pawn);
+        Piece *piece = piece_manager->piece_mapping[square_to];
+        set_piece_mesh(piece_manager, piece, pawn_piece);
+    }
+
+    if (move_type == GameMoveType::castling)
+    {
+        GameMove rook_move = get_castling_rook_move(move);
+        Square rook_square_from = get_from(rook_move);
+        Square rook_square_to = get_to(rook_move);
+        Piece *rook_piece = remove_piece(piece_manager, rook_square_to);
+        add_piece(piece_manager, rook_square_from, rook_piece);
+    }
+
+    Piece *piece = remove_piece(piece_manager, square_to);
+    add_piece(piece_manager, square_from, piece);
+
+    Square capture_square = get_capture_square(move);
+    if (capture_square != NO_SQUARE)
+    {
+        Piece *captured_piece = null;
+        for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
+        {
+            captured_piece = &piece_manager->pieces[piece_i];
+            if (captured_piece->square == NO_SQUARE)
+            {
+                break;
+            }
+        }
+        ASSERT(captured_piece);
+
+        GamePiece game_piece = get_captured_piece(move);
+        fill_piece_initial_state(piece_manager, captured_piece, game_piece, capture_square);
+        add_piece(piece_manager, capture_square, captured_piece);
+    }
 }
 
 struct GhostPiece : Entity
@@ -154,23 +279,10 @@ Void start_jump_animation(Piece *piece, Int square)
     piece->animation.pos_to = get_square_pos(square);
 }
 
-Void start_capture_animation(Piece *piece, RandomGenerator *generator)
+Void start_capture_animation(Piece *piece)
 {
     piece->animation_type = AnimationType::capture;
     piece->animation.t = 0;
-
-    Real distance = 1500;
-    Real angle = degree_to_radian(get_random_number(generator, 0, 360));
-    Real height = -500;
-
-    Vec3 pos_change_xz = Vec3{distance * cosf(angle), 0, distance * sinf(angle)};
-    Vec3 pos_to = piece->pos + Vec3{pos_change_xz.x, height, pos_change_xz.z};
-    piece->animation.pos_from = piece->pos;
-    piece->animation.pos_to = pos_to;
-
-    Quaternion rot_to = get_neighbour(get_rotation_quaternion(-get_basis_y(), (angle + PI) - PI / 2) * get_rotation_quaternion(get_basis_x(), PI / 2), piece->rot);
-    piece->animation.rot_from = piece->rot;
-    piece->animation.rot_to = rot_to;
 }
 
 Void start_flash_animation(Piece *piece)
@@ -236,12 +348,11 @@ Void update_animation(Entity *entity, Real elapsed_time)
     }
     else if (entity->animation_type == AnimationType::capture)
     {
-        Real animation_time = 0.5;
+        Real animation_time = 0.1;
         Real dt = elapsed_time / animation_time;
-        entity->animation.t = MIN(entity->animation.t + dt, 1);
-        entity->pos = lerp(entity->animation.pos_from, entity->animation.pos_to, entity->animation.t);
-        Real rot_t = quadratic_modify(entity->animation.t, -1.5);
-        entity->rot = slerp(entity->animation.rot_from, entity->animation.rot_to, rot_t);
+        entity->animation.t += dt;
+        Real alpha = lerp(1.0f, 0.0f, entity->animation.t);
+        entity->color_overlay = Vec4{1, 1, 1, alpha};
 
         if (entity->animation.t >= 1)
         {

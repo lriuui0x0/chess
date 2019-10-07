@@ -97,7 +97,7 @@ struct DebugCollisionFrame
 
 #define COLLISION_BOX_VERTEX_COUNT (6 * 4 * 2)
 
-Bool create_debug_collision_frame(VulkanDevice *device, VulkanPipeline *pipeline, Piece *pieces, SceneFrame *scene_frame, DebugCollisionFrame *frame, VulkanBuffer *host_vertex_buffer)
+Bool create_debug_collision_frame(VulkanDevice *device, VulkanPipeline *pipeline, PieceManager *piece_manager, SceneFrame *scene_frame, DebugCollisionFrame *frame, VulkanBuffer *host_vertex_buffer)
 {
     VkResult result_code;
 
@@ -120,7 +120,7 @@ Bool create_debug_collision_frame(VulkanDevice *device, VulkanPipeline *pipeline
     Int total_vertex_data_length = 0;
     for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
     {
-        Piece *piece = &pieces[piece_i];
+        Piece *piece = &piece_manager->pieces[piece_i];
         total_vertex_data_length += sizeof(DebugCollisionVertex) * (COLLISION_BOX_VERTEX_COUNT + piece->mesh->collision_hull_vertex_count * 2);
     }
 

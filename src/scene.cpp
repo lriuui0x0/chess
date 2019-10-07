@@ -206,7 +206,7 @@ Bool create_light_map_image(VulkanDevice *device, Image *light_map, VkDescriptor
     return true;
 }
 
-Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *board, Piece *pieces, AssetStore *asset_store, ShadowFrame *shadow_frame, SceneFrame *frame,
+Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *board, PieceManager *piece_manager, AssetStore *asset_store, ShadowFrame *shadow_frame, SceneFrame *frame,
                         VulkanBuffer *host_vertex_buffer, VulkanBuffer *host_index_buffer, VulkanBuffer *host_uniform_buffer)
 {
     VkSampleCountFlagBits multisample_count = get_maximum_multisample_count(device);
@@ -310,7 +310,7 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
     board->mesh->index_offset = total_index_count;
     for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
     {
-        Piece *piece = &pieces[piece_i];
+        Piece *piece = &piece_manager->pieces[piece_i];
         piece->mesh->vertex_offset = total_vertex_count;
         total_vertex_count += piece->mesh->vertex_count;
         piece->mesh->index_offset = total_index_count;
