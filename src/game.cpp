@@ -430,7 +430,7 @@ BitBoard check_castling_move(GameState *state, GameSideEnum side)
     return move;
 }
 
-BitBoard check_game_move(GameState *state, Square square, BitBoardTable *bit_board_table)
+BitBoard check_game_move(GameState *state, Square square)
 {
     ASSERT(square >= 0 && square < 64);
     GamePiece piece = state->board[square];
@@ -442,29 +442,29 @@ BitBoard check_game_move(GameState *state, Square square, BitBoardTable *bit_boa
     {
     case GamePieceType::rook:
     {
-        BitBoard move = check_sliding_piece_move(state, square, side, &bit_board_table->rook_table);
+        BitBoard move = check_sliding_piece_move(state, square, side, &state->bit_board_table->rook_table);
         return move;
     }
     break;
 
     case GamePieceType::knight:
     {
-        BitBoard move = check_simple_piece_move(state, square, side, &bit_board_table->knight_table);
+        BitBoard move = check_simple_piece_move(state, square, side, &state->bit_board_table->knight_table);
         return move;
     }
     break;
 
     case GamePieceType::bishop:
     {
-        BitBoard move = check_sliding_piece_move(state, square, side, &bit_board_table->bishop_table);
+        BitBoard move = check_sliding_piece_move(state, square, side, &state->bit_board_table->bishop_table);
         return move;
     }
     break;
 
     case GamePieceType::queen:
     {
-        BitBoard rook_move = check_sliding_piece_move(state, square, side, &bit_board_table->rook_table);
-        BitBoard bishop_move = check_sliding_piece_move(state, square, side, &bit_board_table->bishop_table);
+        BitBoard rook_move = check_sliding_piece_move(state, square, side, &state->bit_board_table->rook_table);
+        BitBoard bishop_move = check_sliding_piece_move(state, square, side, &state->bit_board_table->bishop_table);
         BitBoard move = rook_move | bishop_move;
         return move;
     }
@@ -472,7 +472,7 @@ BitBoard check_game_move(GameState *state, Square square, BitBoardTable *bit_boa
 
     case GamePieceType::king:
     {
-        BitBoard move = check_simple_piece_move(state, square, side, &bit_board_table->king_table);
+        BitBoard move = check_simple_piece_move(state, square, side, &state->bit_board_table->king_table);
         BitBoard castling_move = check_castling_move(state, side);
         move |= castling_move;
         return move;

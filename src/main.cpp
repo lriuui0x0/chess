@@ -1011,7 +1011,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         else if (state.phase == StatePhase::execute)
         {
             ASSERT(state.selected_piece);
-            all_moves = check_game_move(&game_state, state.selected_piece->square, &asset_store.bit_board_table);
+            all_moves = check_game_move(&game_state, state.selected_piece->square);
 
             Bool selection_changed = false;
             Bool illegal_move = false;
@@ -1385,7 +1385,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             debug_ui_draw_vec4(&debug_ui_draw_state, vec4(camera.rot));
             debug_ui_draw_newline(&debug_ui_draw_state);
 
-            debug_ui_draw_indent(&debug_ui_draw_state, NO_SQUARE);
+            debug_ui_draw_indent(&debug_ui_draw_state, -1);
 
             debug_ui_draw_str(&debug_ui_draw_state, str("selected piece: "));
             if (state.selected_piece)
@@ -1435,6 +1435,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                         if (is_move_legal(&game_state, move))
                         {
                             debug_move_draw(&debug_move_draw_state, square, Vec3{0, 1, 0});
+                        }
+                        else
+                        {
+                            debug_move_draw(&debug_move_draw_state, square, Vec3{1, 0, 0});
                         }
                     }
                 }
