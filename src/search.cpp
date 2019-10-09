@@ -33,14 +33,15 @@ struct ValuedMove
 
 #define VALUE_INF (1000000000)
 
-Int evaluate_piece_value(GameState *state, GameSideEnum side, Bool middle_game)
+Int evaluate_material(GameState *state, GameSideEnum side, Bool middle_game, Bool include_pawns)
 {
     Int middle_game_values[GamePieceType::count - 1] = {128, 782, 830, 1289, 2529};
     Int end_game_values[GamePieceType::count - 1] = {213, 865, 918, 1378, 2687};
     Int *piece_values = middle_game ? middle_game_values : end_game_values;
 
     Int value = 0;
-    for (GamePieceTypeEnum piece_type = 0; piece_type < GamePieceType::king; piece_type++)
+    GamePieceTypeEnum start_piece = include_pawns ? GamePieceType::pawn : GamePieceType::knight;
+    for (GamePieceTypeEnum piece_type = start_piece; piece_type < GamePieceType::king; piece_type++)
     {
         BitBoard occupancy = get_occupancy(state, side, piece_type);
         while (occupancy)
@@ -52,7 +53,7 @@ Int evaluate_piece_value(GameState *state, GameSideEnum side, Bool middle_game)
     return value;
 }
 
-Int evaluate_piece_square_value(GameState *state, GameSideEnum side, Bool middle_game)
+Int evalute_piece_square(GameState *state, GameSideEnum side, Bool middle_game)
 {
     Int middle_game_values[GamePieceType::count - 1][8][4] = {
         {{-169, -96, -80, -79}, {-79, -39, -24, -9}, {-64, -20, 4, 19}, {-28, 5, 41, 47}, {-29, 13, 42, 52}, {-11, 28, 63, 55}, {-67, -21, 6, 37}, {-200, -80, -53, -32}},
@@ -122,7 +123,7 @@ Int evaluate_piece_square_value(GameState *state, GameSideEnum side, Bool middle
     return value;
 }
 
-Int evaluate_imbalance(GameState *state, GameSideEnum side)
+Int evalute_imbalance(GameState *state, GameSideEnum side)
 {
     Int friend_value[GamePieceType::count][GamePieceType::count] = {
         {38},
@@ -171,7 +172,7 @@ Int evaluate_imbalance(GameState *state, GameSideEnum side)
     return value;
 }
 
-Int evaluate_pawn(GameState *state, GameSideEnum side)
+Int evalute_pawn(GameState *state, GameSideEnum side, Bool middle_game)
 {
     GameSideEnum oppose_side = oppose(side);
     BitBoard pawn_occupancy = get_occupancy(state, side, GamePieceType::pawn);
@@ -188,13 +189,60 @@ Int evaluate_pawn(GameState *state, GameSideEnum side)
         Int pawn_column = get_column(pawn_square);
 
         BitBoard adj_columns = (pawn_column > 0 ? column_mask(pawn_column - 1) : 0) | (pawn_column < 7 ? column_mask(pawn_column + 1) : 0);
-        Bool isolated = !((left(pawn_bit, side) | right(pawn_bit, side)) & pawn_occupancy);
+        Bool isolated = !(adj_columns & pawn_occupancy);
         Bool backward = !(forward_mask(pawn_row, oppose_side) & adj_columns & pawn_occupancy) &&
                         ((up(pawn_bit, side) | up(up_left(pawn_bit, side), side) | up(up_right(pawn_bit, side), side)) & oppose_pawn_occupancy);
-        Bool doubled = down(pawn_bit, pawn_occupancy);
-        Bool connected = !isolated || ((down_left(pawn_bit, side) | down_right(pawn_bit, side)) & pawn_occupancy);
+        BitBoard support = (down_left(pawn_bit, side) | down_right(pawn_bit, side)) & pawn_occupancy;
+        Bool doubled = !support && down(pawn_bit, pawn_occupancy);
+        Bool phalanx = (left(pawn_bit, side) | right(pawn_bit, side)) & pawn_occupancy;
+        Bool connected = support || phalanx;
         Bool unopposed = !(forward_mask(pawn_row, side) & column_mask(pawn_column) & oppose_pawn_occupancy);
+
+        Int isolated_value = middle_game ? 5 : 15;
+        Int backward_value = middle_game ? 9 : 24;
+        Int doubled_value = middle_game ? 11 : 56;
+        Int unopposed_value = middle_game ? 13 : 27;
+        Int connected_values[8] = {0, 7, 8, 12, 29, 48, 86, 0};
+        if (isolated)
+        {
+            value -= isolated * isolated_value + unopposed * unopposed_value;
+        }
+        if (backward)
+        {
+            value -= backward * backward_value + unopposed * unopposed_value;
+        }
+        if (doubled)
+        {
+            value -= doubled * doubled_value;
+        }
+        if (connected)
+        {
+            pawn_row = MIN(pawn_row, 7 - pawn_row);
+            Int connected_value = connected_values[pawn_row] * (2 + phalanx + unopposed) + 21 * bit_count(support);
+            value += middle_game ? connected_value : connected_value * (pawn_row - 2) / 4;
+        }
     }
+    return value;
+}
+
+Int evaluate_pieces(GameState *state, GameSideEnum side, Bool middle_game)
+{
+}
+
+Int evaluate_phase(GameState *state)
+{
+    Int middle_game_limit = 15258;
+    Int end_game_limit = 3915;
+    Int material_value = evaluate_material(state, GameSide::white, true, false) + evaluate_material(state, GameSide::black, true, false);
+    material_value = MAX(end_game_limit, MIN(material_value, middle_game_limit));
+    Int value = (material_value - end_game_limit) * 128 / (middle_game_limit - end_game_limit);
+    return value;
+}
+
+Int evaluate_tempo_value(GameState *state, GameSideEnum side)
+{
+    Int value = state->current_side == side ? 28 : -28;
+    return value;
 }
 
 Int evaluate(GameState *state)
@@ -202,14 +250,14 @@ Int evaluate(GameState *state)
     GameSideEnum side = state->current_side;
     GameSideEnum oppose_side = oppose(side);
     Int value_middle_game = 0;
-    value_middle_game += evaluate_piece_value(state, side, true) - evaluate_piece_value(state, oppose_side, true);
-    value_middle_game += evaluate_piece_square_value(state, side, true) - evaluate_piece_square_value(state, oppose_side, true);
-    value_middle_game += evaluate_imbalance(state, side);
+    value_middle_game += evaluate_material(state, side, true, true) - evaluate_material(state, oppose_side, true, true);
+    value_middle_game += evalute_piece_square(state, side, true) - evalute_piece_square(state, oppose_side, true);
+    value_middle_game += evalute_imbalance(state, side);
 
     Int value_end_game = 0;
-    value_end_game += evaluate_piece_value(state, side, false) - evaluate_piece_value(state, oppose_side, false);
-    value_end_game += evaluate_piece_square_value(state, side, false) - evaluate_piece_square_value(state, oppose_side, false);
-    value_end_game += evaluate_imbalance(state, side);
+    value_end_game += evaluate_material(state, side, false, true) - evaluate_material(state, oppose_side, false, true);
+    value_end_game += evalute_piece_square(state, side, false) - evalute_piece_square(state, oppose_side, false);
+    value_end_game += evalute_imbalance(state, side);
 }
 
 ValuedMove negamax(GameState *state, Int alpha, Int beta, Int depth)
