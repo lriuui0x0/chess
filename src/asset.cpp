@@ -309,20 +309,20 @@ Bool load_asset(AssetStore *asset_store)
 
     CStr piece_meshes_paths[GameSide::count][GamePieceType::count] = {
         {
-            "../asset/rook_white.asset",
+            "../asset/pawn_white.asset",
             "../asset/knight_white.asset",
             "../asset/bishop_white.asset",
+            "../asset/rook_white.asset",
             "../asset/queen_white.asset",
             "../asset/king_white.asset",
-            "../asset/pawn_white.asset",
         },
         {
-            "../asset/rook_black.asset",
+            "../asset/pawn_black.asset",
             "../asset/knight_black.asset",
             "../asset/bishop_black.asset",
+            "../asset/rook_black.asset",
             "../asset/queen_black.asset",
             "../asset/king_black.asset",
-            "../asset/pawn_black.asset",
         }};
     for (GameSideEnum side = 0; side < GameSide::count; side++)
     {
@@ -355,12 +355,12 @@ Bool load_asset(AssetStore *asset_store)
     }
 
     CStr piece_light_maps_paths[GamePieceType::count] = {
-        "../asset/rook_lightmap.asset",
+        "../asset/pawn_lightmap.asset",
         "../asset/knight_lightmap.asset",
         "../asset/bishop_lightmap.asset",
+        "../asset/rook_lightmap.asset",
         "../asset/queen_lightmap.asset",
         "../asset/king_lightmap.asset",
-        "../asset/pawn_lightmap.asset",
     };
     for (GamePieceTypeEnum piece_type = 0; piece_type < GamePieceType::count; piece_type++)
     {

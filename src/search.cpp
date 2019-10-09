@@ -225,10 +225,6 @@ Int evalute_pawn(GameState *state, GameSideEnum side, Bool middle_game)
     return value;
 }
 
-Int evaluate_pieces(GameState *state, GameSideEnum side, Bool middle_game)
-{
-}
-
 Int evaluate_phase(GameState *state)
 {
     Int middle_game_limit = 15258;
@@ -239,25 +235,26 @@ Int evaluate_phase(GameState *state)
     return value;
 }
 
-Int evaluate_tempo_value(GameState *state, GameSideEnum side)
-{
-    Int value = state->current_side == side ? 28 : -28;
-    return value;
-}
-
 Int evaluate(GameState *state)
 {
     GameSideEnum side = state->current_side;
     GameSideEnum oppose_side = oppose(side);
+    Int imbalance_value = evalute_imbalance(state, side);
     Int value_middle_game = 0;
     value_middle_game += evaluate_material(state, side, true, true) - evaluate_material(state, oppose_side, true, true);
     value_middle_game += evalute_piece_square(state, side, true) - evalute_piece_square(state, oppose_side, true);
-    value_middle_game += evalute_imbalance(state, side);
+    value_middle_game += imbalance_value;
+    value_middle_game += evalute_pawn(state, side, true);
 
     Int value_end_game = 0;
     value_end_game += evaluate_material(state, side, false, true) - evaluate_material(state, oppose_side, false, true);
     value_end_game += evalute_piece_square(state, side, false) - evalute_piece_square(state, oppose_side, false);
-    value_end_game += evalute_imbalance(state, side);
+    value_end_game += imbalance_value;
+    value_end_game += evalute_pawn(state, side, false);
+
+    Int phase = evaluate_phase(state);
+    Int value = (value_middle_game * phase + value_end_game * (128 - phase)) / 128;
+    return value;
 }
 
 ValuedMove negamax(GameState *state, Int alpha, Int beta, Int depth)

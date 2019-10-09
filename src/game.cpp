@@ -356,6 +356,7 @@ BitBoard left(BitBoard pawn_bit, GameSideEnum side)
 BitBoard right(BitBoard pawn_bit, GameSideEnum side)
 {
     BitBoard result = left(pawn_bit, oppose(side));
+    return result;
 }
 
 BitBoard up(BitBoard pawn_bit, GameSideEnum side)
@@ -423,12 +424,13 @@ BitBoard check_pawn_move(GameState *state, Square square, GameSideEnum side)
     BitBoard move = 0;
     BitBoard occupancy = get_occupancy(state);
     BitBoard square_bit = bit_square(square);
+    BitBoard start_squares = side == GameSide::white ? ~(((UInt64)-1) << 8) << 8 : ~(((UInt64)-1) >> 8) >> 8;
+    Bool is_start = square_bit & start_squares;
 
     square_bit = up(square_bit, side);
     move |= square_bit & ~occupancy;
 
-    BitBoard start_squares = side == GameSide::white ? ~(((UInt64)-1) << 8) << 8 : ~(((UInt64)-1) >> 8) >> 8;
-    if ((square_bit & start_squares) && move)
+    if (is_start && move)
     {
         square_bit = up(square_bit, side);
         move |= square_bit & ~occupancy;
