@@ -16,9 +16,9 @@ Str get_game_piece_name(GamePiece piece)
     GamePieceTypeEnum piece_type = get_piece_type(piece);
     switch (piece_type)
     {
-    case GamePieceType::rook:
+    case GamePieceType::pawn:
     {
-        return side == GameSide::white ? str("white rook") : str("black rook");
+        return side == GameSide::white ? str("white pawn") : str("black pawn");
     }
     break;
 
@@ -34,6 +34,12 @@ Str get_game_piece_name(GamePiece piece)
     }
     break;
 
+    case GamePieceType::rook:
+    {
+        return side == GameSide::white ? str("white rook") : str("black rook");
+    }
+    break;
+
     case GamePieceType::queen:
     {
         return side == GameSide::white ? str("white queen") : str("black queen");
@@ -43,12 +49,6 @@ Str get_game_piece_name(GamePiece piece)
     case GamePieceType::king:
     {
         return side == GameSide::white ? str("white king") : str("black king");
-    }
-    break;
-
-    case GamePieceType::pawn:
-    {
-        return side == GameSide::white ? str("white pawn") : str("black pawn");
     }
     break;
 

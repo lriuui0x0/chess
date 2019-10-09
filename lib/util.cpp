@@ -14,8 +14,7 @@ Int bit_count(UInt64 x)
     Int result = 0;
     while (x)
     {
-        UInt64 lsb = x & -x;
-        x -= lsb;
+        x &= x - 1;
         result++;
     }
     return result;
