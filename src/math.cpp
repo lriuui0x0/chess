@@ -15,6 +15,11 @@ Real square(Real x)
     return x * x;
 }
 
+Real cubic(Real x)
+{
+    return x * x * x;
+}
+
 template <typename T>
 T lerp(T p, T q, Real t)
 {

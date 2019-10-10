@@ -32,7 +32,8 @@ enum struct AnimationType
     none,
     move,
     jump,
-    capture,
+    fade,
+    rotate,
     flash,
     illegal_flash,
 };
@@ -279,9 +280,15 @@ Void start_jump_animation(Piece *piece, Int square)
     piece->animation.pos_to = get_square_pos(square);
 }
 
-Void start_capture_animation(Piece *piece)
+Void start_fade_animation(Piece *piece)
 {
-    piece->animation_type = AnimationType::capture;
+    piece->animation_type = AnimationType::fade;
+    piece->animation.t = 0;
+}
+
+Void start_rotate_animation(Piece *piece)
+{
+    piece->animation_type = AnimationType::rotate;
     piece->animation.t = 0;
 }
 
@@ -315,7 +322,7 @@ Void start_animation(PieceManager *piece_manager, Piece *piece, GameState *game_
     if (capture_square != NO_SQUARE)
     {
         Piece *captured_piece = piece_manager->piece_mapping[capture_square];
-        start_capture_animation(captured_piece);
+        start_fade_animation(captured_piece);
     }
 
     Square square_to = get_to(game_move);
@@ -345,6 +352,11 @@ Void start_animation(PieceManager *piece_manager, Piece *piece, GameState *game_
 Real quadratic_modify(Real t, Real a)
 {
     return a * square(t) + (1 - a) * t;
+}
+
+Real cubic_modify(Real t, Real a, Real b)
+{
+    return a * cubic(t) + b * square(t) + (1 - a - b) * t;
 }
 
 Void update_animation(Entity *entity, Real elapsed_time)
@@ -379,13 +391,43 @@ Void update_animation(Entity *entity, Real elapsed_time)
             entity->animation_type = AnimationType::none;
         }
     }
-    else if (entity->animation_type == AnimationType::capture)
+    else if (entity->animation_type == AnimationType::fade)
     {
         Real animation_time = 0.1;
         Real dt = elapsed_time / animation_time;
         entity->animation.t += dt;
         Real alpha = lerp(1.0f, 0.0f, entity->animation.t);
         entity->color_overlay = Vec4{1, 1, 1, alpha};
+
+        if (entity->animation.t >= 1)
+        {
+            entity->animation_type = AnimationType::none;
+        }
+    }
+    else if (entity->animation_type == AnimationType::rotate)
+    {
+        Real animation_time = 3;
+        Real dt = elapsed_time / animation_time;
+        entity->animation.t += dt;
+
+        Real speed_factor;
+        if (entity->animation.t < 1.0 / 3.0)
+        {
+            Real ft = entity->animation.t * 3;
+            speed_factor = cubic_modify(ft, 1.5, -1.5);
+        }
+        else if (entity->animation.t < 2.0 / 3.0)
+        {
+            speed_factor = 1;
+        }
+        else
+        {
+            Real ft = 1 - (entity->animation.t - 2.0 / 3.0);
+            speed_factor = cubic_modify(ft, 1.5, -1.5);
+        }
+
+        Real speed = 4 * PI * speed_factor;
+        entity->rot = entity->rot * get_rotation_quaternion(-get_basis_y(), speed * dt);
 
         if (entity->animation.t >= 1)
         {

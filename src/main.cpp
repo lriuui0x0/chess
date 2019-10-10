@@ -1,3 +1,9 @@
+// TODO
+// Long thinking AI
+// Handle win / lose and draw conditions
+// UI
+// Sound
+
 #include "../lib/util.hpp"
 #include "../lib/vulkan.hpp"
 #include "../lib/os.hpp"
@@ -709,6 +715,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     State state = {};
     state.phase = StatePhase::select;
     state.last_hover_square = NO_SQUARE;
+
+    Piece *king_piece = piece_manager.piece_mapping[60];
+    start_rotate_animation(king_piece);
 
     show_window(window);
 
