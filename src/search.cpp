@@ -259,7 +259,7 @@ Int evaluate(GameState *state)
 
 ValuedMove negamax(GameState *state, Int alpha, Int beta, Int depth)
 {
-    if (depth >= 4)
+    if (depth >= 1)
     {
         ValuedMove valued_move;
         valued_move.value = evaluate(state);

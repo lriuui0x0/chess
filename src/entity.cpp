@@ -106,7 +106,7 @@ Void set_piece_mesh(PieceManager *piece_manager, Piece *piece, GamePiece game_pi
     piece->light_map = &piece_manager->asset_store->piece_light_maps[piece_type];
 }
 
-Void fill_piece_initial_state(PieceManager* piece_manager, Piece *piece, GamePiece game_piece, Square square)
+Void fill_piece_initial_state(PieceManager *piece_manager, Piece *piece, GamePiece game_piece, Square square)
 {
     ASSERT(piece && !is_empty(game_piece));
     GameSideEnum side = get_side(game_piece);
@@ -307,6 +307,39 @@ Void stop_illegal_flash_animation(GhostPiece *ghost_piece)
 {
     ghost_piece->animation_type = AnimationType::none;
     ghost_piece->color_overlay = Vec4{1, 1, 1, GHOST_PIECE_ALPHA};
+}
+
+Void start_animation(PieceManager *piece_manager, Piece *piece, GameState *game_state, GameMove game_move)
+{
+    Square capture_square = get_capture_square(game_move);
+    if (capture_square != NO_SQUARE)
+    {
+        Piece *captured_piece = piece_manager->piece_mapping[capture_square];
+        start_capture_animation(captured_piece);
+    }
+
+    Square square_to = get_to(game_move);
+    GamePiece game_piece = game_state->board[piece->square];
+    GamePieceTypeEnum piece_type = get_piece_type(game_piece);
+    GameMoveTypeEnum game_move_type = get_move_type(game_move);
+    if (piece_type == GamePieceType::knight || game_move_type == GameMoveType::castling)
+    {
+        start_jump_animation(piece, square_to);
+    }
+    else
+    {
+        start_move_animation(piece, square_to);
+    }
+
+    if (game_move_type == GameMoveType::castling)
+    {
+        GameMove rook_move = get_castling_rook_move(game_move);
+        Square rook_square_from = get_from(rook_move);
+        Square rook_square_to = get_to(rook_move);
+        Piece *rook_piece = piece_manager->piece_mapping[rook_square_from];
+        ASSERT(rook_piece);
+        start_move_animation(rook_piece, rook_square_to);
+    }
 }
 
 Real quadratic_modify(Real t, Real a)

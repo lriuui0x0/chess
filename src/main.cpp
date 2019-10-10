@@ -9,6 +9,7 @@
 #include "debug_ui.cpp"
 #include "debug_collision.cpp"
 #include "debug_move.cpp"
+#include "search.cpp"
 
 Str get_game_piece_name(GamePiece piece)
 {
@@ -971,211 +972,228 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
         BitBoard all_moves = 0;
         Bool show_ghost_piece = false;
-        if (state.phase == StatePhase::select)
+        if (game_state.current_side == game_state.player_side)
         {
-            ASSERT(!state.selected_piece);
-            // NOTE: Undo
-            if (input.keydown_z)
+            if (state.phase == StatePhase::select)
             {
-                GameMove move;
-                if (undo(&game_state, &move))
+                ASSERT(!state.selected_piece);
+                // NOTE: Undo
+                if (input.keydown_z)
                 {
-                    rollback_move(&piece_manager, move);
+                    GameMove move;
+                    if (undo(&game_state, &move))
+                    {
+                        rollback_move(&piece_manager, move);
+                    }
+                }
+                // NOTE: Redo
+                else if (input.keydown_r)
+                {
+                    GameMove move;
+                    if (redo(&game_state, &move))
+                    {
+                        record_move(&piece_manager, move);
+                    }
+                }
+                // NOTE: Select piece
+                else if (input.click_left)
+                {
+                    if (hover_piece)
+                    {
+                        GamePiece game_piece = game_state.board[hover_piece->square];
+                        ASSERT(!is_empty(game_piece));
+                        if (is_friend(&game_state, game_piece))
+                        {
+                            start_flash_animation(hover_piece);
+                            state.selected_piece = hover_piece;
+                            state.phase = StatePhase::execute;
+                        }
+                    }
                 }
             }
-            // NOTE: Redo
-            else if (input.keydown_r)
+            else if (state.phase == StatePhase::execute)
             {
-                GameMove move;
-                if (redo(&game_state, &move))
-                {
-                    record_move(&piece_manager, move);
-                }
-            }
-            // NOTE: Select piece
-            else if (input.click_left)
-            {
-                if (hover_piece)
+                ASSERT(state.selected_piece);
+                all_moves = check_game_move(&game_state, state.selected_piece->square);
+
+                Bool selection_changed = false;
+                Bool illegal_move = false;
+                // NOTE: Change piece selection
+                if (input.click_left && hover_piece)
                 {
                     GamePiece game_piece = game_state.board[hover_piece->square];
                     ASSERT(!is_empty(game_piece));
-                    if (is_friend(&game_state, game_piece))
-                    {
-                        start_flash_animation(hover_piece);
-                        state.selected_piece = hover_piece;
-                        state.phase = StatePhase::execute;
-                    }
-                }
-            }
-        }
-        else if (state.phase == StatePhase::execute)
-        {
-            ASSERT(state.selected_piece);
-            all_moves = check_game_move(&game_state, state.selected_piece->square);
-
-            Bool selection_changed = false;
-            Bool illegal_move = false;
-            // NOTE: Change piece selection
-            if (input.click_left && hover_piece)
-            {
-                GamePiece game_piece = game_state.board[hover_piece->square];
-                ASSERT(!is_empty(game_piece));
-                if (state.selected_piece->square != hover_piece->square && is_friend(&game_state, game_piece))
-                {
-                    stop_flash_animation(state.selected_piece);
-                    start_flash_animation(hover_piece);
-                    state.selected_piece = hover_piece;
-                    selection_changed = true;
-                }
-            }
-            // NOTE: Clear piece selection
-            else if (input.click_right || input.keydown_z)
-            {
-                stop_flash_animation(state.selected_piece);
-                state.selected_piece = null;
-                state.phase = StatePhase::select;
-            }
-
-            // NOTE: Update game move
-            if (state.phase == StatePhase::execute && !selection_changed)
-            {
-                if (input.click_left && hover_square != NO_SQUARE && HAS_FLAG(all_moves, bit_square(hover_square)))
-                {
-                    GameMove game_move = get_game_move(&game_state, state.selected_piece->square, hover_square);
-                    if (is_move_legal(&game_state, game_move))
+                    if (state.selected_piece->square != hover_piece->square && is_friend(&game_state, game_piece))
                     {
                         stop_flash_animation(state.selected_piece);
+                        start_flash_animation(hover_piece);
+                        state.selected_piece = hover_piece;
+                        selection_changed = true;
+                    }
+                }
+                // NOTE: Clear piece selection
+                else if (input.click_right || input.keydown_z)
+                {
+                    stop_flash_animation(state.selected_piece);
+                    state.selected_piece = null;
+                    state.phase = StatePhase::select;
+                }
 
-                        state.phase = StatePhase::animate;
-                        state.executing_move = game_move;
-
-                        Square capture_square = get_capture_square(game_move);
-                        if (capture_square != NO_SQUARE)
+                // NOTE: Update game move
+                if (state.phase == StatePhase::execute && !selection_changed)
+                {
+                    if (input.click_left && hover_square != NO_SQUARE && HAS_FLAG(all_moves, bit_square(hover_square)))
+                    {
+                        GameMove game_move = get_game_move(&game_state, state.selected_piece->square, hover_square);
+                        if (is_move_legal(&game_state, game_move))
                         {
-                            Piece *captured_piece = piece_manager.piece_mapping[capture_square];
-                            start_capture_animation(captured_piece);
-                        }
-
-                        GamePiece game_piece = game_state.board[state.selected_piece->square];
-                        GamePieceTypeEnum piece_type = get_piece_type(game_piece);
-                        GameMoveTypeEnum game_move_type = get_move_type(game_move);
-                        if (piece_type == GamePieceType::knight || game_move_type == GameMoveType::castling)
-                        {
-                            start_jump_animation(state.selected_piece, hover_square);
+                            stop_flash_animation(state.selected_piece);
+                            start_animation(&piece_manager, state.selected_piece, &game_state, game_move);
+                            state.phase = StatePhase::animate;
+                            state.executing_move = game_move;
                         }
                         else
                         {
-                            start_move_animation(state.selected_piece, hover_square);
-                        }
-
-                        if (game_move_type == GameMoveType::castling)
-                        {
-                            GameMove rook_move = get_castling_rook_move(game_move);
-                            Square rook_square_from = get_from(rook_move);
-                            Square rook_square_to = get_to(rook_move);
-                            Piece *rook_piece = piece_manager.piece_mapping[rook_square_from];
-                            ASSERT(rook_piece);
-                            start_move_animation(rook_piece, rook_square_to);
+                            illegal_move = true;
                         }
                     }
+                }
+
+                // NOTE: Calculate ghost piece
+                if (state.phase == StatePhase::execute && !selection_changed)
+                {
+                    if (hover_square != NO_SQUARE)
+                    {
+                        GamePiece game_piece = game_state.board[hover_square];
+                        if (is_empty(game_piece))
+                        {
+                            show_ghost_piece = true;
+                            update_ghost_piece(&ghost_piece, state.selected_piece, hover_square);
+                            ghost_piece.shadowed_piece = null;
+                        }
+                        else if (is_foe(&game_state, game_piece))
+                        {
+                            show_ghost_piece = true;
+                            update_ghost_piece(&ghost_piece, state.selected_piece, hover_square);
+                            ghost_piece.shadowed_piece = piece_manager.piece_mapping[hover_square];
+                            ASSERT(ghost_piece.shadowed_piece);
+                        }
+
+                        // NOTE: Start ghost piece illegal move feedback
+                        if (input.click_left)
+                        {
+                            if (!HAS_FLAG(all_moves, bit_square(hover_square)) || illegal_move)
+                            {
+                                start_illegal_flash_animation(&ghost_piece);
+                            }
+                        }
+                        // NOTE: Clear ghost piece illegal move feedback
+                        else if (!show_ghost_piece || hover_square != state.last_hover_square)
+                        {
+                            stop_illegal_flash_animation(&ghost_piece);
+                        }
+                    }
+                }
+            }
+            else if (state.phase == StatePhase::animate)
+            {
+                ASSERT(state.selected_piece);
+                if (state.selected_piece->animation_type == AnimationType::none)
+                {
+                    GameMoveTypeEnum move_type = get_move_type(state.executing_move);
+                    // NOTE: Start promotion
+                    if (move_type == GameMoveType::promotion)
+                    {
+                        state.promotion_index = 0;
+                        GameSideEnum side = get_side(state.executing_move);
+                        GamePiece promoted_piece = get_game_piece(side, promotion_list[state.promotion_index]);
+                        set_piece_mesh(&piece_manager, state.selected_piece, promoted_piece);
+                        start_flash_animation(state.selected_piece);
+                        state.phase = StatePhase::promote;
+                    }
+                    // NOTE: Record game move
                     else
                     {
-                        illegal_move = true;
+                        record_game_move_with_history(&game_state, state.executing_move);
+                        record_move(&piece_manager, state.executing_move);
+                        state.phase = StatePhase::select;
+                        state.selected_piece = null;
                     }
                 }
             }
-
-            // NOTE: Calculate ghost piece
-            if (state.phase == StatePhase::execute && !selection_changed)
+            else if (state.phase == StatePhase::promote)
             {
-                if (hover_square != NO_SQUARE)
+                // NOTE: Undo partial promotion
+                if (input.keydown_z)
                 {
-                    GamePiece game_piece = game_state.board[hover_square];
-                    if (is_empty(game_piece))
-                    {
-                        show_ghost_piece = true;
-                        update_ghost_piece(&ghost_piece, state.selected_piece, hover_square);
-                        ghost_piece.shadowed_piece = null;
-                    }
-                    else if (is_foe(&game_state, game_piece))
-                    {
-                        show_ghost_piece = true;
-                        update_ghost_piece(&ghost_piece, state.selected_piece, hover_square);
-                        ghost_piece.shadowed_piece = piece_manager.piece_mapping[hover_square];
-                        ASSERT(ghost_piece.shadowed_piece);
-                    }
-
-                    // NOTE: Start ghost piece illegal move feedback
-                    if (input.click_left)
-                    {
-                        if (!HAS_FLAG(all_moves, bit_square(hover_square)) || illegal_move)
-                        {
-                            start_illegal_flash_animation(&ghost_piece);
-                        }
-                    }
-                    // NOTE: Clear ghost piece illegal move feedback
-                    else if (!show_ghost_piece || hover_square != state.last_hover_square)
-                    {
-                        stop_illegal_flash_animation(&ghost_piece);
-                    }
+                    stop_flash_animation(state.selected_piece);
+                    GameMove promotion_move = add_promotion_index(state.executing_move, state.promotion_index);
+                    record_move(&piece_manager, promotion_move);
+                    rollback_move(&piece_manager, promotion_move);
+                    state.phase = StatePhase::select;
+                    state.selected_piece = null;
                 }
-            }
-        }
-        else if (state.phase == StatePhase::promote)
-        {
-            // NOTE: Undo partial promotion
-            if (input.keydown_z)
-            {
-                stop_flash_animation(state.selected_piece);
-                GameMove promotion_move = add_promotion_index(state.executing_move, state.promotion_index);
-                record_move(&piece_manager, promotion_move);
-                rollback_move(&piece_manager, promotion_move);
-                state.phase = StatePhase::select;
-                state.selected_piece = null;
-            }
-            // NOTE: Confirm promotion
-            else if (input.click_left)
-            {
-                stop_flash_animation(state.selected_piece);
-                GameMove promotion_move = add_promotion_index(state.executing_move, state.promotion_index);
-                record_game_move_with_history(&game_state, promotion_move);
-                record_move(&piece_manager, promotion_move);
-                state.phase = StatePhase::select;
-                state.selected_piece = null;
-            }
-            // NOTE: Change promotion
-            else if (input.click_right)
-            {
-                state.promotion_index = (state.promotion_index + 1) % promotion_list.count;
-                GamePiece game_piece = game_state.board[state.selected_piece->square];
-                GamePiece promoted_piece = get_game_piece(get_side(game_piece), promotion_list[state.promotion_index]);
-                set_piece_mesh(&piece_manager, state.selected_piece, promoted_piece);
-            }
-        }
-        else if (state.phase == StatePhase::animate)
-        {
-            ASSERT(state.selected_piece);
-            if (state.selected_piece->animation_type == AnimationType::none)
-            {
-                GameMoveTypeEnum move_type = get_move_type(state.executing_move);
-                // NOTE: Start promotion
-                if (move_type == GameMoveType::promotion)
+                // NOTE: Confirm promotion
+                else if (input.click_left)
                 {
-                    state.promotion_index = 0;
+                    stop_flash_animation(state.selected_piece);
+                    GameMove promotion_move = add_promotion_index(state.executing_move, state.promotion_index);
+                    record_game_move_with_history(&game_state, promotion_move);
+                    record_move(&piece_manager, promotion_move);
+                    state.phase = StatePhase::select;
+                    state.selected_piece = null;
+                }
+                // NOTE: Change promotion
+                else if (input.click_right)
+                {
+                    state.promotion_index = (state.promotion_index + 1) % promotion_list.count;
                     GamePiece game_piece = game_state.board[state.selected_piece->square];
                     GamePiece promoted_piece = get_game_piece(get_side(game_piece), promotion_list[state.promotion_index]);
                     set_piece_mesh(&piece_manager, state.selected_piece, promoted_piece);
-                    start_flash_animation(state.selected_piece);
-                    state.phase = StatePhase::promote;
                 }
-                // NOTE: Record game move
-                else
+            }
+            else
+            {
+                ASSERT(false);
+            }
+        }
+        else
+        {
+            if (state.phase == StatePhase::select)
+            {
+                ValuedMove best_move = negamax(&game_state, -VALUE_INF, VALUE_INF, 0);
+                Square square_from = get_from(best_move.move);
+                state.selected_piece = piece_manager.piece_mapping[square_from];
+                ASSERT(state.selected_piece);
+                start_animation(&piece_manager, state.selected_piece, &game_state, best_move.move);
+                state.phase = StatePhase::animate;
+                state.executing_move = best_move.move;
+            }
+            else if (state.phase == StatePhase::animate)
+            {
+                ASSERT(state.selected_piece);
+                if (state.selected_piece->animation_type == AnimationType::none)
                 {
+                    GameMoveTypeEnum move_type = get_move_type(state.executing_move);
+                    // NOTE: Start promotion
+                    if (move_type == GameMoveType::promotion)
+                    {
+                        Int promotion_index = get_promotion_index(state.executing_move);
+                        GameSideEnum side = get_side(state.executing_move);
+                        GamePiece promoted_piece = get_game_piece(side, promotion_list[promotion_index]);
+                        set_piece_mesh(&piece_manager, state.selected_piece, promoted_piece);
+                    }
+
+                    // NOTE: Record game move
                     record_game_move_with_history(&game_state, state.executing_move);
                     record_move(&piece_manager, state.executing_move);
                     state.phase = StatePhase::select;
                     state.selected_piece = null;
                 }
+            }
+            else
+            {
+                ASSERT(false);
             }
         }
 
