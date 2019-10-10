@@ -19,7 +19,19 @@ Void generate_all_moves(GameState *state, Buffer<GameMove> *moves)
             GameMove move = get_game_move(state, square_from, square_to);
             if (is_move_legal(state, move))
             {
-                moves->data[moves->count++] = move;
+                GameMoveTypeEnum move_type = get_move_type(move);
+                if (move_type == GameMoveType::promotion)
+                {
+                    for (Int promotion_index = 0; promotion_index < promotion_list.count; promotion_index++)
+                    {
+                        move = add_promotion_index(move, promotion_index);
+                        moves->data[moves->count++] = move;
+                    }
+                }
+                else
+                {
+                    moves->data[moves->count++] = move;
+                }
             }
         }
     }
@@ -285,7 +297,8 @@ ValuedMove negamax(GameState *state, Int alpha, Int beta, Int depth)
 
         if (valued_move.value > best_move.value)
         {
-            best_move = valued_move;
+            best_move.value = valued_move.value;
+            best_move.move = move;
         }
 
         alpha = MAX(alpha, best_move.value);
