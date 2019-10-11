@@ -185,6 +185,8 @@ enum struct WindowMessageKeyCode
     key_x = 'X',
     key_y = 'Y',
     key_z = 'Z',
+
+    key_esc = VK_ESCAPE,
 };
 
 struct WindowMessageKeyDownData

@@ -1,6 +1,5 @@
 // TODO
 // Long thinking AI
-// Handle win / lose and draw conditions
 // UI
 // Sound
 
@@ -15,6 +14,7 @@
 #include "debug_ui.cpp"
 #include "debug_collision.cpp"
 #include "debug_move.cpp"
+#include "blur.cpp"
 #include "search.cpp"
 
 Str get_game_piece_name(GamePiece piece)
@@ -89,7 +89,8 @@ Bool render_vulkan_frame(VulkanDevice *device,
                          Bool show_debug,
                          VulkanPipeline *debug_ui_pipeline, DebugUIFrame *debug_ui_frame, VulkanBuffer *debug_ui_vertex_buffer, Int debug_ui_character_count,
                          VulkanPipeline *debug_collision_pipeline, DebugCollisionFrame *debug_collision_frame, VulkanBuffer *debug_collision_vertex_buffer,
-                         VulkanPipeline *debug_move_pipeline, DebugMoveFrame *debug_move_frame, VulkanBuffer *debug_move_vertex_buffer, Int debug_move_count)
+                         VulkanPipeline *debug_move_pipeline, DebugMoveFrame *debug_move_frame, VulkanBuffer *debug_move_vertex_buffer, Int debug_move_count,
+                         VulkanPipeline *blur_pipeline, BlurFrame *blur_frame, VulkanBuffer *blur_uniform_buffer, Bool has_blur)
 {
     VkResult result_code;
     result_code = vkWaitForFences(device->handle, 1, &scene_frame->frame_finished_fence, false, UINT64_MAX);
@@ -366,15 +367,57 @@ Bool render_vulkan_frame(VulkanDevice *device,
         for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
         {
             Piece *piece = &piece_manager->pieces[piece_i];
+            Mesh *mesh = piece->mesh;
+            Int vertex_count = COLLISION_BOX_VERTEX_COUNT + mesh->collision_hull_vertex_count * 2;
             if (piece->square != NO_SQUARE)
             {
-                Mesh *mesh = piece->mesh;
-                Int vertex_count = COLLISION_BOX_VERTEX_COUNT + mesh->collision_hull_vertex_count * 2;
                 vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_collision_pipeline->layout, 1, 1, &scene_frame->piece_descriptor_sets[piece_i], 0, null);
                 vkCmdDraw(scene_frame->command_buffer, vertex_count, 1, vertex_offset, 0);
-                vertex_offset += vertex_count;
             }
+            vertex_offset += vertex_count;
         }
+
+        vkCmdEndRenderPass(scene_frame->command_buffer);
+    }
+
+    // NOTE: Blur
+    if (has_blur)
+    {
+        VkBufferCopy blur_uniform_buffer_copy = {};
+        blur_uniform_buffer_copy.srcOffset = 0;
+        blur_uniform_buffer_copy.dstOffset = 0;
+        blur_uniform_buffer_copy.size = blur_uniform_buffer->count;
+        vkCmdCopyBuffer(scene_frame->command_buffer, blur_uniform_buffer->handle, blur_frame->uniform_buffer.handle, 1, &blur_uniform_buffer_copy);
+
+        VkBufferMemoryBarrier blur_uniform_buffer_memory_barrier = {};
+        blur_uniform_buffer_memory_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        blur_uniform_buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        blur_uniform_buffer_memory_barrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
+        blur_uniform_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        blur_uniform_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        blur_uniform_buffer_memory_barrier.buffer = scene_frame->uniform_buffer.handle;
+        blur_uniform_buffer_memory_barrier.offset = 0;
+        blur_uniform_buffer_memory_barrier.size = blur_uniform_buffer->count;
+        vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, null, 1, &blur_uniform_buffer_memory_barrier, 0, null);
+
+        VkRenderPassBeginInfo blur_render_pass_begin_info = {};
+        blur_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        blur_render_pass_begin_info.renderPass = blur_pipeline->render_pass;
+        blur_render_pass_begin_info.framebuffer = blur_frame->frame_buffer;
+        blur_render_pass_begin_info.renderArea.offset = {0, 0};
+        blur_render_pass_begin_info.renderArea.extent = {(UInt32)device->swapchain.width, (UInt32)device->swapchain.height};
+        blur_render_pass_begin_info.clearValueCount = 0;
+        blur_render_pass_begin_info.pClearValues = null;
+
+        vkCmdBeginRenderPass(scene_frame->command_buffer, &blur_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blur_pipeline->handle);
+
+        offset = 0;
+        vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &blur_frame->vertex_buffer.handle, &offset);
+
+        // vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blur_pipeline->layout, 0, 1, &blur_frame->font_texture_descriptor_set, 0, null);
+
+        vkCmdDraw(scene_frame->command_buffer, 6, 1, 0, 0);
 
         vkCmdEndRenderPass(scene_frame->command_buffer);
     }
@@ -534,6 +577,7 @@ struct Input
     Bool keydown_g;
     Bool keydown_z;
     Bool keydown_r;
+    Bool keydown_esc;
 
     Bool keydown_d;
     Bool keyup_d;
@@ -589,6 +633,8 @@ enum
     promote,
     ai_think,
     ai_animate,
+    ui_blur,
+    ui_unblur,
 };
 }
 typedef Int StatePhaseEnum;
@@ -603,6 +649,7 @@ struct State
     GameMove executing_move;
     Int promotion_index;
     Square last_hover_square;
+    Int blur_radius;
 
     Bool show_debug;
     Bool moving_x_pos;
@@ -664,6 +711,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanPipeline debug_move_pipeline;
     ASSERT(create_debug_move_pipeline(&device, &debug_move_pipeline));
 
+    VulkanPipeline blur_pipeline;
+    ASSERT(create_blur_pipeline(&device, &blur_pipeline));
+
     ShadowFrame shadow_frame;
     ASSERT(create_shadow_frame(&device, &shadow_pipeline, &shadow_frame));
 
@@ -684,6 +734,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     DebugMoveFrame debug_move_frame;
     VulkanBuffer debug_move_vertex_buffer;
     ASSERT(create_debug_move_frame(&device, &debug_move_pipeline, &scene_frame, &debug_move_frame, &debug_move_vertex_buffer));
+
+    BlurFrame blur_frame;
+    VulkanBuffer blur_uniform_buffer;
+    ASSERT(create_blur_frame(&device, &blur_pipeline, &scene_frame, &blur_frame, &blur_uniform_buffer));
 
     Camera camera = get_scene_camera();
 
@@ -715,9 +769,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     State state = {};
     state.phase = StatePhase::select;
     state.last_hover_square = NO_SQUARE;
-
-    Piece *king_piece = piece_manager.piece_mapping[60];
-    start_rotate_animation(king_piece);
 
     show_window(window);
 
@@ -816,6 +867,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 else if (key_code == WindowMessageKeyCode::key_r)
                 {
                     input.keydown_r = true;
+                }
+                else if (key_code == WindowMessageKeyCode::key_esc)
+                {
+                    input.keydown_esc = true;
                 }
             }
             break;
@@ -981,6 +1036,12 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
         }
 
+        if (input.keydown_esc)
+        {
+            state.phase = StatePhase::ui_blur;
+            state.blur_radius = 5;
+        }
+
         BitBoard all_moves = 0;
         Bool show_ghost_piece = false;
         if (state.phase == StatePhase::select)
@@ -1131,6 +1192,12 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                     record_move(&piece_manager, state.executing_move);
                     state.phase = StatePhase::ai_think;
                     state.selected_piece = null;
+
+                    GameEndEnum game_end = check_game_end(&game_state);
+                    if (game_end != GameEnd::none)
+                    {
+                        is_running = false;
+                    }
                 }
             }
         }
@@ -1155,6 +1222,12 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 record_move(&piece_manager, promotion_move);
                 state.phase = StatePhase::ai_think;
                 state.selected_piece = null;
+
+                GameEndEnum game_end = check_game_end(&game_state);
+                if (game_end != GameEnd::none)
+                {
+                    is_running = false;
+                }
             }
             // NOTE: Change promotion
             else if (input.click_right)
@@ -1195,11 +1268,13 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 record_move(&piece_manager, state.executing_move);
                 state.phase = StatePhase::select;
                 state.selected_piece = null;
+
+                GameEndEnum game_end = check_game_end(&game_state);
+                if (game_end != GameEnd::none)
+                {
+                    is_running = false;
+                }
             }
-        }
-        else
-        {
-            ASSERT(false);
         }
 
         state.last_hover_square = hover_square;
@@ -1220,7 +1295,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             calculate_entity_uniform_data(&ghost_piece, get_ghost_piece_uniform_data(&device, &scene_uniform_buffer));
         }
 
-        // NOTE: Debug support
+        BlurUniformData *blur_uniform_data = (BlurUniformData *)blur_uniform_buffer.data;
+        blur_uniform_data->blur_radius = state.phase == StatePhase::ui_blur ? state.blur_radius : 0;
+
         DebugUIDrawState debug_ui_draw_state = {};
         DebugMoveDrawState debug_move_draw_state = {};
         if (input.keydown_g)
@@ -1474,7 +1551,8 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                                    state.show_debug,
                                    &debug_ui_pipeline, &debug_ui_frame, &debug_ui_vertex_buffer, debug_ui_draw_state.character_count,
                                    &debug_collision_pipeline, &debug_collision_frame, &debug_collision_vertex_buffer,
-                                   &debug_move_pipeline, &debug_move_frame, &debug_move_vertex_buffer, debug_move_draw_state.count));
+                                   &debug_move_pipeline, &debug_move_frame, &debug_move_vertex_buffer, debug_move_draw_state.count,
+                                   &blur_pipeline, &blur_frame, &blur_uniform_buffer, state.phase == StatePhase::ui_blur));
 
         UInt64 current_timestamp = get_current_timestamp();
         Real64 elapsed_time = get_elapsed_time(current_timestamp - last_timestamp);

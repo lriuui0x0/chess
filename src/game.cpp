@@ -740,6 +740,10 @@ Void record_game_move(GameState *state, GameMove move)
     {
         state->en_passant = (square_from + square_to) / 2;
     }
+    else
+    {
+        state->en_passant = NO_SQUARE;
+    }
 
     state->current_side = oppose(state->current_side);
 }
@@ -853,5 +857,81 @@ Bool redo(GameState *state, GameMove *move)
     else
     {
         return false;
+    }
+}
+
+Void generate_all_moves(GameState *state, Buffer<GameMove> *moves)
+{
+    BitBoard all_pieces = state->occupancy_side[state->current_side];
+    while (all_pieces)
+    {
+        Square square_from = first_set(all_pieces);
+        all_pieces -= bit_square(square_from);
+
+        BitBoard all_moves = check_game_move(state, square_from);
+        while (all_moves)
+        {
+            Square square_to = first_set(all_moves);
+            all_moves -= bit_square(square_to);
+
+            GameMove move = get_game_move(state, square_from, square_to);
+            if (is_move_legal(state, move))
+            {
+                GameMoveTypeEnum move_type = get_move_type(move);
+                if (move_type == GameMoveType::promotion)
+                {
+                    for (Int promotion_index = 0; promotion_index < promotion_list.count; promotion_index++)
+                    {
+                        move = add_promotion_index(move, promotion_index);
+                        moves->data[moves->count++] = move;
+                    }
+                }
+                else
+                {
+                    moves->data[moves->count++] = move;
+                }
+            }
+        }
+    }
+}
+
+namespace GameEnd
+{
+enum
+{
+    none,
+    win,
+    lose,
+    draw,
+};
+}
+typedef Int GameEndEnum;
+
+GameEndEnum check_game_end(GameState *state)
+{
+    GameMove moves_data[256];
+    Buffer<GameMove> moves;
+    moves.count = 0;
+    moves.data = moves_data;
+    generate_all_moves(state, &moves);
+
+    if (moves.count == 0)
+    {
+        Square king_square = first_set(get_occupancy(state, state->current_side, GamePieceType::king));
+        ASSERT(king_square != NO_SQUARE);
+
+        if (check_attack_by(state, king_square, state->current_side))
+        {
+            GameEndEnum result = state->current_side == state->player_side ? GameEnd::lose : GameEnd::win;
+            return result;
+        }
+        else
+        {
+            return GameEnd::draw;
+        }
+    }
+    else
+    {
+        return GameEnd::none;
     }
 }

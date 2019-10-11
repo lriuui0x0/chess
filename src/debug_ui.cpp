@@ -2,6 +2,7 @@
 
 #include "../lib/vulkan.hpp"
 #include "asset.cpp"
+#include "scene.cpp"
 
 struct DebugUIVertex
 {

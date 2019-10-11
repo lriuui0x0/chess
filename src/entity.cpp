@@ -33,7 +33,6 @@ enum struct AnimationType
     move,
     jump,
     fade,
-    rotate,
     flash,
     illegal_flash,
 };
@@ -286,12 +285,6 @@ Void start_fade_animation(Piece *piece)
     piece->animation.t = 0;
 }
 
-Void start_rotate_animation(Piece *piece)
-{
-    piece->animation_type = AnimationType::rotate;
-    piece->animation.t = 0;
-}
-
 Void start_flash_animation(Piece *piece)
 {
     piece->animation_type = AnimationType::flash;
@@ -398,36 +391,6 @@ Void update_animation(Entity *entity, Real elapsed_time)
         entity->animation.t += dt;
         Real alpha = lerp(1.0f, 0.0f, entity->animation.t);
         entity->color_overlay = Vec4{1, 1, 1, alpha};
-
-        if (entity->animation.t >= 1)
-        {
-            entity->animation_type = AnimationType::none;
-        }
-    }
-    else if (entity->animation_type == AnimationType::rotate)
-    {
-        Real animation_time = 3;
-        Real dt = elapsed_time / animation_time;
-        entity->animation.t += dt;
-
-        Real speed_factor;
-        if (entity->animation.t < 1.0 / 3.0)
-        {
-            Real ft = entity->animation.t * 3;
-            speed_factor = cubic_modify(ft, 1.5, -1.5);
-        }
-        else if (entity->animation.t < 2.0 / 3.0)
-        {
-            speed_factor = 1;
-        }
-        else
-        {
-            Real ft = 1 - (entity->animation.t - 2.0 / 3.0);
-            speed_factor = cubic_modify(ft, 1.5, -1.5);
-        }
-
-        Real speed = 4 * PI * speed_factor;
-        entity->rot = entity->rot * get_rotation_quaternion(-get_basis_y(), speed * dt);
 
         if (entity->animation.t >= 1)
         {
