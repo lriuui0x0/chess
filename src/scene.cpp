@@ -56,7 +56,16 @@ Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     depth_attachment.working_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     depth_attachment.final_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-    if (!create_render_pass(device, &color_attachments, &depth_attachment, null, &pipeline->render_pass))
+    AttachmentInfo resolve_attachment;
+    resolve_attachment.format = device->swapchain.format;
+    resolve_attachment.multisample_count = VK_SAMPLE_COUNT_1_BIT;
+    resolve_attachment.load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
+    resolve_attachment.store_op = VK_ATTACHMENT_STORE_OP_STORE;
+    resolve_attachment.initial_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    resolve_attachment.working_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    resolve_attachment.final_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    if (!create_render_pass(device, &color_attachments, &depth_attachment, &resolve_attachment, &pipeline->render_pass))
     {
         return false;
     }
@@ -131,7 +140,7 @@ Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     descriptor_sets.count = 4;
     descriptor_sets.data = descriptor_set_info;
 
-    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(Vertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets,
+    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(Vertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets, null,
                          multisample_count, true, true, null, pipeline))
     {
         return false;
@@ -147,6 +156,8 @@ struct SceneFrame
     VkSemaphore render_finished_semaphore;
     VkFence frame_finished_fence;
 
+    VkImage multisample_color_image;
+    VkImageView multisample_color_image_view;
     VkImage color_image;
     VkImageView color_image_view;
     VkImage depth_image;
@@ -160,6 +171,7 @@ struct SceneFrame
     VkDescriptorSet ghost_piece_descriptor_set;
     VkSampler shadow_sampler;
     VkDescriptorSet shadow_descriptor_set;
+    VkDescriptorSet color_descriptor_set;
 };
 
 Bool create_light_map_image(VulkanDevice *device, Image *light_map, VkDescriptorSetLayout descriptor_set_layout)
@@ -210,7 +222,6 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
                         VulkanBuffer *host_vertex_buffer, VulkanBuffer *host_index_buffer, VulkanBuffer *host_uniform_buffer)
 {
     VkSampleCountFlagBits multisample_count = get_maximum_multisample_count(device);
-
     VkResult result_code;
 
     if (!allocate_command_buffer(device, &frame->command_buffer))
@@ -235,6 +246,18 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
 
     if (!create_image(device, device->swapchain.width, device->swapchain.height,
                       device->swapchain.format, multisample_count, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &frame->multisample_color_image))
+    {
+        return false;
+    }
+
+    if (!create_image_view(device, frame->multisample_color_image, device->swapchain.format, VK_IMAGE_ASPECT_COLOR_BIT, &frame->multisample_color_image_view))
+    {
+        return false;
+    }
+
+    if (!create_image(device, device->swapchain.width, device->swapchain.height,
+                      device->swapchain.format, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &frame->color_image))
     {
         return false;
@@ -258,11 +281,11 @@ Bool create_scene_frame(VulkanDevice *device, VulkanPipeline *pipeline, Board *b
         return false;
     }
 
-    VkImageView attachments[2] = {frame->color_image_view, depth_image_view};
+    VkImageView attachments[3] = {frame->multisample_color_image_view, depth_image_view, frame->color_image_view};
     VkFramebufferCreateInfo frame_buffer_create_info = {};
     frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     frame_buffer_create_info.renderPass = pipeline->render_pass;
-    frame_buffer_create_info.attachmentCount = 2;
+    frame_buffer_create_info.attachmentCount = 3;
     frame_buffer_create_info.pAttachments = attachments;
     frame_buffer_create_info.width = device->swapchain.width;
     frame_buffer_create_info.height = device->swapchain.height;

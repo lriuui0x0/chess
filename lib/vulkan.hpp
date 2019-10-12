@@ -60,6 +60,8 @@
     VK_FUNC(vkCmdBindIndexBuffer)          \
     VK_FUNC(vkCmdDrawIndexed)              \
     VK_FUNC(vkCmdEndRenderPass)            \
+    VK_FUNC(vkCmdCopyImage)                \
+    VK_FUNC(vkCmdPushConstants)            \
     VK_FUNC(vkCmdResolveImage)             \
     VK_FUNC(vkDestroyShaderModule)         \
     VK_FUNC(vkDestroyPipelineLayout)       \
@@ -164,6 +166,12 @@ struct DescriptorSetInfo
     Buffer<DescriptorBindingInfo> bindings;
 };
 
+struct PushConstantInfo
+{
+    VkShaderStageFlagBits stage;
+    Int size;
+};
+
 struct AttachmentInfo
 {
     VkFormat format;
@@ -208,7 +216,7 @@ Bool create_pipeline(VulkanDevice *device,
                      VkRenderPass render_pass, Int subpass,
                      Buffer<ShaderInfo> *shaders,
                      Int vertex_stride, Buffer<VertexAttributeInfo> *vertex_attributes, VkPrimitiveTopology primitive_type,
-                     Buffer<DescriptorSetInfo> *descriptor_sets,
+                     Buffer<DescriptorSetInfo> *descriptor_sets, Buffer<PushConstantInfo> *push_constants,
                      VkSampleCountFlagBits multisample_count, Bool depth_enable, Bool alpha_blend_enable, DepthBias *depth_bias,
                      VulkanPipeline *pipeline);
 

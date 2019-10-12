@@ -12,11 +12,9 @@ struct DebugCollisionVertex
 
 Bool create_debug_collision_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
 {
-    VkSampleCountFlagBits multisample_count = get_maximum_multisample_count(device); 
-
     AttachmentInfo color_attachment;
     color_attachment.format = device->swapchain.format;
-    color_attachment.multisample_count = multisample_count;
+    color_attachment.multisample_count = VK_SAMPLE_COUNT_1_BIT;
     color_attachment.load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
     color_attachment.store_op = VK_ATTACHMENT_STORE_OP_STORE;
     color_attachment.initial_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -80,8 +78,8 @@ Bool create_debug_collision_pipeline(VulkanDevice *device, VulkanPipeline *pipel
     descriptor_sets.count = 2;
     descriptor_sets.data = descriptor_set_info;
 
-    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(DebugCollisionVertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, &descriptor_sets,
-                         multisample_count, false, false, null, pipeline))
+    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(DebugCollisionVertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, &descriptor_sets, null,
+                         VK_SAMPLE_COUNT_1_BIT, false, false, null, pipeline))
     {
         return false;
     }

@@ -554,7 +554,7 @@ Bool create_pipeline(VulkanDevice *device,
                      VkRenderPass render_pass, Int subpass,
                      Buffer<ShaderInfo> *shaders,
                      Int vertex_stride, Buffer<VertexAttributeInfo> *vertex_attributes, VkPrimitiveTopology primitive_type,
-                     Buffer<DescriptorSetInfo> *descriptor_sets,
+                     Buffer<DescriptorSetInfo> *descriptor_sets, Buffer<PushConstantInfo> *push_constants,
                      VkSampleCountFlagBits multisample_count, Bool depth_enable, Bool alpha_blend_enable, DepthBias *depth_bias,
                      VulkanPipeline *pipeline)
 {
@@ -745,10 +745,34 @@ Bool create_pipeline(VulkanDevice *device,
         }
     }
 
+    VkPushConstantRange *push_constant_ranges = null;
+    if (push_constants)
+    {
+        push_constant_ranges = (VkPushConstantRange *)ALLOCA(sizeof(VkPushConstantRange) * push_constants->count);
+
+        Int offset = 0;
+        for (Int i = 0; i < push_constants->count; i++)
+        {
+            PushConstantInfo *push_constant = &push_constants->data[i];
+            VkPushConstantRange *push_constant_range = &push_constant_ranges[i];
+            push_constant_range->stageFlags = push_constant->stage;
+            push_constant_range->offset = offset;
+            push_constant_range->size = push_constant->size;
+            offset += push_constant->size;
+
+            if (offset % 4 != 0)
+            {
+                return false;
+            }
+        }
+    }
+
     VkPipelineLayoutCreateInfo pipeline_layout_create_info = {};
     pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipeline_layout_create_info.setLayoutCount = descriptor_sets->count;
     pipeline_layout_create_info.pSetLayouts = pipeline->descriptor_set_layouts.data;
+    pipeline_layout_create_info.pushConstantRangeCount = push_constants ? push_constants->count : 0;
+    pipeline_layout_create_info.pPushConstantRanges = push_constant_ranges;
 
     result_code = vkCreatePipelineLayout(device->handle, &pipeline_layout_create_info, null, &pipeline->layout);
     if (result_code != VK_SUCCESS)

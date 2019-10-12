@@ -73,7 +73,7 @@ Bool create_shadow_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     depth_bias.const_bias = 1.5;
     depth_bias.slope_bias = 1.5;
 
-    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(Vertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets,
+    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(Vertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets, null,
                          VK_SAMPLE_COUNT_1_BIT, true, false, &depth_bias, pipeline))
     {
         return false;

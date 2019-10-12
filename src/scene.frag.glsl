@@ -30,9 +30,9 @@ float calc_shadow()
 {
     vec2 uv_scale = 1.0 / textureSize(shadow_sampler, 0);
     float shadow = 0;
-    for (float y = -1; y <= 1; y += 1)
+    for (int y = -1; y <= 1; y++)
     {
-        for (float x = -1; x <= 1; x += 1)
+        for (int x = -1; x <= 1; x++)
         {
             vec2 shadow_uv = (shadow_coord.xy + vec2(1)) / 2 + vec2(x, y) * uv_scale;
             float closest_depth = texture(shadow_sampler, shadow_uv).r;

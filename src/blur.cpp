@@ -12,11 +12,9 @@ struct BlurVertex
 
 Bool create_blur_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
 {
-    VkSampleCountFlagBits multisample_count = get_maximum_multisample_count(device);
-
     AttachmentInfo color_attachment;
     color_attachment.format = device->swapchain.format;
-    color_attachment.multisample_count = multisample_count;
+    color_attachment.multisample_count = VK_SAMPLE_COUNT_1_BIT;
     color_attachment.load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
     color_attachment.store_op = VK_ATTACHMENT_STORE_OP_STORE;
     color_attachment.initial_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -84,8 +82,16 @@ Bool create_blur_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     descriptor_sets.count = 2;
     descriptor_sets.data = descriptor_set_info;
 
-    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(BlurVertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets,
-                         multisample_count, false, false, null, pipeline))
+    PushConstantInfo push_constant_info[1];
+    push_constant_info[0].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    push_constant_info[0].size = 8;
+
+    Buffer<PushConstantInfo> push_constants;
+    push_constants.count = 1;
+    push_constants.data = push_constant_info;
+
+    if (!create_pipeline(device, pipeline->render_pass, 0, &shaders, sizeof(BlurVertex), &vertex_attributes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &descriptor_sets, &push_constants,
+                         VK_SAMPLE_COUNT_1_BIT, false, false, null, pipeline))
     {
         return false;
     }
@@ -100,31 +106,21 @@ struct BlurUniformData
 
 struct BlurFrame
 {
+    VkFramebuffer frame_buffer;
+    VkFramebuffer frame_buffer2;
     VulkanBuffer vertex_buffer;
     VulkanBuffer uniform_buffer;
-    VkFramebuffer frame_buffer;
+    VkSampler color_sampler;
+    VkDescriptorSet color_descriptor_set;
+    VkDescriptorSet uniform_descriptor_set;
+    VkImage color_image2;
+    VkSampler color_sampler2;
+    VkDescriptorSet color_descriptor_set2;
 };
 
 Bool create_blur_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFrame *scene_frame, BlurFrame *frame, VulkanBuffer *host_uniform_buffer)
 {
     VkResult result_code;
-
-    VkImageView attachments[1] = {scene_frame->color_image_view};
-    VkFramebufferCreateInfo frame_buffer_create_info = {};
-    frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    frame_buffer_create_info.renderPass = pipeline->render_pass;
-    frame_buffer_create_info.attachmentCount = 1;
-    frame_buffer_create_info.pAttachments = attachments;
-    frame_buffer_create_info.width = device->swapchain.width;
-    frame_buffer_create_info.height = device->swapchain.height;
-    frame_buffer_create_info.layers = 1;
-
-    result_code = vkCreateFramebuffer(device->handle, &frame_buffer_create_info, null, &frame->frame_buffer);
-    if (result_code != VK_SUCCESS)
-    {
-        return false;
-    }
-
     Int vertex_buffer_length = sizeof(BlurVertex) * 6;
     if (!create_buffer(device, vertex_buffer_length,
                        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -176,6 +172,69 @@ Bool create_blur_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFram
     blur_vertex->texture_coord = Vec2{0.0, 1.0};
     blur_vertex++;
     if (!upload_buffer(device, &host_vertex_buffer, &frame->vertex_buffer))
+    {
+        return false;
+    }
+
+    if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
+                                 0, uniform_buffer_length, &frame->uniform_descriptor_set))
+    {
+        return false;
+    }
+
+    if (!create_sampler(device, &frame->color_sampler))
+    {
+        return false;
+    }
+
+    if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[0], scene_frame->color_image_view, frame->color_sampler, &frame->color_descriptor_set))
+    {
+        return false;
+    }
+
+    if (!create_image(device, device->swapchain.width, device->swapchain.height,
+                      device->swapchain.format, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &frame->color_image2))
+    {
+        return false;
+    }
+
+    VkImageView color_image_view2;
+    if (!create_image_view(device, frame->color_image2, device->swapchain.format, VK_IMAGE_ASPECT_COLOR_BIT, &color_image_view2))
+    {
+        return false;
+    }
+
+    if (!create_sampler(device, &frame->color_sampler2))
+    {
+        return false;
+    }
+
+    if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[0], color_image_view2, frame->color_sampler2, &frame->color_descriptor_set2))
+    {
+        return false;
+    }
+
+    VkImageView attachments[1] = {color_image_view2};
+    VkFramebufferCreateInfo frame_buffer_create_info = {};
+    frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    frame_buffer_create_info.renderPass = pipeline->render_pass;
+    frame_buffer_create_info.attachmentCount = 1;
+    frame_buffer_create_info.pAttachments = attachments;
+    frame_buffer_create_info.width = device->swapchain.width;
+    frame_buffer_create_info.height = device->swapchain.height;
+    frame_buffer_create_info.layers = 1;
+
+    result_code = vkCreateFramebuffer(device->handle, &frame_buffer_create_info, null, &frame->frame_buffer);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    attachments[0] = scene_frame->color_image_view;
+
+    result_code = vkCreateFramebuffer(device->handle, &frame_buffer_create_info, null, &frame->frame_buffer2);
+    if (result_code != VK_SUCCESS)
     {
         return false;
     }

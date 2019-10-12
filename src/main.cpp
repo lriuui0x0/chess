@@ -82,6 +82,25 @@ Void debug_callback(Str message)
     OutputDebugStringA("\n");
 }
 
+#define MAX_BLUR_TIMES (10)
+#define BLUR_MODE_HORIZONTAL (0)
+#define BLUR_MODE_VERTICAL (1)
+#define BLUR_MODE_OVERLAY (2)
+#define BLUR_OVERLAY (0.3)
+
+Real calculate_blur_overlay(Int current_blur_times, Int blur_times)
+{
+    Real overlay = lerp(1.0, BLUR_OVERLAY, (Real)current_blur_times / blur_times);
+    overlay = sqrtf(overlay);
+    return overlay;
+}
+
+struct BlurPushConstants
+{
+    UInt32 mode;
+    Real overlay;
+};
+
 Bool render_vulkan_frame(VulkanDevice *device,
                          VulkanPipeline *scene_pipeline, SceneFrame *scene_frame, VulkanBuffer *scene_uniform_buffer,
                          Board *board, PieceManager *piece_manager, GhostPiece *ghost_piece,
@@ -90,7 +109,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
                          VulkanPipeline *debug_ui_pipeline, DebugUIFrame *debug_ui_frame, VulkanBuffer *debug_ui_vertex_buffer, Int debug_ui_character_count,
                          VulkanPipeline *debug_collision_pipeline, DebugCollisionFrame *debug_collision_frame, VulkanBuffer *debug_collision_vertex_buffer,
                          VulkanPipeline *debug_move_pipeline, DebugMoveFrame *debug_move_frame, VulkanBuffer *debug_move_vertex_buffer, Int debug_move_count,
-                         VulkanPipeline *blur_pipeline, BlurFrame *blur_frame, VulkanBuffer *blur_uniform_buffer, Bool has_blur)
+                         VulkanPipeline *blur_pipeline, BlurFrame *blur_frame, VulkanBuffer *blur_uniform_buffer, Int blur_times)
 {
     VkResult result_code;
     result_code = vkWaitForFences(device->handle, 1, &scene_frame->frame_finished_fence, false, UINT64_MAX);
@@ -212,7 +231,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
     color_image_memory_barrier.srcAccessMask = 0;
     color_image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     color_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    color_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    color_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     color_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     color_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     color_image_memory_barrier.image = scene_frame->color_image;
@@ -223,23 +242,39 @@ Bool render_vulkan_frame(VulkanDevice *device,
     color_image_memory_barrier.subresourceRange.layerCount = 1;
     vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, null, 0, null, 1, &color_image_memory_barrier);
 
-    VkClearColorValue clear_color = {0.7, 0.7, 0.7, 1};
-    vkCmdClearColorImage(scene_frame->command_buffer, scene_frame->color_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_color, 1, &color_image_memory_barrier.subresourceRange);
+    VkImageMemoryBarrier multisample_color_image_memory_barrier = {};
+    multisample_color_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    multisample_color_image_memory_barrier.srcAccessMask = 0;
+    multisample_color_image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    multisample_color_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    multisample_color_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    multisample_color_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    multisample_color_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    multisample_color_image_memory_barrier.image = scene_frame->multisample_color_image;
+    multisample_color_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    multisample_color_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+    multisample_color_image_memory_barrier.subresourceRange.levelCount = 1;
+    multisample_color_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+    multisample_color_image_memory_barrier.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, null, 0, null, 1, &multisample_color_image_memory_barrier);
 
-    color_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    color_image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    color_image_memory_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    color_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    color_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    color_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    color_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    color_image_memory_barrier.image = scene_frame->color_image;
-    color_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    color_image_memory_barrier.subresourceRange.baseMipLevel = 0;
-    color_image_memory_barrier.subresourceRange.levelCount = 1;
-    color_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
-    color_image_memory_barrier.subresourceRange.layerCount = 1;
-    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, null, 0, null, 1, &color_image_memory_barrier);
+    VkClearColorValue clear_color = {0.7, 0.7, 0.7, 1};
+    vkCmdClearColorImage(scene_frame->command_buffer, scene_frame->multisample_color_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_color, 1, &multisample_color_image_memory_barrier.subresourceRange);
+
+    multisample_color_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    multisample_color_image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    multisample_color_image_memory_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    multisample_color_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    multisample_color_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    multisample_color_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    multisample_color_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    multisample_color_image_memory_barrier.image = scene_frame->multisample_color_image;
+    multisample_color_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    multisample_color_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+    multisample_color_image_memory_barrier.subresourceRange.levelCount = 1;
+    multisample_color_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+    multisample_color_image_memory_barrier.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, null, 0, null, 1, &multisample_color_image_memory_barrier);
 
     // NOTE: Board
     VkClearValue scene_clear_colors[2] = {{}, depth_clear_color};
@@ -381,24 +416,30 @@ Bool render_vulkan_frame(VulkanDevice *device,
     }
 
     // NOTE: Blur
-    if (has_blur)
+    if (blur_times)
     {
-        VkBufferCopy blur_uniform_buffer_copy = {};
-        blur_uniform_buffer_copy.srcOffset = 0;
-        blur_uniform_buffer_copy.dstOffset = 0;
-        blur_uniform_buffer_copy.size = blur_uniform_buffer->count;
-        vkCmdCopyBuffer(scene_frame->command_buffer, blur_uniform_buffer->handle, blur_frame->uniform_buffer.handle, 1, &blur_uniform_buffer_copy);
+        // VkBufferCopy blur_uniform_buffer_copy = {};
+        // blur_uniform_buffer_copy.srcOffset = 0;
+        // blur_uniform_buffer_copy.dstOffset = 0;
+        // blur_uniform_buffer_copy.size = blur_uniform_buffer->count;
+        // vkCmdCopyBuffer(scene_frame->command_buffer, blur_uniform_buffer->handle, blur_frame->uniform_buffer.handle, 1, &blur_uniform_buffer_copy);
 
-        VkBufferMemoryBarrier blur_uniform_buffer_memory_barrier = {};
-        blur_uniform_buffer_memory_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-        blur_uniform_buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        blur_uniform_buffer_memory_barrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
-        blur_uniform_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        blur_uniform_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        blur_uniform_buffer_memory_barrier.buffer = scene_frame->uniform_buffer.handle;
-        blur_uniform_buffer_memory_barrier.offset = 0;
-        blur_uniform_buffer_memory_barrier.size = blur_uniform_buffer->count;
-        vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, null, 1, &blur_uniform_buffer_memory_barrier, 0, null);
+        // VkBufferMemoryBarrier blur_uniform_buffer_memory_barrier = {};
+        // blur_uniform_buffer_memory_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        // blur_uniform_buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        // blur_uniform_buffer_memory_barrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
+        // blur_uniform_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        // blur_uniform_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        // blur_uniform_buffer_memory_barrier.buffer = scene_frame->uniform_buffer.handle;
+        // blur_uniform_buffer_memory_barrier.offset = 0;
+        // blur_uniform_buffer_memory_barrier.size = blur_uniform_buffer->count;
+        // vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, null, 1, &blur_uniform_buffer_memory_barrier, 0, null);
+        vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blur_pipeline->handle);
+
+        offset = 0;
+        vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &blur_frame->vertex_buffer.handle, &offset);
+
+        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blur_pipeline->layout, 1, 1, &blur_frame->uniform_descriptor_set, 0, null);
 
         VkRenderPassBeginInfo blur_render_pass_begin_info = {};
         blur_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -409,17 +450,98 @@ Bool render_vulkan_frame(VulkanDevice *device,
         blur_render_pass_begin_info.clearValueCount = 0;
         blur_render_pass_begin_info.pClearValues = null;
 
-        vkCmdBeginRenderPass(scene_frame->command_buffer, &blur_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blur_pipeline->handle);
+        BlurPushConstants blur_push_constants;
+        blur_push_constants.overlay = calculate_blur_overlay(blur_times, MAX_BLUR_TIMES);
 
-        offset = 0;
-        vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &blur_frame->vertex_buffer.handle, &offset);
+        for (Int blur_i = 0; blur_i < blur_times + 1; blur_i++)
+        {
+            // NOTE: Horizontal blur
+            color_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            color_image_memory_barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            color_image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            color_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            color_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            color_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            color_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            color_image_memory_barrier.image = scene_frame->color_image;
+            color_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            color_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+            color_image_memory_barrier.subresourceRange.levelCount = 1;
+            color_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+            color_image_memory_barrier.subresourceRange.layerCount = 1;
+            vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, null, 0, null, 1, &color_image_memory_barrier);
 
-        // vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blur_pipeline->layout, 0, 1, &blur_frame->font_texture_descriptor_set, 0, null);
+            VkImageMemoryBarrier color2_image_memory_barrier = {};
+            color2_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            color2_image_memory_barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            color2_image_memory_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            color2_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            color2_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            color2_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            color2_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            color2_image_memory_barrier.image = blur_frame->color_image2;
+            color2_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            color2_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+            color2_image_memory_barrier.subresourceRange.levelCount = 1;
+            color2_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+            color2_image_memory_barrier.subresourceRange.layerCount = 1;
+            vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, null, 0, null, 1, &color2_image_memory_barrier);
 
-        vkCmdDraw(scene_frame->command_buffer, 6, 1, 0, 0);
+            blur_render_pass_begin_info.framebuffer = blur_frame->frame_buffer;
+            vkCmdBeginRenderPass(scene_frame->command_buffer, &blur_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
-        vkCmdEndRenderPass(scene_frame->command_buffer);
+            vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blur_pipeline->layout, 0, 1, &blur_frame->color_descriptor_set, 0, null);
+
+            blur_push_constants.mode = blur_i == blur_times ? BLUR_MODE_OVERLAY : BLUR_MODE_HORIZONTAL;
+            vkCmdPushConstants(scene_frame->command_buffer, blur_pipeline->layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 8, &blur_push_constants);
+
+            vkCmdDraw(scene_frame->command_buffer, 6, 1, 0, 0);
+
+            vkCmdEndRenderPass(scene_frame->command_buffer);
+
+            // NOTE: Vertical blur
+            color_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            color_image_memory_barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            color_image_memory_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            color_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            color_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            color_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            color_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            color_image_memory_barrier.image = scene_frame->color_image;
+            color_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            color_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+            color_image_memory_barrier.subresourceRange.levelCount = 1;
+            color_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+            color_image_memory_barrier.subresourceRange.layerCount = 1;
+            vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, null, 0, null, 1, &color_image_memory_barrier);
+
+            color2_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            color2_image_memory_barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            color2_image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            color2_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            color2_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            color2_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            color2_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            color2_image_memory_barrier.image = blur_frame->color_image2;
+            color2_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            color2_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+            color2_image_memory_barrier.subresourceRange.levelCount = 1;
+            color2_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+            color2_image_memory_barrier.subresourceRange.layerCount = 1;
+            vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, null, 0, null, 1, &color2_image_memory_barrier);
+
+            blur_render_pass_begin_info.framebuffer = blur_frame->frame_buffer2;
+            vkCmdBeginRenderPass(scene_frame->command_buffer, &blur_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+            vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blur_pipeline->layout, 0, 1, &blur_frame->color_descriptor_set2, 0, null);
+
+            blur_push_constants.mode = blur_i == blur_times ? BLUR_MODE_OVERLAY : BLUR_MODE_VERTICAL;
+            vkCmdPushConstants(scene_frame->command_buffer, blur_pipeline->layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 8, &blur_push_constants);
+
+            vkCmdDraw(scene_frame->command_buffer, 6, 1, 0, 0);
+
+            vkCmdEndRenderPass(scene_frame->command_buffer);
+        }
     }
 
     // NOTE: Debug UI
@@ -464,7 +586,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
         vkCmdEndRenderPass(scene_frame->command_buffer);
     }
 
-    // NOTE: Resolve
+    // NOTE: Copy
     color_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     color_image_memory_barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     color_image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
@@ -496,20 +618,19 @@ Bool render_vulkan_frame(VulkanDevice *device,
     present_image_memory_barrier.subresourceRange.layerCount = 1;
     vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, null, 0, null, 1, &present_image_memory_barrier);
 
-    VkImageResolve resolve_region;
-    resolve_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    resolve_region.srcSubresource.mipLevel = 0;
-    resolve_region.srcSubresource.baseArrayLayer = 0;
-    resolve_region.srcSubresource.layerCount = 1;
-    resolve_region.srcOffset = {0, 0};
-    resolve_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    resolve_region.dstSubresource.mipLevel = 0;
-    resolve_region.dstSubresource.baseArrayLayer = 0;
-    resolve_region.dstSubresource.layerCount = 1;
-    resolve_region.dstOffset = {0, 0};
-    resolve_region.extent = {(UInt32)device->swapchain.width, (UInt32)device->swapchain.height};
-    vkCmdResolveImage(scene_frame->command_buffer, scene_frame->color_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                      present_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &resolve_region);
+    VkImageCopy present_image_copy;
+    present_image_copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    present_image_copy.srcSubresource.mipLevel = 0;
+    present_image_copy.srcSubresource.baseArrayLayer = 0;
+    present_image_copy.srcSubresource.layerCount = 1;
+    present_image_copy.srcOffset = {0, 0};
+    present_image_copy.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    present_image_copy.dstSubresource.mipLevel = 0;
+    present_image_copy.dstSubresource.baseArrayLayer = 0;
+    present_image_copy.dstSubresource.layerCount = 1;
+    present_image_copy.dstOffset = {0, 0};
+    present_image_copy.extent = {(UInt32)device->swapchain.width, (UInt32)device->swapchain.height};
+    vkCmdCopyImage(scene_frame->command_buffer, scene_frame->color_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, present_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &present_image_copy);
 
     present_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     present_image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -649,7 +770,8 @@ struct State
     GameMove executing_move;
     Int promotion_index;
     Square last_hover_square;
-    Int blur_radius;
+    StatePhaseEnum phase_before_ui;
+    Int blur_times;
 
     Bool show_debug;
     Bool moving_x_pos;
@@ -1038,8 +1160,18 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
         if (input.keydown_esc)
         {
-            state.phase = StatePhase::ui_blur;
-            state.blur_radius = 5;
+            if (state.phase != StatePhase::ui_blur)
+            {
+                if (state.phase != StatePhase::ui_unblur)
+                {
+                    state.phase_before_ui = state.phase;
+                }
+                state.phase = StatePhase::ui_blur;
+            }
+            else
+            {
+                state.phase = StatePhase::ui_unblur;
+            }
         }
 
         BitBoard all_moves = 0;
@@ -1276,6 +1408,18 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 }
             }
         }
+        else if (state.phase == StatePhase::ui_blur)
+        {
+            state.blur_times = MIN(state.blur_times + 1, MAX_BLUR_TIMES);
+        }
+        else if (state.phase == StatePhase::ui_unblur)
+        {
+            state.blur_times = MAX(state.blur_times - 1, 0);
+            if (state.blur_times == 0)
+            {
+                state.phase = state.phase_before_ui;
+            }
+        }
 
         state.last_hover_square = hover_square;
 
@@ -1294,9 +1438,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             update_animation(&ghost_piece, frame_time);
             calculate_entity_uniform_data(&ghost_piece, get_ghost_piece_uniform_data(&device, &scene_uniform_buffer));
         }
-
-        BlurUniformData *blur_uniform_data = (BlurUniformData *)blur_uniform_buffer.data;
-        blur_uniform_data->blur_radius = state.phase == StatePhase::ui_blur ? state.blur_radius : 0;
 
         DebugUIDrawState debug_ui_draw_state = {};
         DebugMoveDrawState debug_move_draw_state = {};
@@ -1552,7 +1693,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                                    &debug_ui_pipeline, &debug_ui_frame, &debug_ui_vertex_buffer, debug_ui_draw_state.character_count,
                                    &debug_collision_pipeline, &debug_collision_frame, &debug_collision_vertex_buffer,
                                    &debug_move_pipeline, &debug_move_frame, &debug_move_vertex_buffer, debug_move_draw_state.count,
-                                   &blur_pipeline, &blur_frame, &blur_uniform_buffer, state.phase == StatePhase::ui_blur));
+                                   &blur_pipeline, &blur_frame, &blur_uniform_buffer, state.blur_times));
 
         UInt64 current_timestamp = get_current_timestamp();
         Real64 elapsed_time = get_elapsed_time(current_timestamp - last_timestamp);
