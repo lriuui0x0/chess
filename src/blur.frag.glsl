@@ -2,9 +2,9 @@
 
 layout(set = 0, binding = 0) uniform sampler2D texture_sampler;
 
-int blur_radius = 15;
-float weights[15] = {0.132368, 0.125279, 0.106209, 0.080656, 0.054865, 0.033431, 0.018246, 0.00892, 0.003906, 0.001532, 0.000538, 0.000169, 0.000048, 0.000012, 0.000003};
-// float weights[5] = {0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216};
+int blur_radius = 3;
+float offsets[3] = {0.0, 1.3846153846, 3.2307692308};
+float weights[3] = {0.2270270270, 0.3162162162, 0.0702702703};
 
 layout(location = 0) in vec2 frag_texture_coord;
 
@@ -27,13 +27,13 @@ void main() {
             vec2 uv2;
             if (blur_data.mode == 0)
             {
-                uv1 = frag_texture_coord + vec2(i, 0) * uv_scale;
-                uv2 = frag_texture_coord - vec2(i, 0) * uv_scale;
+                uv1 = frag_texture_coord + vec2(offsets[i], 0) * uv_scale;
+                uv2 = frag_texture_coord - vec2(offsets[i], 0) * uv_scale;
             }
             else
             {
-                uv1 = frag_texture_coord + vec2(0, i) * uv_scale;
-                uv2 = frag_texture_coord - vec2(0, i) * uv_scale;
+                uv1 = frag_texture_coord + vec2(0, offsets[i]) * uv_scale;
+                uv2 = frag_texture_coord - vec2(0, offsets[i]) * uv_scale;
             }
             sum_color += weights[i] * texture(texture_sampler, uv1);
             sum_color += weights[i] * texture(texture_sampler, uv2);

@@ -64,6 +64,7 @@ Str get_game_piece_name(GamePiece piece)
         ASSERT(false);
         return str("");
     }
+    break;
     }
 }
 
@@ -82,19 +83,6 @@ Void debug_callback(Str message)
     OutputDebugStringA("\n");
 }
 
-#define MAX_BLUR_TIMES (10)
-#define BLUR_MODE_HORIZONTAL (0)
-#define BLUR_MODE_VERTICAL (1)
-#define BLUR_MODE_OVERLAY (2)
-#define BLUR_OVERLAY (0.3)
-
-Real calculate_blur_overlay(Int current_blur_times, Int blur_times)
-{
-    Real overlay = lerp(1.0, BLUR_OVERLAY, (Real)current_blur_times / blur_times);
-    overlay = sqrtf(overlay);
-    return overlay;
-}
-
 struct BlurPushConstants
 {
     UInt32 mode;
@@ -109,7 +97,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
                          VulkanPipeline *debug_ui_pipeline, DebugUIFrame *debug_ui_frame, VulkanBuffer *debug_ui_vertex_buffer, Int debug_ui_character_count,
                          VulkanPipeline *debug_collision_pipeline, DebugCollisionFrame *debug_collision_frame, VulkanBuffer *debug_collision_vertex_buffer,
                          VulkanPipeline *debug_move_pipeline, DebugMoveFrame *debug_move_frame, VulkanBuffer *debug_move_vertex_buffer, Int debug_move_count,
-                         VulkanPipeline *blur_pipeline, BlurFrame *blur_frame, VulkanBuffer *blur_uniform_buffer, Int blur_times)
+                         VulkanPipeline *blur_pipeline, BlurFrame *blur_frame, Int blur_times)
 {
     VkResult result_code;
     result_code = vkWaitForFences(device->handle, 1, &scene_frame->frame_finished_fence, false, UINT64_MAX);
@@ -418,130 +406,107 @@ Bool render_vulkan_frame(VulkanDevice *device,
     // NOTE: Blur
     if (blur_times)
     {
-        // VkBufferCopy blur_uniform_buffer_copy = {};
-        // blur_uniform_buffer_copy.srcOffset = 0;
-        // blur_uniform_buffer_copy.dstOffset = 0;
-        // blur_uniform_buffer_copy.size = blur_uniform_buffer->count;
-        // vkCmdCopyBuffer(scene_frame->command_buffer, blur_uniform_buffer->handle, blur_frame->uniform_buffer.handle, 1, &blur_uniform_buffer_copy);
-
-        // VkBufferMemoryBarrier blur_uniform_buffer_memory_barrier = {};
-        // blur_uniform_buffer_memory_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-        // blur_uniform_buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        // blur_uniform_buffer_memory_barrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
-        // blur_uniform_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        // blur_uniform_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        // blur_uniform_buffer_memory_barrier.buffer = scene_frame->uniform_buffer.handle;
-        // blur_uniform_buffer_memory_barrier.offset = 0;
-        // blur_uniform_buffer_memory_barrier.size = blur_uniform_buffer->count;
-        // vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, null, 1, &blur_uniform_buffer_memory_barrier, 0, null);
+        ASSERT(blur_times > 0 && blur_times <= MAX_BLUR_TIMES);
         vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blur_pipeline->handle);
 
         offset = 0;
         vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &blur_frame->vertex_buffer.handle, &offset);
 
-        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blur_pipeline->layout, 1, 1, &blur_frame->uniform_descriptor_set, 0, null);
-
         VkRenderPassBeginInfo blur_render_pass_begin_info = {};
         blur_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         blur_render_pass_begin_info.renderPass = blur_pipeline->render_pass;
-        blur_render_pass_begin_info.framebuffer = blur_frame->frame_buffer;
         blur_render_pass_begin_info.renderArea.offset = {0, 0};
         blur_render_pass_begin_info.renderArea.extent = {(UInt32)device->swapchain.width, (UInt32)device->swapchain.height};
         blur_render_pass_begin_info.clearValueCount = 0;
         blur_render_pass_begin_info.pClearValues = null;
 
+        VkImage blur_from_image = blur_times > 1 ? blur_frame->blur_images[blur_times - 2] : scene_frame->color_image;
+        VkDescriptorSet blur_from_descriptor_set = blur_times > 1 ? blur_frame->blur_descriptor_sets[blur_times - 2] : blur_frame->color_descriptor_set;
+
+        VkImage blur_image = blur_frame->blur_images[blur_times - 1];
+        VkFramebuffer blur_framebuffer = blur_frame->blur_framebuffer[blur_times - 1];
+        VkDescriptorSet blur_descriptor_set = blur_frame->blur_descriptor_sets[blur_times - 1];
+
+        VkImage blur_middle_image = blur_frame->blur_images[MAX_BLUR_TIMES];
+        VkFramebuffer blur_middle_framebuffer = blur_frame->blur_framebuffer[MAX_BLUR_TIMES];
+        VkDescriptorSet blur_middle_descriptor_set = blur_frame->blur_descriptor_sets[MAX_BLUR_TIMES];
+
         BlurPushConstants blur_push_constants;
-        blur_push_constants.overlay = calculate_blur_overlay(blur_times, MAX_BLUR_TIMES);
 
-        for (Int blur_i = 0; blur_i < blur_times + 1; blur_i++)
+        VkImageMemoryBarrier attachment_to_texture_image_memory_barrier = {};
+        attachment_to_texture_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        attachment_to_texture_image_memory_barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        attachment_to_texture_image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        attachment_to_texture_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        attachment_to_texture_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        attachment_to_texture_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        attachment_to_texture_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        attachment_to_texture_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        attachment_to_texture_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+        attachment_to_texture_image_memory_barrier.subresourceRange.levelCount = 1;
+        attachment_to_texture_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+        attachment_to_texture_image_memory_barrier.subresourceRange.layerCount = 1;
+
+        VkImageMemoryBarrier to_attachment_image_memory_barrier = {};
+        to_attachment_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        to_attachment_image_memory_barrier.srcAccessMask = 0;
+        to_attachment_image_memory_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        to_attachment_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        to_attachment_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        to_attachment_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        to_attachment_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        to_attachment_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        to_attachment_image_memory_barrier.subresourceRange.baseMipLevel = 0;
+        to_attachment_image_memory_barrier.subresourceRange.levelCount = 1;
+        to_attachment_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+        to_attachment_image_memory_barrier.subresourceRange.layerCount = 1;
+
+        if (blur_times == 1)
         {
-            // NOTE: Horizontal blur
-            color_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            color_image_memory_barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-            color_image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            color_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            color_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            color_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            color_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            color_image_memory_barrier.image = scene_frame->color_image;
-            color_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            color_image_memory_barrier.subresourceRange.baseMipLevel = 0;
-            color_image_memory_barrier.subresourceRange.levelCount = 1;
-            color_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
-            color_image_memory_barrier.subresourceRange.layerCount = 1;
-            vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, null, 0, null, 1, &color_image_memory_barrier);
-
-            VkImageMemoryBarrier color2_image_memory_barrier = {};
-            color2_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            color2_image_memory_barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            color2_image_memory_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-            color2_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            color2_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            color2_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            color2_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            color2_image_memory_barrier.image = blur_frame->color_image2;
-            color2_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            color2_image_memory_barrier.subresourceRange.baseMipLevel = 0;
-            color2_image_memory_barrier.subresourceRange.levelCount = 1;
-            color2_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
-            color2_image_memory_barrier.subresourceRange.layerCount = 1;
-            vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, null, 0, null, 1, &color2_image_memory_barrier);
-
-            blur_render_pass_begin_info.framebuffer = blur_frame->frame_buffer;
-            vkCmdBeginRenderPass(scene_frame->command_buffer, &blur_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-
-            vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blur_pipeline->layout, 0, 1, &blur_frame->color_descriptor_set, 0, null);
-
-            blur_push_constants.mode = blur_i == blur_times ? BLUR_MODE_OVERLAY : BLUR_MODE_HORIZONTAL;
-            vkCmdPushConstants(scene_frame->command_buffer, blur_pipeline->layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 8, &blur_push_constants);
-
-            vkCmdDraw(scene_frame->command_buffer, 6, 1, 0, 0);
-
-            vkCmdEndRenderPass(scene_frame->command_buffer);
-
-            // NOTE: Vertical blur
-            color_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            color_image_memory_barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            color_image_memory_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-            color_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            color_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            color_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            color_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            color_image_memory_barrier.image = scene_frame->color_image;
-            color_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            color_image_memory_barrier.subresourceRange.baseMipLevel = 0;
-            color_image_memory_barrier.subresourceRange.levelCount = 1;
-            color_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
-            color_image_memory_barrier.subresourceRange.layerCount = 1;
-            vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, null, 0, null, 1, &color_image_memory_barrier);
-
-            color2_image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            color2_image_memory_barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-            color2_image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            color2_image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            color2_image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            color2_image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            color2_image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            color2_image_memory_barrier.image = blur_frame->color_image2;
-            color2_image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            color2_image_memory_barrier.subresourceRange.baseMipLevel = 0;
-            color2_image_memory_barrier.subresourceRange.levelCount = 1;
-            color2_image_memory_barrier.subresourceRange.baseArrayLayer = 0;
-            color2_image_memory_barrier.subresourceRange.layerCount = 1;
-            vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, null, 0, null, 1, &color2_image_memory_barrier);
-
-            blur_render_pass_begin_info.framebuffer = blur_frame->frame_buffer2;
-            vkCmdBeginRenderPass(scene_frame->command_buffer, &blur_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-
-            vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blur_pipeline->layout, 0, 1, &blur_frame->color_descriptor_set2, 0, null);
-
-            blur_push_constants.mode = blur_i == blur_times ? BLUR_MODE_OVERLAY : BLUR_MODE_VERTICAL;
-            vkCmdPushConstants(scene_frame->command_buffer, blur_pipeline->layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 8, &blur_push_constants);
-
-            vkCmdDraw(scene_frame->command_buffer, 6, 1, 0, 0);
-
-            vkCmdEndRenderPass(scene_frame->command_buffer);
+            attachment_to_texture_image_memory_barrier.image = blur_from_image;
+            vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, null, 0, null, 1, &attachment_to_texture_image_memory_barrier);
         }
+
+        // NOTE: Horizontal blur
+        to_attachment_image_memory_barrier.image = blur_middle_image;
+        vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, null, 0, null, 1, &to_attachment_image_memory_barrier);
+
+        blur_render_pass_begin_info.framebuffer = blur_middle_framebuffer;
+        vkCmdBeginRenderPass(scene_frame->command_buffer, &blur_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blur_pipeline->layout, 0, 1, &blur_from_descriptor_set, 0, null);
+        blur_push_constants.mode = BLUR_MODE_HORIZONTAL;
+        vkCmdPushConstants(scene_frame->command_buffer, blur_pipeline->layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BlurPushConstants), &blur_push_constants);
+        vkCmdDraw(scene_frame->command_buffer, 6, 1, 0, 0);
+        vkCmdEndRenderPass(scene_frame->command_buffer);
+
+        // NOTE: Vertical blur
+        attachment_to_texture_image_memory_barrier.image = blur_middle_image;
+        vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, null, 0, null, 1, &attachment_to_texture_image_memory_barrier);
+        to_attachment_image_memory_barrier.image = blur_image;
+        vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, null, 0, null, 1, &to_attachment_image_memory_barrier);
+
+        blur_render_pass_begin_info.framebuffer = blur_framebuffer;
+        vkCmdBeginRenderPass(scene_frame->command_buffer, &blur_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blur_pipeline->layout, 0, 1, &blur_middle_descriptor_set, 0, null);
+        blur_push_constants.mode = BLUR_MODE_VERTICAL;
+        vkCmdPushConstants(scene_frame->command_buffer, blur_pipeline->layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BlurPushConstants), &blur_push_constants);
+        vkCmdDraw(scene_frame->command_buffer, 6, 1, 0, 0);
+        vkCmdEndRenderPass(scene_frame->command_buffer);
+
+        // NOTE: Overlay
+        attachment_to_texture_image_memory_barrier.image = blur_image;
+        vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, null, 0, null, 1, &attachment_to_texture_image_memory_barrier);
+        to_attachment_image_memory_barrier.image = scene_frame->color_image;
+        vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, null, 0, null, 1, &to_attachment_image_memory_barrier);
+
+        blur_render_pass_begin_info.framebuffer = blur_frame->color_framebuffer;
+        vkCmdBeginRenderPass(scene_frame->command_buffer, &blur_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blur_pipeline->layout, 0, 1, &blur_descriptor_set, 0, null);
+        blur_push_constants.mode = BLUR_MODE_OVERLAY;
+        blur_push_constants.overlay = calculate_blur_overlay(blur_times);
+        vkCmdPushConstants(scene_frame->command_buffer, blur_pipeline->layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BlurPushConstants), &blur_push_constants);
+        vkCmdDraw(scene_frame->command_buffer, 6, 1, 0, 0);
+        vkCmdEndRenderPass(scene_frame->command_buffer);
     }
 
     // NOTE: Debug UI
@@ -727,23 +692,6 @@ struct Input
     Bool keyup_u;
 };
 
-namespace PieceChangeType
-{
-enum
-{
-    remove,
-    move,
-};
-};
-typedef Int PieceChangeTypeEnum;
-
-struct PieceChange
-{
-    PieceChangeTypeEnum change_type;
-    Square square_from;
-    Square square_to;
-};
-
 namespace StatePhase
 {
 enum
@@ -759,6 +707,12 @@ enum
 };
 }
 typedef Int StatePhaseEnum;
+
+Bool in_ui(StatePhaseEnum state_phase)
+{
+    Bool result = state_phase == StatePhase::ui_blur || state_phase == StatePhase::ui_unblur;
+    return result;
+}
 
 struct State
 {
@@ -858,8 +812,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     ASSERT(create_debug_move_frame(&device, &debug_move_pipeline, &scene_frame, &debug_move_frame, &debug_move_vertex_buffer));
 
     BlurFrame blur_frame;
-    VulkanBuffer blur_uniform_buffer;
-    ASSERT(create_blur_frame(&device, &blur_pipeline, &scene_frame, &blur_frame, &blur_uniform_buffer));
+    ASSERT(create_blur_frame(&device, &blur_pipeline, &scene_frame, &blur_frame));
 
     Camera camera = get_scene_camera();
 
@@ -1423,22 +1376,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
         state.last_hover_square = hover_square;
 
-        calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
-        for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
-        {
-            Piece *piece = &piece_manager.pieces[piece_i];
-            if (piece->square != NO_SQUARE)
-            {
-                update_animation(piece, frame_time);
-                calculate_entity_uniform_data(piece, get_piece_uniform_data(&device, &scene_uniform_buffer, piece_i));
-            }
-        }
-        if (show_ghost_piece)
-        {
-            update_animation(&ghost_piece, frame_time);
-            calculate_entity_uniform_data(&ghost_piece, get_ghost_piece_uniform_data(&device, &scene_uniform_buffer));
-        }
-
         DebugUIDrawState debug_ui_draw_state = {};
         DebugMoveDrawState debug_move_draw_state = {};
         if (input.keydown_g)
@@ -1448,166 +1385,169 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         if (state.show_debug)
         {
             // NOTE: Debug camera
-            if (input.keydown_z)
+            if (!in_ui(state.phase))
             {
-                camera = get_scene_camera();
-            }
-            else
-            {
-                if (input.keydown_d)
+                if (input.keydown_z)
                 {
-                    state.moving_x_pos = true;
+                    camera = get_scene_camera();
                 }
-                else if (input.keyup_d)
+                else
                 {
-                    state.moving_x_pos = false;
-                }
-                if (input.keydown_a)
-                {
-                    state.moving_x_neg = true;
-                }
-                else if (input.keyup_a)
-                {
-                    state.moving_x_neg = false;
-                }
-                if (input.keydown_q)
-                {
-                    state.moving_y_pos = true;
-                }
-                else if (input.keyup_q)
-                {
-                    state.moving_y_pos = false;
-                }
-                if (input.keydown_e)
-                {
-                    state.moving_y_neg = true;
-                }
-                else if (input.keyup_e)
-                {
-                    state.moving_y_neg = false;
-                }
-                if (input.keydown_w)
-                {
-                    state.moving_z_pos = true;
-                }
-                else if (input.keyup_w)
-                {
-                    state.moving_z_pos = false;
-                }
-                if (input.keydown_s)
-                {
-                    state.moving_z_neg = true;
-                }
-                else if (input.keyup_s)
-                {
-                    state.moving_z_neg = false;
-                }
+                    if (input.keydown_d)
+                    {
+                        state.moving_x_pos = true;
+                    }
+                    else if (input.keyup_d)
+                    {
+                        state.moving_x_pos = false;
+                    }
+                    if (input.keydown_a)
+                    {
+                        state.moving_x_neg = true;
+                    }
+                    else if (input.keyup_a)
+                    {
+                        state.moving_x_neg = false;
+                    }
+                    if (input.keydown_q)
+                    {
+                        state.moving_y_pos = true;
+                    }
+                    else if (input.keyup_q)
+                    {
+                        state.moving_y_pos = false;
+                    }
+                    if (input.keydown_e)
+                    {
+                        state.moving_y_neg = true;
+                    }
+                    else if (input.keyup_e)
+                    {
+                        state.moving_y_neg = false;
+                    }
+                    if (input.keydown_w)
+                    {
+                        state.moving_z_pos = true;
+                    }
+                    else if (input.keyup_w)
+                    {
+                        state.moving_z_pos = false;
+                    }
+                    if (input.keydown_s)
+                    {
+                        state.moving_z_neg = true;
+                    }
+                    else if (input.keyup_s)
+                    {
+                        state.moving_z_neg = false;
+                    }
 
-                if (input.keydown_i)
-                {
-                    state.rotating_x_pos = true;
-                }
-                else if (input.keyup_i)
-                {
-                    state.rotating_x_pos = false;
-                }
-                if (input.keydown_k)
-                {
-                    state.rotating_x_neg = true;
-                }
-                else if (input.keyup_k)
-                {
-                    state.rotating_x_neg = false;
-                }
-                if (input.keydown_l)
-                {
-                    state.rotating_y_pos = true;
-                }
-                else if (input.keyup_l)
-                {
-                    state.rotating_y_pos = false;
-                }
-                if (input.keydown_j)
-                {
-                    state.rotating_y_neg = true;
-                }
-                else if (input.keyup_j)
-                {
-                    state.rotating_y_neg = false;
-                }
-                if (input.keydown_o)
-                {
-                    state.rotating_z_pos = true;
-                }
-                else if (input.keyup_o)
-                {
-                    state.rotating_z_pos = false;
-                }
-                if (input.keydown_u)
-                {
-                    state.rotating_z_neg = true;
-                }
-                else if (input.keyup_u)
-                {
-                    state.rotating_z_neg = false;
-                }
+                    if (input.keydown_i)
+                    {
+                        state.rotating_x_pos = true;
+                    }
+                    else if (input.keyup_i)
+                    {
+                        state.rotating_x_pos = false;
+                    }
+                    if (input.keydown_k)
+                    {
+                        state.rotating_x_neg = true;
+                    }
+                    else if (input.keyup_k)
+                    {
+                        state.rotating_x_neg = false;
+                    }
+                    if (input.keydown_l)
+                    {
+                        state.rotating_y_pos = true;
+                    }
+                    else if (input.keyup_l)
+                    {
+                        state.rotating_y_pos = false;
+                    }
+                    if (input.keydown_j)
+                    {
+                        state.rotating_y_neg = true;
+                    }
+                    else if (input.keyup_j)
+                    {
+                        state.rotating_y_neg = false;
+                    }
+                    if (input.keydown_o)
+                    {
+                        state.rotating_z_pos = true;
+                    }
+                    else if (input.keyup_o)
+                    {
+                        state.rotating_z_pos = false;
+                    }
+                    if (input.keydown_u)
+                    {
+                        state.rotating_z_neg = true;
+                    }
+                    else if (input.keyup_u)
+                    {
+                        state.rotating_z_neg = false;
+                    }
 
-                Vec3 camera_x = rotate(camera.rot, get_basis_x());
-                Vec3 camera_y = rotate(camera.rot, get_basis_y());
-                Vec3 camera_z = rotate(camera.rot, get_basis_z());
-                Real speed = 8;
-                if (state.moving_x_pos)
-                {
-                    camera.pos = camera.pos + speed * camera_x;
-                }
-                if (state.moving_x_neg)
-                {
-                    camera.pos = camera.pos - speed * camera_x;
-                }
-                if (state.moving_y_pos)
-                {
-                    camera.pos = camera.pos + speed * camera_y;
-                }
-                if (state.moving_y_neg)
-                {
-                    camera.pos = camera.pos - speed * camera_y;
-                }
-                if (state.moving_z_pos)
-                {
-                    camera.pos = camera.pos + speed * camera_z;
-                }
-                if (state.moving_z_neg)
-                {
-                    camera.pos = camera.pos - speed * camera_z;
-                }
+                    Vec3 camera_x = rotate(camera.rot, get_basis_x());
+                    Vec3 camera_y = rotate(camera.rot, get_basis_y());
+                    Vec3 camera_z = rotate(camera.rot, get_basis_z());
+                    Real speed = 8;
+                    if (state.moving_x_pos)
+                    {
+                        camera.pos = camera.pos + speed * camera_x;
+                    }
+                    if (state.moving_x_neg)
+                    {
+                        camera.pos = camera.pos - speed * camera_x;
+                    }
+                    if (state.moving_y_pos)
+                    {
+                        camera.pos = camera.pos + speed * camera_y;
+                    }
+                    if (state.moving_y_neg)
+                    {
+                        camera.pos = camera.pos - speed * camera_y;
+                    }
+                    if (state.moving_z_pos)
+                    {
+                        camera.pos = camera.pos + speed * camera_z;
+                    }
+                    if (state.moving_z_neg)
+                    {
+                        camera.pos = camera.pos - speed * camera_z;
+                    }
 
-                Real rotating_speed = degree_to_radian(0.5);
-                Quaternion local_rot = get_identity_quaternion();
-                if (state.rotating_x_pos)
-                {
-                    local_rot = get_rotation_quaternion(get_basis_x(), rotating_speed) * local_rot;
+                    Real rotating_speed = degree_to_radian(0.5);
+                    Quaternion local_rot = get_identity_quaternion();
+                    if (state.rotating_x_pos)
+                    {
+                        local_rot = get_rotation_quaternion(get_basis_x(), rotating_speed) * local_rot;
+                    }
+                    if (state.rotating_x_neg)
+                    {
+                        local_rot = get_rotation_quaternion(get_basis_x(), -rotating_speed) * local_rot;
+                    }
+                    if (state.rotating_y_pos)
+                    {
+                        local_rot = get_rotation_quaternion(get_basis_y(), rotating_speed) * local_rot;
+                    }
+                    if (state.rotating_y_neg)
+                    {
+                        local_rot = get_rotation_quaternion(get_basis_y(), -rotating_speed) * local_rot;
+                    }
+                    if (state.rotating_z_pos)
+                    {
+                        local_rot = get_rotation_quaternion(get_basis_z(), rotating_speed) * local_rot;
+                    }
+                    if (state.rotating_z_neg)
+                    {
+                        local_rot = get_rotation_quaternion(get_basis_z(), -rotating_speed) * local_rot;
+                    }
+                    camera.rot = camera.rot * local_rot;
                 }
-                if (state.rotating_x_neg)
-                {
-                    local_rot = get_rotation_quaternion(get_basis_x(), -rotating_speed) * local_rot;
-                }
-                if (state.rotating_y_pos)
-                {
-                    local_rot = get_rotation_quaternion(get_basis_y(), rotating_speed) * local_rot;
-                }
-                if (state.rotating_y_neg)
-                {
-                    local_rot = get_rotation_quaternion(get_basis_y(), -rotating_speed) * local_rot;
-                }
-                if (state.rotating_z_pos)
-                {
-                    local_rot = get_rotation_quaternion(get_basis_z(), rotating_speed) * local_rot;
-                }
-                if (state.rotating_z_neg)
-                {
-                    local_rot = get_rotation_quaternion(get_basis_z(), -rotating_speed) * local_rot;
-                }
-                camera.rot = camera.rot * local_rot;
             }
 
             // NOTE: Debug UI
@@ -1686,6 +1626,25 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
         }
 
+        if (!in_ui(state.phase))
+        {
+            calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
+            for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
+            {
+                Piece *piece = &piece_manager.pieces[piece_i];
+                if (piece->square != NO_SQUARE)
+                {
+                    update_animation(piece, frame_time);
+                    calculate_entity_uniform_data(piece, get_piece_uniform_data(&device, &scene_uniform_buffer, piece_i));
+                }
+            }
+            if (show_ghost_piece)
+            {
+                update_animation(&ghost_piece, frame_time);
+                calculate_entity_uniform_data(&ghost_piece, get_ghost_piece_uniform_data(&device, &scene_uniform_buffer));
+            }
+        }
+
         ASSERT(render_vulkan_frame(&device,
                                    &scene_pipeline, &scene_frame, &scene_uniform_buffer, &board, &piece_manager, show_ghost_piece ? &ghost_piece : null,
                                    &shadow_pipeline, &shadow_frame,
@@ -1693,10 +1652,15 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                                    &debug_ui_pipeline, &debug_ui_frame, &debug_ui_vertex_buffer, debug_ui_draw_state.character_count,
                                    &debug_collision_pipeline, &debug_collision_frame, &debug_collision_vertex_buffer,
                                    &debug_move_pipeline, &debug_move_frame, &debug_move_vertex_buffer, debug_move_draw_state.count,
-                                   &blur_pipeline, &blur_frame, &blur_uniform_buffer, state.blur_times));
+                                   &blur_pipeline, &blur_frame, state.blur_times));
 
         UInt64 current_timestamp = get_current_timestamp();
         Real64 elapsed_time = get_elapsed_time(current_timestamp - last_timestamp);
+
+        // char string[256];
+        // sprintf(string, "elapsed time = %f, fps = %d\n", elapsed_time, (Int)(1.0 / elapsed_time));
+        // OutputDebugStringA(string);
+
         while (elapsed_time < frame_time)
         {
             sleep(frame_time - elapsed_time);

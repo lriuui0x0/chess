@@ -246,11 +246,11 @@ Bool create_device(Handle window, VulkanDebugCallback debug_callback, VulkanDevi
     descriptor_pool_size[0].descriptorCount = 48;
 
     descriptor_pool_size[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptor_pool_size[1].descriptorCount = 16;
+    descriptor_pool_size[1].descriptorCount = 48;
 
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
     descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    descriptor_pool_create_info.maxSets = 64;
+    descriptor_pool_create_info.maxSets = 96;
     descriptor_pool_create_info.poolSizeCount = 2;
     descriptor_pool_create_info.pPoolSizes = descriptor_pool_size;
 
@@ -445,7 +445,9 @@ Bool create_swapchain(VulkanDevice *device, Int width, Int height, Int desired_i
 Bool create_render_pass(VulkanDevice *device, Buffer<AttachmentInfo> *color_attachments, AttachmentInfo *depth_attachment, AttachmentInfo *resolve_attachment, VkRenderPass *render_pass)
 {
     Int color_attachments_count = color_attachments ? color_attachments->count : 0;
-    Int attachment_count = color_attachments_count + (depth_attachment ? 1 : 0) + (resolve_attachment ? 1 : 0);
+    Int depth_attachment_count = depth_attachment ? 1 : 0;
+    Int resolve_attachment_count = resolve_attachment ? 1 : 0;
+    Int attachment_count = color_attachments_count + depth_attachment_count + resolve_attachment_count;
     VkAttachmentDescription *attachment_description_all = (VkAttachmentDescription *)ALLOCA(attachment_count * sizeof(VkAttachmentDescription));
 
     if (color_attachments_count)
@@ -484,7 +486,7 @@ Bool create_render_pass(VulkanDevice *device, Buffer<AttachmentInfo> *color_atta
 
     if (resolve_attachment)
     {
-        VkAttachmentDescription *attachment_description = &attachment_description_all[color_attachments_count + 1];
+        VkAttachmentDescription *attachment_description = &attachment_description_all[color_attachments_count + depth_attachment_count];
 
         *attachment_description = {};
         attachment_description->format = resolve_attachment->format;
@@ -521,7 +523,7 @@ Bool create_render_pass(VulkanDevice *device, Buffer<AttachmentInfo> *color_atta
     VkAttachmentReference resolve_attachment_reference;
     if (resolve_attachment)
     {
-        resolve_attachment_reference.attachment = color_attachments_count + 1;
+        resolve_attachment_reference.attachment = color_attachments_count + depth_attachment_count;
         resolve_attachment_reference.layout = resolve_attachment->working_layout;
     }
 

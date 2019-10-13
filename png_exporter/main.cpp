@@ -688,11 +688,7 @@ Int main(Int argc, CStr *argv)
         }
         break;
 
-        default:
-        {
             ASSERT(false);
-        }
-        break;
         }
 
         row += image.width * depth;
@@ -707,7 +703,7 @@ Int main(Int argc, CStr *argv)
     for (Int y = 0; y < image.height; y++)
     {
         UInt8 *byte = row;
-        for (Int x = 0; x < image.width; x ++)
+        for (Int x = 0; x < image.width; x++)
         {
             UInt8 value_r = *byte++;
             UInt8 value_g = *byte++;

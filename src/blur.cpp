@@ -99,26 +99,34 @@ Bool create_blur_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     return true;
 }
 
-struct BlurUniformData
+#define MAX_BLUR_TIMES (8)
+#define BLUR_MODE_HORIZONTAL (0)
+#define BLUR_MODE_VERTICAL (1)
+#define BLUR_MODE_OVERLAY (2)
+#define BLUR_OVERLAY (0.2)
+
+Real calculate_blur_overlay(Int blur_times)
 {
-    Int blur_radius;
-};
+    Real overlay = lerp(1.0, BLUR_OVERLAY, (Real)blur_times / MAX_BLUR_TIMES);
+    return overlay;
+}
 
 struct BlurFrame
 {
-    VkFramebuffer frame_buffer;
-    VkFramebuffer frame_buffer2;
     VulkanBuffer vertex_buffer;
     VulkanBuffer uniform_buffer;
     VkSampler color_sampler;
     VkDescriptorSet color_descriptor_set;
-    VkDescriptorSet uniform_descriptor_set;
-    VkImage color_image2;
-    VkSampler color_sampler2;
-    VkDescriptorSet color_descriptor_set2;
+    VkFramebuffer color_framebuffer;
+
+    VkSampler blur_sampler;
+    // NOTE: Last image is to hold the one-dimensional blur result
+    VkImage blur_images[MAX_BLUR_TIMES + 1];
+    VkDescriptorSet blur_descriptor_sets[MAX_BLUR_TIMES + 1];
+    VkFramebuffer blur_framebuffer[MAX_BLUR_TIMES + 1];
 };
 
-Bool create_blur_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFrame *scene_frame, BlurFrame *frame, VulkanBuffer *host_uniform_buffer)
+Bool create_blur_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFrame *scene_frame, BlurFrame *frame)
 {
     VkResult result_code;
     Int vertex_buffer_length = sizeof(BlurVertex) * 6;
@@ -133,21 +141,6 @@ Bool create_blur_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFram
     if (!create_buffer(device, vertex_buffer_length,
                        VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                        &host_vertex_buffer))
-    {
-        return false;
-    }
-
-    Int uniform_buffer_length = sizeof(BlurUniformData);
-    if (!create_buffer(device, uniform_buffer_length,
-                       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                       &frame->uniform_buffer))
-    {
-        return false;
-    }
-
-    if (!create_buffer(device, uniform_buffer_length,
-                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                       host_uniform_buffer))
     {
         return false;
     }
@@ -176,12 +169,6 @@ Bool create_blur_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFram
         return false;
     }
 
-    if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[1], &frame->uniform_buffer,
-                                 0, uniform_buffer_length, &frame->uniform_descriptor_set))
-    {
-        return false;
-    }
-
     if (!create_sampler(device, &frame->color_sampler))
     {
         return false;
@@ -192,30 +179,12 @@ Bool create_blur_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFram
         return false;
     }
 
-    if (!create_image(device, device->swapchain.width, device->swapchain.height,
-                      device->swapchain.format, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &frame->color_image2))
+    if (!create_sampler(device, &frame->blur_sampler))
     {
         return false;
     }
 
-    VkImageView color_image_view2;
-    if (!create_image_view(device, frame->color_image2, device->swapchain.format, VK_IMAGE_ASPECT_COLOR_BIT, &color_image_view2))
-    {
-        return false;
-    }
-
-    if (!create_sampler(device, &frame->color_sampler2))
-    {
-        return false;
-    }
-
-    if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[0], color_image_view2, frame->color_sampler2, &frame->color_descriptor_set2))
-    {
-        return false;
-    }
-
-    VkImageView attachments[1] = {color_image_view2};
+    VkImageView attachments[1] = {scene_frame->color_image_view};
     VkFramebufferCreateInfo frame_buffer_create_info = {};
     frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     frame_buffer_create_info.renderPass = pipeline->render_pass;
@@ -225,18 +194,38 @@ Bool create_blur_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFram
     frame_buffer_create_info.height = device->swapchain.height;
     frame_buffer_create_info.layers = 1;
 
-    result_code = vkCreateFramebuffer(device->handle, &frame_buffer_create_info, null, &frame->frame_buffer);
+    result_code = vkCreateFramebuffer(device->handle, &frame_buffer_create_info, null, &frame->color_framebuffer);
     if (result_code != VK_SUCCESS)
     {
         return false;
     }
 
-    attachments[0] = scene_frame->color_image_view;
-
-    result_code = vkCreateFramebuffer(device->handle, &frame_buffer_create_info, null, &frame->frame_buffer2);
-    if (result_code != VK_SUCCESS)
+    for (Int i = 0; i <= MAX_BLUR_TIMES; i++)
     {
-        return false;
+        if (!create_image(device, device->swapchain.width, device->swapchain.height,
+                          device->swapchain.format, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &frame->blur_images[i]))
+        {
+            return false;
+        }
+
+        VkImageView blur_image_view;
+        if (!create_image_view(device, frame->blur_images[i], device->swapchain.format, VK_IMAGE_ASPECT_COLOR_BIT, &blur_image_view))
+        {
+            return false;
+        }
+
+        if (!allocate_descriptor_set(device, pipeline->descriptor_set_layouts[0], blur_image_view, frame->blur_sampler, &frame->blur_descriptor_sets[i]))
+        {
+            return false;
+        }
+
+        attachments[0] = blur_image_view;
+        result_code = vkCreateFramebuffer(device->handle, &frame_buffer_create_info, null, &frame->blur_framebuffer[i]);
+        if (result_code != VK_SUCCESS)
+        {
+            return false;
+        }
     }
 
     return true;
