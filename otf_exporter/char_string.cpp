@@ -446,13 +446,13 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
             {
             case CharStringOpType::rmoveto:
             {
-                ASSERT(runner->stack_length == 2);
+                ASSERT(runner->stack_length >= 2);
 
                 close_path(runner);
                 runner->paths.push()->lines = create_array<Line>();
 
-                dx1 = runner->stack[0];
-                dy1 = runner->stack[1];
+                dx1 = runner->stack[runner->stack_length - 2];
+                dy1 = runner->stack[runner->stack_length - 1];
                 Real x1 = runner->x + dx1;
                 Real y1 = runner->y + dy1;
                 refine_bbox(runner, x1, y1);
@@ -468,12 +468,12 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
 
             case CharStringOpType::hmoveto:
             {
-                ASSERT(runner->stack_length == 1);
+                ASSERT(runner->stack_length >= 1);
 
                 close_path(runner);
                 runner->paths.push()->lines = create_array<Line>();
 
-                dx1 = runner->stack[0];
+                dx1 = runner->stack[runner->stack_length - 1];
                 Real x1 = runner->x + dx1;
                 refine_bbox(runner, x1, runner->y);
                 move(runner, x1, runner->y);
@@ -488,12 +488,12 @@ void run_char_string(CharStringRunner *runner, CharString *char_string)
 
             case CharStringOpType::vmoveto:
             {
-                ASSERT(runner->stack_length == 1);
+                ASSERT(runner->stack_length >= 1);
 
                 close_path(runner);
                 runner->paths.push()->lines = create_array<Line>();
 
-                dy1 = runner->stack[0];
+                dy1 = runner->stack[runner->stack_length - 1];
                 Real y1 = runner->y + dy1;
                 refine_bbox(runner, runner->x, y1);
                 move(runner, runner->x, y1);

@@ -29,6 +29,11 @@ UInt32 get_pixel(Bitmap *bitmap, Int x, Int y)
 
 void draw_line(Bitmap *bitmap, Real fx0, Real fy0, Real fx1, Real fy1)
 {
+    ASSERT(fx0 >= 0 && fx0 <= bitmap->width);
+    ASSERT(fx1 >= 0 && fx1 <= bitmap->width);
+    ASSERT(fy0 >= 0 && fy0 <= bitmap->height);
+    ASSERT(fy1 >= 0 && fy1 <= bitmap->height);
+
     Real fdx = fx1 - fx0;
     Real fdy = fy1 - fy0;
 
