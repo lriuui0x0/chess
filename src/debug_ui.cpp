@@ -67,6 +67,7 @@ Bool create_debug_ui_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     DescriptorBindingInfo descriptor_binding;
     descriptor_binding.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     descriptor_binding.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptor_binding.count = 1;
 
     DescriptorSetInfo descriptor_set_info[1];
     descriptor_set_info[0].bindings.count = 1;
@@ -228,15 +229,16 @@ void debug_ui_draw_char(DebugUIDrawState *draw_state, Int8 character)
 
 void debug_ui_draw_indent(DebugUIDrawState *draw_state, Int indent)
 {
+    CharTextureInfo texture_info = get_char_texture_info(draw_state->font, ' ', draw_state->window_width, draw_state->window_height);
     draw_state->indent += indent;
-    Real indent_advance = 2 * indent * ((Real)draw_state->font->pos[0].advance / draw_state->window_width);
+    Real indent_advance = 2 * indent * texture_info.advance;
     draw_state->pos.x += indent_advance;
     draw_state->line_pos.x += indent_advance;
 }
 
 void debug_ui_draw_newline(DebugUIDrawState *draw_state)
 {
-    Real line_advance = (Real)draw_state->font->line_advance / draw_state->window_height;
+    Real line_advance = get_line_texture_info(draw_state->font, draw_state->window_width, draw_state->window_height);
     draw_state->line_pos.y += line_advance;
     draw_state->pos = draw_state->line_pos;
 }

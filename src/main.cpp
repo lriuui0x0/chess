@@ -370,9 +370,9 @@ Bool render_vulkan_frame(VulkanDevice *device,
 
     vkCmdEndRenderPass(scene_frame->command_buffer);
 
+    // NOTE: Debug collision
     if (show_debug)
     {
-        // NOTE: Debug collision
         VkRenderPassBeginInfo debug_collision_render_pass_begin_info = {};
         debug_collision_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         debug_collision_render_pass_begin_info.renderPass = debug_collision_pipeline->render_pass;
@@ -512,7 +512,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
     }
 
     // NOTE: Menu
-    if (blur_times == MAX_BLUR_TIMES)
+    if (blur_times)
     {
         VkBufferCopy menu_vertex_buffer_copy = {};
         menu_vertex_buffer_copy.srcOffset = 0;
@@ -863,7 +863,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     MenuFrame menu_frame;
     VulkanBuffer menu_vertex_buffer;
-    ASSERT(create_menu_frame(&device, &menu_pipeline, &asset_store.menu_font, &scene_frame, &menu_frame, &menu_vertex_buffer));
+    ASSERT(create_menu_frame(&device, &menu_pipeline, &scene_frame, &menu_frame, asset_store.menu_fonts, &menu_vertex_buffer));
+
+    // NOTE: Save menu layout for hit test
+    MenuLayout menu_layout = draw_menu(asset_store.menu_fonts, 0, window_width, window_height, &menu_vertex_buffer);
 
     Camera camera = get_scene_camera();
 
@@ -1679,7 +1682,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
         if (in_ui(state.phase))
         {
-            draw_menu(&asset_store.menu_font, window_width, window_height, &menu_vertex_buffer);
+            draw_menu(asset_store.menu_fonts, (Real) state.blur_times / MAX_BLUR_TIMES, window_width, window_height, &menu_vertex_buffer);
         }
         else
         {

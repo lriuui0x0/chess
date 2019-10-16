@@ -618,6 +618,12 @@ Bool create_pipeline(VulkanDevice *device,
         }
         break;
 
+        case 4 * 4:
+        {
+            format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        }
+        break;
+
         default:
         {
             return false;
@@ -731,7 +737,7 @@ Bool create_pipeline(VulkanDevice *device,
             descriptor_set_layout_bindings[descriptor_binding_i] = {};
             descriptor_set_layout_bindings[descriptor_binding_i].binding = descriptor_binding_i;
             descriptor_set_layout_bindings[descriptor_binding_i].descriptorType = descriptor_binding->type;
-            descriptor_set_layout_bindings[descriptor_binding_i].descriptorCount = 1;
+            descriptor_set_layout_bindings[descriptor_binding_i].descriptorCount = descriptor_binding->count;
             descriptor_set_layout_bindings[descriptor_binding_i].stageFlags = descriptor_binding->stage;
         }
 
@@ -1271,6 +1277,45 @@ Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout descrip
     descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descriptor_set_write.descriptorCount = 1;
     descriptor_set_write.pImageInfo = &descriptor_image_info;
+
+    vkUpdateDescriptorSets(device->handle, 1, &descriptor_set_write, 0, null);
+
+    return true;
+}
+
+Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout descriptor_set_layout,
+                             Int count, VkImageView *image_views, VkSampler *samplers, VkDescriptorSet *descriptor_set)
+{
+    VkResult result_code;
+
+    VkDescriptorSetAllocateInfo descriptor_set_alloc_info = {};
+    descriptor_set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    descriptor_set_alloc_info.descriptorPool = device->descriptor_pool;
+    descriptor_set_alloc_info.descriptorSetCount = 1;
+    descriptor_set_alloc_info.pSetLayouts = &descriptor_set_layout;
+
+    result_code = vkAllocateDescriptorSets(device->handle, &descriptor_set_alloc_info, descriptor_set);
+    if (result_code != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkDescriptorImageInfo *descriptor_image_infos = (VkDescriptorImageInfo *)ALLOCA(sizeof(VkDescriptorImageInfo) * count);
+    for (Int i = 0; i < count; i++)
+    {
+        descriptor_image_infos[i].sampler = samplers[i];
+        descriptor_image_infos[i].imageView = image_views[i];
+        descriptor_image_infos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+
+    VkWriteDescriptorSet descriptor_set_write = {};
+    descriptor_set_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptor_set_write.dstSet = *descriptor_set;
+    descriptor_set_write.dstBinding = 0;
+    descriptor_set_write.dstArrayElement = 0;
+    descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptor_set_write.descriptorCount = count;
+    descriptor_set_write.pImageInfo = descriptor_image_infos;
 
     vkUpdateDescriptorSets(device->handle, 1, &descriptor_set_write, 0, null);
 

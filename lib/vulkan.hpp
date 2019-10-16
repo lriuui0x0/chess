@@ -159,6 +159,7 @@ struct DescriptorBindingInfo
 {
     VkDescriptorType type;
     VkShaderStageFlagBits stage;
+    Int count;
 };
 
 struct DescriptorSetInfo
@@ -236,4 +237,6 @@ Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout descrip
                              VulkanBuffer *uniform_buffer, Int offset, Int range, VkDescriptorSet *descriptor_set);
 Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout descriptor_set_layout,
                              VkImageView image_view, VkSampler sampler, VkDescriptorSet *descriptor_set);
+Bool allocate_descriptor_set(VulkanDevice *device, VkDescriptorSetLayout descriptor_set_layout,
+                             Int count, VkImageView *image_views, VkSampler *samplers, VkDescriptorSet *descriptor_set);
 VkSampleCountFlagBits get_maximum_multisample_count(VulkanDevice *device);

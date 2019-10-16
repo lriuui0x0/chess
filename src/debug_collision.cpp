@@ -67,6 +67,7 @@ Bool create_debug_collision_pipeline(VulkanDevice *device, VulkanPipeline *pipel
     DescriptorBindingInfo descriptor_binding;
     descriptor_binding.stage = VK_SHADER_STAGE_VERTEX_BIT;
     descriptor_binding.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptor_binding.count = 1;
 
     DescriptorSetInfo descriptor_set_info[2];
     descriptor_set_info[0].bindings.count = 1;

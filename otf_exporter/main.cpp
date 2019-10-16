@@ -823,6 +823,8 @@ Int main(Int argc, CStr *argv)
     Real min_y = INT16_MAX;
     Real max_y = INT16_MIN;
     Real char_min_y[128];
+    Int padding_x = 0;
+    Int padding_y = 0;
     for (Int8 character = start_char; character <= end_char; character++)
     {
         Int glyph_id = get_glyph_id(cmap_table, cff_table, character);
@@ -861,30 +863,30 @@ Int main(Int argc, CStr *argv)
             min_y = min(min_y, runner.min_y);
             max_y = max(max_y, runner.max_y);
         }
-        sum_bitmap_width += bitmaps[character].width;
+        sum_bitmap_width += bitmaps[character].width + padding_x;
     }
 
-    Int max_bitmap_height = ceil((max_y - min_y) * scale);
+    Int max_bitmap_height = ceil((max_y - min_y) * scale) + padding_y * 2;
     Bitmap output_bitmap = create_bitmap(sum_bitmap_width, max_bitmap_height);
 
-    Int32 bitmap_offset_x = 0;
+    Int32 offset_x = 0;
     for (Int8 character = start_char; character <= end_char; character++)
     {
         Bitmap *bitmap = &bitmaps[character];
 
-        Int y_offset = character == 0x20 ? 0 : floor((char_min_y[character] - min_y) * scale);
-        UInt32 *output_row = output_bitmap.data + y_offset * output_bitmap.width;
+        Int offset_y = character == 0x20 ? 0 : floor((char_min_y[character] - min_y) * scale) + padding_y;
+        UInt32 *output_row = output_bitmap.data + offset_y * output_bitmap.width;
         UInt32 *row = bitmap->data;
         for (Int y = 0; y < bitmap->height; y++)
         {
             for (Int x = 0; x < bitmap->width; x++)
             {
-                output_row[x + bitmap_offset_x] = row[x];
+                output_row[x + offset_x] = row[x];
             }
             row += bitmap->width;
             output_row += output_bitmap.width;
         }
-        bitmap_offset_x += bitmap->width;
+        offset_x += bitmap->width + padding_x;
     }
     write_bitmap(concat_str(str(output_filename), str(".bmp")), &output_bitmap);
 
@@ -903,13 +905,13 @@ Int main(Int argc, CStr *argv)
     fwrite(&height, sizeof(height), 1, output_file);
     fwrite(&line_advance, sizeof(line_advance), 1, output_file);
 
-    bitmap_offset_x = 0;
+    offset_x = 0;
     for (Int8 character = start_char; character <= end_char; character++)
     {
         Int32 width = bitmaps[character].width;
-        fwrite(&bitmap_offset_x, sizeof(bitmap_offset_x), 1, output_file);
+        fwrite(&offset_x, sizeof(offset_x), 1, output_file);
         fwrite(&width, sizeof(width), 1, output_file);
-        bitmap_offset_x += width;
+        offset_x += width + padding_x;
 
         Int32 advance = round(metrics[character].advance * scale);
         fwrite(&advance, sizeof(advance), 1, output_file);

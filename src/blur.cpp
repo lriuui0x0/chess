@@ -67,10 +67,12 @@ Bool create_blur_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     DescriptorBindingInfo image_descriptor_binding;
     image_descriptor_binding.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     image_descriptor_binding.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    image_descriptor_binding.count = 1;
 
     DescriptorBindingInfo uniform_descriptor_binding;
     uniform_descriptor_binding.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     uniform_descriptor_binding.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uniform_descriptor_binding.count = 1;
 
     DescriptorSetInfo descriptor_set_info[2];
     descriptor_set_info[0].bindings.count = 1;

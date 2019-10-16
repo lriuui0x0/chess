@@ -78,6 +78,7 @@ Bool create_debug_move_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     DescriptorBindingInfo scene_descriptor_binding;
     scene_descriptor_binding.stage = VK_SHADER_STAGE_VERTEX_BIT;
     scene_descriptor_binding.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    scene_descriptor_binding.count = 1;
 
     DescriptorSetInfo descriptor_set_info[1];
     descriptor_set_info[0].bindings.count = 1;

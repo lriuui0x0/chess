@@ -113,18 +113,22 @@ Bool create_scene_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     DescriptorBindingInfo scene_descriptor_binding;
     scene_descriptor_binding.stage = VK_SHADER_STAGE_VERTEX_BIT;
     scene_descriptor_binding.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    scene_descriptor_binding.count = 1;
 
     DescriptorBindingInfo piece_descriptor_binding;
     piece_descriptor_binding.stage = VK_SHADER_STAGE_VERTEX_BIT;
     piece_descriptor_binding.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    piece_descriptor_binding.count = 1;
 
     DescriptorBindingInfo lightmap_descriptor_binding;
     lightmap_descriptor_binding.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     lightmap_descriptor_binding.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    lightmap_descriptor_binding.count = 1;
 
     DescriptorBindingInfo shadow_descriptor_binding;
     shadow_descriptor_binding.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     shadow_descriptor_binding.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    shadow_descriptor_binding.count = 1;
 
     DescriptorSetInfo descriptor_set_info[4];
     descriptor_set_info[0].bindings.count = 1;

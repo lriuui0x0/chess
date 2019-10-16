@@ -54,10 +54,12 @@ Bool create_shadow_pipeline(VulkanDevice *device, VulkanPipeline *pipeline)
     DescriptorBindingInfo shadow_scene_descriptor_binding;
     shadow_scene_descriptor_binding.stage = VK_SHADER_STAGE_VERTEX_BIT;
     shadow_scene_descriptor_binding.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    shadow_scene_descriptor_binding.count = 1;
 
     DescriptorBindingInfo piece_descriptor_binding;
     piece_descriptor_binding.stage = VK_SHADER_STAGE_VERTEX_BIT;
     piece_descriptor_binding.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    piece_descriptor_binding.count = 1;
 
     DescriptorSetInfo descriptor_set_info[2];
     descriptor_set_info[0].bindings.count = 1;

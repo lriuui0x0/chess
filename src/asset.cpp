@@ -176,6 +176,12 @@ CharTextureInfo get_char_texture_info(Font *font, Int8 character, Int window_wid
     return texture_info;
 }
 
+Real get_line_texture_info(Font *font, Int window_width, Int window_height)
+{
+    Real line_advance = (Real)font->line_advance / window_height;
+    return line_advance;
+}
+
 struct Image
 {
     Int width;
@@ -305,6 +311,11 @@ Bool deserialise_bit_board_table(Str buffer, BitBoardTable *table)
     return true;
 }
 
+#define MENU_LARGE_FONT (0)
+#define MENU_MEDIUM_FONT (1)
+#define MENU_SMALL_FONT (2)
+#define MENU_FONT_COUNT (3)
+
 struct AssetStore
 {
     Mesh board_mesh;
@@ -313,7 +324,7 @@ struct AssetStore
     Image piece_light_maps[GamePieceType::count];
     BitBoardTable bit_board_table;
     Font debug_font;
-    Font menu_font;
+    Font menu_fonts[MENU_FONT_COUNT];
 };
 
 Bool load_asset(AssetStore *asset_store)
@@ -425,16 +436,20 @@ Bool load_asset(AssetStore *asset_store)
         return false;
     }
 
-    if (read_file("../asset/menu_font.asset", &file_contents))
+    CStr menu_font_files[MENU_FONT_COUNT] = {"../asset/menu_large_font.asset", "../asset/menu_medium_font.asset", "../asset/menu_small_font.asset"};
+    for (Int font_i = 0; font_i < MENU_FONT_COUNT; font_i++)
     {
-        if (!deserialise_font(file_contents, &asset_store->menu_font))
+        if (read_file(menu_font_files[font_i], &file_contents))
+        {
+            if (!deserialise_font(file_contents, &asset_store->menu_fonts[font_i]))
+            {
+                return false;
+            }
+        }
+        else
         {
             return false;
         }
-    }
-    else
-    {
-        return false;
     }
 
     return true;
