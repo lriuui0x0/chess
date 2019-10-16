@@ -201,41 +201,29 @@ DebugUIDrawState create_debug_ui_draw_state(Font *font, Int window_width, Int wi
 
 void debug_ui_draw_char(DebugUIDrawState *draw_state, Int8 character)
 {
-    Font *font = draw_state->font;
-    ASSERT(character >= font->start_char && character < font->start_char + font->num_char);
+    CharTextureInfo texture_info = get_char_texture_info(draw_state->font, character, draw_state->window_width, draw_state->window_height);
 
-    Int8 char_index = character - font->start_char;
-    FontCharHeader *char_header = &font->pos[char_index];
-
-    Real width = (Real)char_header->width / draw_state->window_width;
-    Real height = (Real)font->height / draw_state->window_height;
-    Real left_bearing = (Real)char_header->left_bearing / draw_state->window_width;
-    Real advance = (Real)char_header->advance / draw_state->window_width;
-    Vec2 char_pos = {draw_state->pos.x + left_bearing, draw_state->pos.y};
-
-    Real texture_coord_x_min = (Real)char_header->offset / font->width;
-    Real texture_coord_x_max = (Real)(char_header->offset + char_header->width) / font->width;
-
+    Vec2 char_pos = {draw_state->pos.x + texture_info.left_bearing, draw_state->pos.y};
     DebugUIVertex *debug_ui_vertex = (DebugUIVertex *)draw_state->vertex_buffer->data + draw_state->character_count++ * 6;
     debug_ui_vertex[0].pos = char_pos;
-    debug_ui_vertex[0].texture_coord = {texture_coord_x_min, 0};
+    debug_ui_vertex[0].texture_coord = {texture_info.uv_x_min, 0};
 
-    debug_ui_vertex[1].pos = {char_pos.x, char_pos.y + height};
-    debug_ui_vertex[1].texture_coord = {texture_coord_x_min, 1};
+    debug_ui_vertex[1].pos = {char_pos.x, char_pos.y + texture_info.height};
+    debug_ui_vertex[1].texture_coord = {texture_info.uv_x_min, 1};
 
-    debug_ui_vertex[2].pos = {char_pos.x + width, char_pos.y};
-    debug_ui_vertex[2].texture_coord = {texture_coord_x_max, 0};
+    debug_ui_vertex[2].pos = {char_pos.x + texture_info.width, char_pos.y};
+    debug_ui_vertex[2].texture_coord = {texture_info.uv_x_max, 0};
 
-    debug_ui_vertex[3].pos = {char_pos.x + width, char_pos.y + height};
-    debug_ui_vertex[3].texture_coord = {texture_coord_x_max, 1};
+    debug_ui_vertex[3].pos = {char_pos.x + texture_info.width, char_pos.y + texture_info.height};
+    debug_ui_vertex[3].texture_coord = {texture_info.uv_x_max, 1};
 
-    debug_ui_vertex[4].pos = {char_pos.x + width, char_pos.y};
-    debug_ui_vertex[4].texture_coord = {texture_coord_x_max, 0};
+    debug_ui_vertex[4].pos = {char_pos.x + texture_info.width, char_pos.y};
+    debug_ui_vertex[4].texture_coord = {texture_info.uv_x_max, 0};
 
-    debug_ui_vertex[5].pos = {char_pos.x, char_pos.y + height};
-    debug_ui_vertex[5].texture_coord = {texture_coord_x_min, 1};
+    debug_ui_vertex[5].pos = {char_pos.x, char_pos.y + texture_info.height};
+    debug_ui_vertex[5].texture_coord = {texture_info.uv_x_min, 1};
 
-    draw_state->pos.x += advance;
+    draw_state->pos.x += texture_info.advance;
 }
 
 void debug_ui_draw_indent(DebugUIDrawState *draw_state, Int indent)

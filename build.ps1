@@ -19,6 +19,9 @@ C:\VulkanSDK\1.1.114.0\Bin\glslc.exe -fshader-stage=frag src/debug_move.frag.gls
 C:\VulkanSDK\1.1.114.0\Bin\glslc.exe -fshader-stage=vert src/blur.vert.glsl -g -o bin/blur.vert.spv
 C:\VulkanSDK\1.1.114.0\Bin\glslc.exe -fshader-stage=frag src/blur.frag.glsl -g -o bin/blur.frag.spv
 
+C:\VulkanSDK\1.1.114.0\Bin\glslc.exe -fshader-stage=vert src/menu.vert.glsl -g -o bin/menu.vert.spv
+C:\VulkanSDK\1.1.114.0\Bin\glslc.exe -fshader-stage=frag src/menu.frag.glsl -g -o bin/menu.frag.spv
+
 clang-cl /W4 -I C:\VulkanSDK\1.1.114.0\Include /Zi -O0 /EHa -o bin/chess.exe `
     -Wno-logical-op-parentheses -Wno-switch -Wno-unused-label -Wno-unused-parameter -Wno-missing-field-initializers -Wno-missing-braces -Wno-writable-strings -Wno-deprecated-declarations `
     src/main.cpp `

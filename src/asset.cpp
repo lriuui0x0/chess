@@ -150,6 +150,32 @@ Bool deserialise_font(Str buffer, Font *font)
     return true;
 }
 
+struct CharTextureInfo
+{
+    Real width;
+    Real height;
+    Real left_bearing;
+    Real advance;
+    Real uv_x_min;
+    Real uv_x_max;
+};
+
+CharTextureInfo get_char_texture_info(Font *font, Int8 character, Int window_width, Int window_height)
+{
+    ASSERT(character >= font->start_char && character < font->start_char + font->num_char);
+    Int8 char_index = character - font->start_char;
+    FontCharHeader *char_header = &font->pos[char_index];
+
+    CharTextureInfo texture_info;
+    texture_info.width = (Real)char_header->width / window_width;
+    texture_info.height = (Real)font->height / window_height;
+    texture_info.left_bearing = (Real)char_header->left_bearing / window_width;
+    texture_info.advance = (Real)char_header->advance / window_width;
+    texture_info.uv_x_min = (Real)char_header->offset / font->width;
+    texture_info.uv_x_max = (Real)(char_header->offset + char_header->width) / font->width;
+    return texture_info;
+}
+
 struct Image
 {
     Int width;
@@ -287,6 +313,7 @@ struct AssetStore
     Image piece_light_maps[GamePieceType::count];
     BitBoardTable bit_board_table;
     Font debug_font;
+    Font menu_font;
 };
 
 Bool load_asset(AssetStore *asset_store)
@@ -389,6 +416,18 @@ Bool load_asset(AssetStore *asset_store)
     if (read_file("../asset/debug_font.asset", &file_contents))
     {
         if (!deserialise_font(file_contents, &asset_store->debug_font))
+        {
+            return false;
+        }
+    }
+    else
+    {
+        return false;
+    }
+
+    if (read_file("../asset/menu_font.asset", &file_contents))
+    {
+        if (!deserialise_font(file_contents, &asset_store->menu_font))
         {
             return false;
         }

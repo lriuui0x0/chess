@@ -15,6 +15,7 @@
 #include "debug_collision.cpp"
 #include "debug_move.cpp"
 #include "blur.cpp"
+#include "menu.cpp"
 #include "search.cpp"
 
 Str get_game_piece_name(GamePiece piece)
@@ -97,7 +98,8 @@ Bool render_vulkan_frame(VulkanDevice *device,
                          VulkanPipeline *debug_ui_pipeline, DebugUIFrame *debug_ui_frame, VulkanBuffer *debug_ui_vertex_buffer, Int debug_ui_character_count,
                          VulkanPipeline *debug_collision_pipeline, DebugCollisionFrame *debug_collision_frame, VulkanBuffer *debug_collision_vertex_buffer,
                          VulkanPipeline *debug_move_pipeline, DebugMoveFrame *debug_move_frame, VulkanBuffer *debug_move_vertex_buffer, Int debug_move_count,
-                         VulkanPipeline *blur_pipeline, BlurFrame *blur_frame, Int blur_times)
+                         VulkanPipeline *blur_pipeline, BlurFrame *blur_frame, Int blur_times,
+                         VulkanPipeline *menu_pipeline, MenuFrame *menu_frame, VulkanBuffer *menu_vertex_buffer)
 {
     VkResult result_code;
     result_code = vkWaitForFences(device->handle, 1, &scene_frame->frame_finished_fence, false, UINT64_MAX);
@@ -509,6 +511,48 @@ Bool render_vulkan_frame(VulkanDevice *device,
         vkCmdEndRenderPass(scene_frame->command_buffer);
     }
 
+    // NOTE: Menu
+    if (blur_times == MAX_BLUR_TIMES)
+    {
+        VkBufferCopy menu_vertex_buffer_copy = {};
+        menu_vertex_buffer_copy.srcOffset = 0;
+        menu_vertex_buffer_copy.dstOffset = 0;
+        menu_vertex_buffer_copy.size = menu_vertex_buffer->count;
+        vkCmdCopyBuffer(scene_frame->command_buffer, menu_vertex_buffer->handle, menu_frame->vertex_buffer.handle, 1, &menu_vertex_buffer_copy);
+
+        VkBufferMemoryBarrier menu_vertex_buffer_memory_barrier = {};
+        menu_vertex_buffer_memory_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        menu_vertex_buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        menu_vertex_buffer_memory_barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+        menu_vertex_buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        menu_vertex_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        menu_vertex_buffer_memory_barrier.buffer = menu_frame->vertex_buffer.handle;
+        menu_vertex_buffer_memory_barrier.offset = 0;
+        menu_vertex_buffer_memory_barrier.size = menu_vertex_buffer->count;
+        vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, null, 1, &menu_vertex_buffer_memory_barrier, 0, null);
+
+        VkRenderPassBeginInfo menu_render_pass_begin_info = {};
+        menu_render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        menu_render_pass_begin_info.renderPass = menu_pipeline->render_pass;
+        menu_render_pass_begin_info.framebuffer = menu_frame->frame_buffer;
+        menu_render_pass_begin_info.renderArea.offset = {0, 0};
+        menu_render_pass_begin_info.renderArea.extent = {(UInt32)device->swapchain.width, (UInt32)device->swapchain.height};
+        menu_render_pass_begin_info.clearValueCount = 0;
+        menu_render_pass_begin_info.pClearValues = null;
+
+        vkCmdBeginRenderPass(scene_frame->command_buffer, &menu_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, menu_pipeline->handle);
+
+        offset = 0;
+        vkCmdBindVertexBuffers(scene_frame->command_buffer, 0, 1, &menu_frame->vertex_buffer.handle, &offset);
+
+        vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, menu_pipeline->layout, 0, 1, &menu_frame->font_texture_descriptor_set, 0, null);
+
+        vkCmdDraw(scene_frame->command_buffer, MENU_VERTEX_COUNT, 1, 0, 0);
+
+        vkCmdEndRenderPass(scene_frame->command_buffer);
+    }
+
     // NOTE: Debug UI
     if (show_debug)
     {
@@ -790,6 +834,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     VulkanPipeline blur_pipeline;
     ASSERT(create_blur_pipeline(&device, &blur_pipeline));
 
+    VulkanPipeline menu_pipeline;
+    ASSERT(create_menu_pipeline(&device, &menu_pipeline));
+
     ShadowFrame shadow_frame;
     ASSERT(create_shadow_frame(&device, &shadow_pipeline, &shadow_frame));
 
@@ -813,6 +860,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     BlurFrame blur_frame;
     ASSERT(create_blur_frame(&device, &blur_pipeline, &scene_frame, &blur_frame));
+
+    MenuFrame menu_frame;
+    VulkanBuffer menu_vertex_buffer;
+    ASSERT(create_menu_frame(&device, &menu_pipeline, &asset_store.menu_font, &scene_frame, &menu_frame, &menu_vertex_buffer));
 
     Camera camera = get_scene_camera();
 
@@ -1626,7 +1677,11 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
         }
 
-        if (!in_ui(state.phase))
+        if (in_ui(state.phase))
+        {
+            draw_menu(&asset_store.menu_font, window_width, window_height, &menu_vertex_buffer);
+        }
+        else
         {
             calculate_scene_uniform_data(&camera, window_width, window_height, scene_uniform_data);
             for (Int piece_i = 0; piece_i < ENTITY_PIECE_COUNT; piece_i++)
@@ -1652,7 +1707,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                                    &debug_ui_pipeline, &debug_ui_frame, &debug_ui_vertex_buffer, debug_ui_draw_state.character_count,
                                    &debug_collision_pipeline, &debug_collision_frame, &debug_collision_vertex_buffer,
                                    &debug_move_pipeline, &debug_move_frame, &debug_move_vertex_buffer, debug_move_draw_state.count,
-                                   &blur_pipeline, &blur_frame, state.blur_times));
+                                   &blur_pipeline, &blur_frame, state.blur_times, &menu_pipeline, &menu_frame, &menu_vertex_buffer));
 
         UInt64 current_timestamp = get_current_timestamp();
         Real64 elapsed_time = get_elapsed_time(current_timestamp - last_timestamp);
