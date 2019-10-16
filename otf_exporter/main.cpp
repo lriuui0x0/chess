@@ -2,6 +2,7 @@
 
 #include "char_string.cpp"
 #include "bitmap.cpp"
+#include "scanline.cpp"
 
 struct Reader
 {
@@ -813,8 +814,8 @@ Int main(Int argc, CStr *argv)
     ASSERT(cmap_table && cff_table && hhea_table && hmtx_table);
 
     Real scale = vertical_extent / (hhea_table->ascender - hhea_table->descender);
-    Int8 start_char = 0x21;
-    Int8 end_char = 0x7e;
+    Int32 start_char = 0x20;
+    Int32 end_char = 0x7e;
 
     Bitmap bitmaps[128];
     HorizontalMetric metrics[128];
@@ -825,75 +826,53 @@ Int main(Int argc, CStr *argv)
     for (Int8 character = start_char; character <= end_char; character++)
     {
         Int glyph_id = get_glyph_id(cmap_table, cff_table, character);
-        CharString *char_string = (CharString *)cff_table->char_string_index.objects + glyph_id;
-
-        CharStringRunner runner;
-        runner.subr_count = cff_table->subr_index.count;
-        runner.subr_list = (CharString *)cff_table->subr_index.objects;
-        runner.stack_length = 0;
-        runner.x = {0};
-        runner.y = {0};
-        runner.min_x = INT16_MAX;
-        runner.max_x = INT16_MIN;
-        runner.min_y = INT16_MAX;
-        runner.max_y = INT16_MIN;
-        runner.subr_depth = 0;
-        runner.started = false;
-        runner.ended = false;
-        runner.paths = create_array<Path>();
-
-        run_char_string(&runner, char_string);
-
-        Bitmap *bitmap = &bitmaps[character];
-        bitmap->width = ceil((runner.max_x - runner.min_x) * scale);
-        bitmap->height = ceil((runner.max_y - runner.min_y) * scale);
-        Int bitmap_data_length = sizeof(UInt32) * bitmap->width * bitmap->height;
-        bitmap->data = (UInt32 *)malloc(bitmap_data_length);
-        memset(bitmap->data, -1, bitmap_data_length);
-
-        Real x_offset = (bitmap->width - (runner.max_x - runner.min_x) * scale) / 2.0;
-        Real y_offset = (bitmap->height - (runner.max_y - runner.min_y) * scale) / 2.0;
-
-        for (Int path_i = 0; path_i < runner.paths.count; path_i++)
-        {
-            Path *path = &runner.paths[path_i];
-            for (Int line_i = 0; line_i < path->lines.count; line_i++)
-            {
-                Line *line = &path->lines[line_i];
-
-                Real x0 = (line->x0 - runner.min_x) * scale + x_offset;
-                Real y0 = (line->y0 - runner.min_y) * scale + y_offset;
-                Real x1 = (line->x1 - runner.min_x) * scale + x_offset;
-                Real y1 = (line->y1 - runner.min_y) * scale + y_offset;
-                draw_line(bitmap, x0, y0, x1, y1);
-            }
-        }
-
-        // fill_shape(bitmap);
-
-        sum_bitmap_width += bitmap->width;
-        char_min_y[character] = runner.min_y;
-        min_y = min(min_y, runner.min_y);
-        max_y = max(max_y, runner.max_y);
-
         ASSERT(glyph_id < hmtx_table->metrics.count);
         metrics[character] = hmtx_table->metrics[glyph_id];
+
+        if (character == 0x20)
+        {
+            Int whitespace_width = ceil((metrics[character].advance - metrics[character].left_bearing) * scale);
+            bitmaps[character] = create_bitmap(whitespace_width, 1);
+        }
+        else
+        {
+            CharString *char_string = (CharString *)cff_table->char_string_index.objects + glyph_id;
+
+            CharStringRunner runner;
+            runner.subr_count = cff_table->subr_index.count;
+            runner.subr_list = (CharString *)cff_table->subr_index.objects;
+            runner.stack_length = 0;
+            runner.x = {0};
+            runner.y = {0};
+            runner.min_x = INT16_MAX;
+            runner.max_x = INT16_MIN;
+            runner.min_y = INT16_MAX;
+            runner.max_y = INT16_MIN;
+            runner.subr_depth = 0;
+            runner.started = false;
+            runner.ended = false;
+            runner.paths = create_array<Path>();
+
+            run_char_string(&runner, char_string);
+
+            bitmaps[character] = scanline_fill(runner.paths, runner.min_x, runner.max_x, runner.min_y, runner.max_y, scale);
+
+            char_min_y[character] = runner.min_y;
+            min_y = min(min_y, runner.min_y);
+            max_y = max(max_y, runner.max_y);
+        }
+        sum_bitmap_width += bitmaps[character].width;
     }
 
     Int max_bitmap_height = ceil((max_y - min_y) * scale);
-    Bitmap output_bitmap;
-    output_bitmap.width = sum_bitmap_width;
-    output_bitmap.height = max_bitmap_height;
-    Int output_bitmap_data_length = sizeof(UInt32) * output_bitmap.width * output_bitmap.height;
-    output_bitmap.data = (UInt32 *)malloc(output_bitmap_data_length);
-    memset(output_bitmap.data, -1, output_bitmap_data_length);
+    Bitmap output_bitmap = create_bitmap(sum_bitmap_width, max_bitmap_height);
 
-    Int16 bitmap_offset_x = 0;
+    Int32 bitmap_offset_x = 0;
     for (Int8 character = start_char; character <= end_char; character++)
     {
         Bitmap *bitmap = &bitmaps[character];
 
-        Int y_offset = floor((char_min_y[character] - min_y) * scale);
+        Int y_offset = character == 0x20 ? 0 : floor((char_min_y[character] - min_y) * scale);
         UInt32 *output_row = output_bitmap.data + y_offset * output_bitmap.width;
         UInt32 *row = bitmap->data;
         for (Int y = 0; y < bitmap->height; y++)
@@ -909,51 +888,47 @@ Int main(Int argc, CStr *argv)
     }
     write_bitmap(concat_str(str(output_filename), str(".bmp")), &output_bitmap);
 
-    // FILE *output_file = fopen(output_filename, "wb");
-    // ASSERT(fseek(output_file, 0, SEEK_SET) == 0);
+    FILE *output_file = fopen(output_filename, "wb");
+    ASSERT(fseek(output_file, 0, SEEK_SET) == 0);
 
-    // fwrite(&start_char, sizeof(Int8), 1, output_file);
-    // Int8 num_char = end_char - start_char + 1;
-    // fwrite(&num_char, sizeof(Int8), 1, output_file);
+    fwrite(&start_char, sizeof(start_char), 1, output_file);
+    Int32 num_char = end_char - start_char + 1;
+    fwrite(&num_char, sizeof(num_char), 1, output_file);
 
-    // Int16 width = output_bitmap.width;
-    // Int16 height = output_bitmap.height;
-    // Int16 line_advance = round((max_y - min_y + hhea_table->line_gap) * scale);
-    // Int whitespace_glyph_id = get_glyph_id(cmap_table, cff_table, ' ');
-    // ASSERT(whitespace_glyph_id < hmtx_table->metrics.count);
-    // Int16 whitespace_advance = round(hmtx_table->metrics[whitespace_glyph_id].advance * scale);
+    Int32 width = output_bitmap.width;
+    Int32 height = output_bitmap.height;
+    Int32 line_advance = round((max_y - min_y + hhea_table->line_gap) * scale);
 
-    // fwrite(&width, sizeof(width), 1, output_file);
-    // fwrite(&height, sizeof(height), 1, output_file);
-    // fwrite(&line_advance, sizeof(line_advance), 1, output_file);
-    // fwrite(&whitespace_advance, sizeof(whitespace_advance), 1, output_file);
+    fwrite(&width, sizeof(width), 1, output_file);
+    fwrite(&height, sizeof(height), 1, output_file);
+    fwrite(&line_advance, sizeof(line_advance), 1, output_file);
 
-    // bitmap_offset_x = 0;
-    // for (Int8 character = start_char; character <= end_char; character++)
-    // {
-    //     Int16 width = bitmaps[character].width;
-    //     fwrite(&bitmap_offset_x, sizeof(bitmap_offset_x), 1, output_file);
-    //     fwrite(&width, sizeof(width), 1, output_file);
-    //     bitmap_offset_x += width;
+    bitmap_offset_x = 0;
+    for (Int8 character = start_char; character <= end_char; character++)
+    {
+        Int32 width = bitmaps[character].width;
+        fwrite(&bitmap_offset_x, sizeof(bitmap_offset_x), 1, output_file);
+        fwrite(&width, sizeof(width), 1, output_file);
+        bitmap_offset_x += width;
 
-    //     Int16 advance = round(metrics[character].advance * scale);
-    //     fwrite(&advance, sizeof(advance), 1, output_file);
-    //     Int16 left_bearing = round(metrics[character].left_bearing * scale);
-    //     fwrite(&left_bearing, sizeof(left_bearing), 1, output_file);
-    // }
+        Int32 advance = round(metrics[character].advance * scale);
+        fwrite(&advance, sizeof(advance), 1, output_file);
+        Int32 left_bearing = round(metrics[character].left_bearing * scale);
+        fwrite(&left_bearing, sizeof(left_bearing), 1, output_file);
+    }
 
-    // UInt32 *row = output_bitmap.data + output_bitmap.width * (output_bitmap.height - 1);
-    // for (Int y = output_bitmap.height - 1; y >= 0; y--)
-    // {
-    //     UInt32 *pixel = row;
-    //     for (Int x = 0; x < output_bitmap.width; x++)
-    //     {
-    //         UInt32 color = *pixel++ == 0 ? 0xffffffff : 0x00000000;
-    //         fwrite(&color, sizeof(color), 1, output_file);
-    //     }
-    //     row -= output_bitmap.width;
-    // }
-    // fclose(output_file);
+    UInt32 *row = output_bitmap.data + output_bitmap.width * (output_bitmap.height - 1);
+    for (Int y = output_bitmap.height - 1; y >= 0; y--)
+    {
+        UInt32 *pixel = row;
+        for (Int x = 0; x < output_bitmap.width; x++)
+        {
+            UInt32 color = *pixel++;
+            fwrite(&color, sizeof(color), 1, output_file);
+        }
+        row -= output_bitmap.width;
+    }
+    fclose(output_file);
 }
 
 #include "../lib/util.cpp"

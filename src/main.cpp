@@ -510,7 +510,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
     }
 
     // NOTE: Debug UI
-    if (show_debug && debug_ui_character_count > 0)
+    if (show_debug)
     {
         VkBufferCopy debug_ui_vertex_buffer_copy = {};
         debug_ui_vertex_buffer_copy.srcOffset = 0;

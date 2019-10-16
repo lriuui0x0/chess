@@ -202,12 +202,6 @@ DebugUIDrawState create_debug_ui_draw_state(Font *font, Int window_width, Int wi
 void debug_ui_draw_char(DebugUIDrawState *draw_state, Int8 character)
 {
     Font *font = draw_state->font;
-    if (character == ' ')
-    {
-        draw_state->pos.x += (Real)font->whitespace_advance / draw_state->window_width;
-        return;
-    }
-
     ASSERT(character >= font->start_char && character < font->start_char + font->num_char);
 
     Int8 char_index = character - font->start_char;
@@ -247,7 +241,7 @@ void debug_ui_draw_char(DebugUIDrawState *draw_state, Int8 character)
 void debug_ui_draw_indent(DebugUIDrawState *draw_state, Int indent)
 {
     draw_state->indent += indent;
-    Real indent_advance = 2 * indent * ((Real)draw_state->font->whitespace_advance / draw_state->window_width);
+    Real indent_advance = 2 * indent * ((Real)draw_state->font->pos[0].advance / draw_state->window_width);
     draw_state->pos.x += indent_advance;
     draw_state->line_pos.x += indent_advance;
 }

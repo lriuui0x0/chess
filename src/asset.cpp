@@ -97,20 +97,19 @@ Bool deserialise_mesh(Str buffer, Mesh *mesh)
 
 struct FontCharHeader
 {
-    Int16 offset;
-    Int16 width;
-    Int16 advance;
-    Int16 left_bearing;
+    Int32 offset;
+    Int32 width;
+    Int32 advance;
+    Int32 left_bearing;
 };
 
 struct Font
 {
-    Int8 start_char;
-    Int8 num_char;
-    Int16 width;
-    Int16 height;
-    Int16 line_advance;
-    Int16 whitespace_advance;
+    Int32 start_char;
+    Int32 num_char;
+    Int32 width;
+    Int32 height;
+    Int32 line_advance;
     FontCharHeader *pos;
     UInt32 *data;
 };
@@ -123,18 +122,16 @@ Bool deserialise_font(Str buffer, Font *font)
     }
 
     Int pos = 0;
-    font->start_char = *(Int8 *)(buffer.data + pos);
-    pos++;
-    font->num_char = *(Int8 *)(buffer.data + pos);
-    pos++;
-    font->width = *(Int16 *)(buffer.data + pos);
-    pos += 2;
-    font->height = *(Int16 *)(buffer.data + pos);
-    pos += 2;
-    font->line_advance = *(Int16 *)(buffer.data + pos);
-    pos += 2;
-    font->whitespace_advance = *(Int16 *)(buffer.data + pos);
-    pos += 2;
+    font->start_char = *(Int32 *)(buffer.data + pos);
+    pos += 4;
+    font->num_char = *(Int32 *)(buffer.data + pos);
+    pos += 4;
+    font->width = *(Int32 *)(buffer.data + pos);
+    pos += 4;
+    font->height = *(Int32 *)(buffer.data + pos);
+    pos += 4;
+    font->line_advance = *(Int32 *)(buffer.data + pos);
+    pos += 4;
 
     Int pos_data_length = sizeof(FontCharHeader) * font->num_char;
     Int image_data_length = sizeof(UInt32) * font->width * font->height;
