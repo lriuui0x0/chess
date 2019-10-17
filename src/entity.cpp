@@ -6,17 +6,27 @@
 #include "game.cpp"
 #include "collision.cpp"
 
+#define SQUARE_SIZE (100.0f)
+
 struct Camera
 {
     Vec3 pos;
     Quaternion rot;
 };
 
-Camera get_scene_camera()
+Camera get_scene_camera(GameSideEnum player_side)
 {
     Camera camera;
-    camera.pos = {350, -1750, -330};
-    camera.rot = get_rotation_quaternion(get_basis_x(), -degree_to_radian(70));
+    if (player_side == GameSide::white)
+    {
+        camera.pos = {350, -1750, -330};
+        camera.rot = get_rotation_quaternion(get_basis_x(), -degree_to_radian(70));
+    }
+    else
+    {
+        camera.pos = {350, -1750, 700 + 330};
+        camera.rot = get_rotation_quaternion(get_basis_x(), degree_to_radian(70)) * get_rotation_quaternion(get_basis_y(), PI);
+    }
     return camera;
 }
 
@@ -53,8 +63,6 @@ struct Board : Entity
 {
     CollisionBox collision_box[64];
 };
-
-#define SQUARE_SIZE (100.0f)
 
 Void fill_board_initial_state(Board *board, Mesh *board_mesh, Image *light_map)
 {

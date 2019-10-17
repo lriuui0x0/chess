@@ -284,12 +284,12 @@ GamePiece remove_game_peice(GameState *state, Square square)
     return piece;
 }
 
-GameState get_initial_game_state(BitBoardTable *bit_board_table)
+GameState get_initial_game_state(BitBoardTable *bit_board_table, GameSideEnum player_side)
 {
     GameState state = {};
     state.bit_board_table = bit_board_table;
     memset(state.board, NO_GAME_PIECE, sizeof(state.board));
-    state.player_side = GameSide::white;
+    state.player_side = player_side;
     state.current_side = GameSide::white;
     state.castling = 0xf;
     state.en_passant = NO_SQUARE;

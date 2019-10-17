@@ -456,7 +456,7 @@ void calculate_scene_uniform_data(Camera *camera, Int window_width, Int window_h
     uniform_data->hemi_light.dir = vec4(-get_basis_y());
     uniform_data->hemi_light.color = Vec4{0.80, 0.85, 0.95, 1};
     uniform_data->hemi_light.opp_color = Vec4{0, 0, 0, 1};
-    uniform_data->dir_light = vec4(normalize(Vec3{-1, 2, -0.5}), 0);
+    uniform_data->dir_light = vec4(normalize(Vec3{-1, 2, 0}), 0);
 
     Mat4 rotation = get_rotation_matrix(camera->rot);
     uniform_data->view = get_view_matrix(camera->pos, vec3(rotation.z), -vec3(rotation.y));

@@ -191,7 +191,7 @@ Bool create_menu_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFram
 
 struct MenuDrawState
 {
-    Font *fonts[MENU_FONT_COUNT];
+    Font *fonts;
     Int window_width;
     Int window_height;
     MenuVertex *menu_vertex;
@@ -233,7 +233,7 @@ Void draw_char(CharTextureInfo *texture_info, MenuVertex *menu_vertex, Vec2 pos,
 
 Vec2 draw_string(MenuDrawState *draw_state, Str string, Vec2 pos, Real alpha, Int font_type)
 {
-    Font *font = draw_state->fonts[font_type];
+    Font *font = &draw_state->fonts[font_type];
     for (Int8 char_i = 0; char_i < string.count; char_i++)
     {
         CharTextureInfo texture_info = get_char_texture_info(font, string[char_i], draw_state->window_width, draw_state->window_height);
@@ -315,18 +315,21 @@ struct MenuLayout
     Vec2 player_end_pos[GameSide::count];
 };
 
-struct MenuInteraction
+struct MenuState
 {
     GameSideEnum hovered_player;
     GameSideEnum selected_player;
 };
 
-Int draw_menu(Font *menu_fonts, MenuInteraction *interaction, MenuLayout *menu_layout, Real alpha, Int window_width, Int window_height, VulkanBuffer *vertex_buffer)
+Int draw_menu(Font *menu_fonts, MenuState *state, MenuLayout *menu_layout, Real alpha, Int window_width, Int window_height, VulkanBuffer *vertex_buffer)
 {
     MenuDrawState draw_state = {};
     draw_state.menu_vertex = (MenuVertex *)vertex_buffer->data;
+    draw_state.window_width = window_width;
+    draw_state.window_height = window_height;
+    draw_state.fonts = menu_fonts;
 
-    Real select_line_width = 0.005;
+    Real select_line_width = 0.01;
 
     Str player = str("Player");
     Vec2 player_pos = Vec2{-0.8, -0.8};
@@ -342,11 +345,11 @@ Int draw_menu(Font *menu_fonts, MenuInteraction *interaction, MenuLayout *menu_l
         menu_layout->player_pos[side] = start_pos;
         menu_layout->player_end_pos[side] = end_pos;
 
-        if (interaction->selected_player == side)
+        if (state->selected_player == side)
         {
             draw_underline(&draw_state, Vec2{start_pos.x, end_pos.y}, end_pos.x - start_pos.x, select_line_width, alpha, alpha);
         }
-        if (interaction->hovered_player == side)
+        if (state->hovered_player == side)
         {
             draw_underline(&draw_state, Vec2{start_pos.x, end_pos.y}, end_pos.x - start_pos.x, select_line_width, alpha * 0.5, alpha * 0.5);
         }
