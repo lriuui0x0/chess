@@ -99,7 +99,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
                          VulkanPipeline *debug_collision_pipeline, DebugCollisionFrame *debug_collision_frame, VulkanBuffer *debug_collision_vertex_buffer,
                          VulkanPipeline *debug_move_pipeline, DebugMoveFrame *debug_move_frame, VulkanBuffer *debug_move_vertex_buffer, Int debug_move_count,
                          VulkanPipeline *blur_pipeline, BlurFrame *blur_frame, Int blur_times,
-                         VulkanPipeline *menu_pipeline, MenuFrame *menu_frame, VulkanBuffer *menu_vertex_buffer)
+                         VulkanPipeline *menu_pipeline, MenuFrame *menu_frame, VulkanBuffer *menu_vertex_buffer, Int menu_vertex_count)
 {
     VkResult result_code;
     result_code = vkWaitForFences(device->handle, 1, &scene_frame->frame_finished_fence, false, UINT64_MAX);
@@ -517,7 +517,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
         VkBufferCopy menu_vertex_buffer_copy = {};
         menu_vertex_buffer_copy.srcOffset = 0;
         menu_vertex_buffer_copy.dstOffset = 0;
-        menu_vertex_buffer_copy.size = menu_vertex_buffer->count;
+        menu_vertex_buffer_copy.size = menu_vertex_count;
         vkCmdCopyBuffer(scene_frame->command_buffer, menu_vertex_buffer->handle, menu_frame->vertex_buffer.handle, 1, &menu_vertex_buffer_copy);
 
         VkBufferMemoryBarrier menu_vertex_buffer_memory_barrier = {};
@@ -528,7 +528,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
         menu_vertex_buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         menu_vertex_buffer_memory_barrier.buffer = menu_frame->vertex_buffer.handle;
         menu_vertex_buffer_memory_barrier.offset = 0;
-        menu_vertex_buffer_memory_barrier.size = menu_vertex_buffer->count;
+        menu_vertex_buffer_memory_barrier.size = menu_vertex_count;
         vkCmdPipelineBarrier(scene_frame->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, null, 1, &menu_vertex_buffer_memory_barrier, 0, null);
 
         VkRenderPassBeginInfo menu_render_pass_begin_info = {};
@@ -548,7 +548,7 @@ Bool render_vulkan_frame(VulkanDevice *device,
 
         vkCmdBindDescriptorSets(scene_frame->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, menu_pipeline->layout, 0, 1, &menu_frame->font_texture_descriptor_set, 0, null);
 
-        vkCmdDraw(scene_frame->command_buffer, MENU_VERTEX_COUNT, 1, 0, 0);
+        vkCmdDraw(scene_frame->command_buffer, menu_vertex_count, 1, 0, 0);
 
         vkCmdEndRenderPass(scene_frame->command_buffer);
     }
@@ -746,15 +746,16 @@ enum
     promote,
     ai_think,
     ai_animate,
-    ui_blur,
-    ui_unblur,
+    menu,
+    menu_blur,
+    menu_unblur,
 };
 }
 typedef Int StatePhaseEnum;
 
-Bool in_ui(StatePhaseEnum state_phase)
+Bool in_menu(StatePhaseEnum state_phase)
 {
-    Bool result = state_phase == StatePhase::ui_blur || state_phase == StatePhase::ui_unblur;
+    Bool result = state_phase == StatePhase::menu_blur || state_phase == StatePhase::menu_unblur || state_phase == StatePhase::menu;
     return result;
 }
 
@@ -770,6 +771,7 @@ struct State
     Square last_hover_square;
     StatePhaseEnum phase_before_ui;
     Int blur_times;
+    MenuLayout menu_layout;
 
     Bool show_debug;
     Bool moving_x_pos;
@@ -864,9 +866,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     MenuFrame menu_frame;
     VulkanBuffer menu_vertex_buffer;
     ASSERT(create_menu_frame(&device, &menu_pipeline, &scene_frame, &menu_frame, asset_store.menu_fonts, &menu_vertex_buffer));
-
-    // NOTE: Save menu layout for hit test
-    MenuLayout menu_layout = draw_menu(asset_store.menu_fonts, 0, window_width, window_height, &menu_vertex_buffer);
 
     Camera camera = get_scene_camera();
 
@@ -1167,23 +1166,38 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
         if (input.keydown_esc)
         {
-            if (state.phase != StatePhase::ui_blur)
+            switch (state.phase)
             {
-                if (state.phase != StatePhase::ui_unblur)
-                {
-                    state.phase_before_ui = state.phase;
-                }
-                state.phase = StatePhase::ui_blur;
+            case StatePhase::menu:
+            case StatePhase::menu_blur:
+            {
+                state.phase = StatePhase::menu_unblur;
             }
-            else
+            break;
+
+            case StatePhase::menu_unblur:
             {
-                state.phase = StatePhase::ui_unblur;
+                state.phase = StatePhase::menu_blur;
+            }
+
+            default:
+            {
+                state.phase_before_ui = state.phase;
+                state.phase = StatePhase::menu_blur;
+            }
+            break;
             }
         }
 
         BitBoard all_moves = 0;
         Bool show_ghost_piece = false;
-        if (state.phase == StatePhase::select)
+
+        MenuInteraction menu_interaction = {};
+        menu_interaction.selected_player = GameSide::white;
+
+        switch (state.phase)
+        {
+        case StatePhase::select:
         {
             ASSERT(!state.selected_piece);
             // NOTE: Undo
@@ -1224,7 +1238,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 }
             }
         }
-        else if (state.phase == StatePhase::execute)
+        break;
+
+        case StatePhase::execute:
         {
             ASSERT(state.selected_piece);
             all_moves = check_game_move(&game_state, state.selected_piece->square);
@@ -1308,7 +1324,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 }
             }
         }
-        else if (state.phase == StatePhase::animate)
+        break;
+
+        case StatePhase::animate:
         {
             ASSERT(state.selected_piece);
             if (state.selected_piece->animation_type == AnimationType::none)
@@ -1340,7 +1358,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 }
             }
         }
-        else if (state.phase == StatePhase::promote)
+        break;
+
+        case StatePhase::promote:
         {
             // NOTE: Undo partial promotion
             if (input.keydown_z)
@@ -1377,7 +1397,8 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 set_piece_mesh(&piece_manager, state.selected_piece, promoted_piece);
             }
         }
-        else if (state.phase == StatePhase::ai_think)
+
+        case StatePhase::ai_think:
         {
             ValuedMove best_move = negamax(&game_state, -VALUE_INF, VALUE_INF, 0);
             Square square_from = get_from(best_move.move);
@@ -1387,7 +1408,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             state.phase = StatePhase::ai_animate;
             state.executing_move = best_move.move;
         }
-        else if (state.phase == StatePhase::ai_animate)
+        break;
+
+        case StatePhase::ai_animate:
         {
             ASSERT(state.selected_piece);
             if (state.selected_piece->animation_type == AnimationType::none)
@@ -1415,17 +1438,49 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 }
             }
         }
-        else if (state.phase == StatePhase::ui_blur)
+        break;
+
+        case StatePhase::menu_blur:
         {
             state.blur_times = MIN(state.blur_times + 1, MAX_BLUR_TIMES);
+            if (state.blur_times == MAX_BLUR_TIMES)
+            {
+                state.phase = StatePhase::menu_blur;
+            }
         }
-        else if (state.phase == StatePhase::ui_unblur)
+        break;
+
+        case StatePhase::menu_unblur:
         {
             state.blur_times = MAX(state.blur_times - 1, 0);
             if (state.blur_times == 0)
             {
                 state.phase = state.phase_before_ui;
             }
+        }
+        break;
+
+        case StatePhase::menu:
+        {
+            Vec2 mouse_pos = {(Real)input.mouse_x / window_width * 2 - 1, (Real)input.mouse_y / window_height * 2 - 1};
+            for (GameSideEnum side = 0; side < GameSide::count; side++)
+            {
+                Vec2 start_pos = state.menu_layout.player_pos[side];
+                Vec2 end_pos = state.menu_layout.player_end_pos[side];
+
+                if (mouse_pos.x > start_pos.x && mouse_pos.y > start_pos.y && mouse_pos.x < end_pos.x && mouse_pos.y < end_pos.y)
+                {
+                    menu_interaction.hovered_player = side;
+                }
+            }
+        }
+        break;
+
+        default:
+        {
+            ASSERT(false);
+        }
+        break;
         }
 
         state.last_hover_square = hover_square;
@@ -1439,7 +1494,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         if (state.show_debug)
         {
             // NOTE: Debug camera
-            if (!in_ui(state.phase))
+            if (!in_menu(state.phase))
             {
                 if (input.keydown_z)
                 {
@@ -1680,9 +1735,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
         }
 
-        if (in_ui(state.phase))
+        Int menu_vertex_count = 0;
+        if (in_menu(state.phase))
         {
-            draw_menu(asset_store.menu_fonts, (Real) state.blur_times / MAX_BLUR_TIMES, window_width, window_height, &menu_vertex_buffer);
+            menu_vertex_count = draw_menu(asset_store.menu_fonts, &menu_interaction, &state.menu_layout, (Real)state.blur_times / MAX_BLUR_TIMES, window_width, window_height, &menu_vertex_buffer);
         }
         else
         {
@@ -1710,7 +1766,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                                    &debug_ui_pipeline, &debug_ui_frame, &debug_ui_vertex_buffer, debug_ui_draw_state.character_count,
                                    &debug_collision_pipeline, &debug_collision_frame, &debug_collision_vertex_buffer,
                                    &debug_move_pipeline, &debug_move_frame, &debug_move_vertex_buffer, debug_move_draw_state.count,
-                                   &blur_pipeline, &blur_frame, state.blur_times, &menu_pipeline, &menu_frame, &menu_vertex_buffer));
+                                   &blur_pipeline, &blur_frame, state.blur_times, &menu_pipeline, &menu_frame, &menu_vertex_buffer, menu_vertex_count));
 
         UInt64 current_timestamp = get_current_timestamp();
         Real64 elapsed_time = get_elapsed_time(current_timestamp - last_timestamp);

@@ -105,7 +105,7 @@ struct MenuFrame
     VkDescriptorSet font_texture_descriptor_set;
 };
 
-#define MENU_VERTEX_COUNT (109 * 6)
+#define MAX_MENU_VERTEX_COUNT (300 * 6)
 
 Bool create_menu_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFrame *scene_frame, MenuFrame *frame, Font *menu_fonts, VulkanBuffer *host_vertex_buffer)
 {
@@ -127,7 +127,7 @@ Bool create_menu_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFram
         return false;
     }
 
-    Int vertex_buffer_length = sizeof(MenuVertex) * MENU_VERTEX_COUNT;
+    Int vertex_buffer_length = sizeof(MenuVertex) * MAX_MENU_VERTEX_COUNT;
     if (!create_buffer(device, vertex_buffer_length,
                        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                        &frame->vertex_buffer))
@@ -189,6 +189,14 @@ Bool create_menu_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFram
     return true;
 }
 
+struct MenuDrawState
+{
+    Font *fonts[MENU_FONT_COUNT];
+    Int window_width;
+    Int window_height;
+    MenuVertex *menu_vertex;
+};
+
 Void draw_char(CharTextureInfo *texture_info, MenuVertex *menu_vertex, Vec2 pos, Real alpha, Int font_type)
 {
     Vec2 char_pos = {pos.x + texture_info->left_bearing, pos.y};
@@ -223,16 +231,17 @@ Void draw_char(CharTextureInfo *texture_info, MenuVertex *menu_vertex, Vec2 pos,
     menu_vertex[5].font_type = font_type;
 }
 
-Vec2 draw_string(Font *font, MenuVertex *menu_vertex, Str string, Vec2 pos, Real alpha, Real font_type, Int window_width, Int window_height)
+Vec2 draw_string(MenuDrawState *draw_state, Str string, Vec2 pos, Real alpha, Int font_type)
 {
+    Font *font = draw_state->fonts[font_type];
     for (Int8 char_i = 0; char_i < string.count; char_i++)
     {
-        CharTextureInfo texture_info = get_char_texture_info(font, string[char_i], window_width, window_height);
-        draw_char(&texture_info, menu_vertex, pos, alpha, font_type);
+        CharTextureInfo texture_info = get_char_texture_info(font, string[char_i], draw_state->window_width, draw_state->window_height);
+        draw_char(&texture_info, draw_state->menu_vertex, pos, alpha, font_type);
         pos.x += texture_info.advance;
-        menu_vertex += 6;
+        draw_state->menu_vertex += 6;
     }
-    pos.y += get_line_texture_info(font, window_width, window_height);
+    pos.y += get_line_texture_info(font, draw_state->window_width, draw_state->window_height);
     return pos;
 }
 
@@ -270,8 +279,9 @@ Vec2 draw_string(Font *font, MenuVertex *menu_vertex, Str string, Vec2 pos, Real
 //     return menu_vertex;
 // }
 
-Void draw_underline(MenuVertex *menu_vertex, Vec2 pos, Real width, Real height, Real alpha, Real alpha_right)
+Void draw_underline(MenuDrawState *draw_state, Vec2 pos, Real width, Real height, Real alpha, Real alpha_right)
 {
+    MenuVertex *menu_vertex = draw_state->menu_vertex;
     menu_vertex[0].pos = pos;
     menu_vertex[0].color = Vec4{1, 1, 1, alpha};
     menu_vertex[0].font_type = -1;
@@ -295,6 +305,8 @@ Void draw_underline(MenuVertex *menu_vertex, Vec2 pos, Real width, Real height, 
     menu_vertex[5].pos = {pos.x, pos.y + height};
     menu_vertex[5].color = Vec4{1, 1, 1, alpha};
     menu_vertex[5].font_type = -1;
+
+    draw_state->menu_vertex += 6;
 }
 
 struct MenuLayout
@@ -303,39 +315,42 @@ struct MenuLayout
     Vec2 player_end_pos[GameSide::count];
 };
 
-MenuLayout draw_menu(Font *menu_fonts, Real alpha, Int window_width, Int window_height, VulkanBuffer *vertex_buffer)
+struct MenuInteraction
 {
-    MenuLayout menu_layout;
-    MenuVertex *menu_vertex = (MenuVertex *)vertex_buffer->data;
-    Int total_character_count = 0;
+    GameSideEnum hovered_player;
+    GameSideEnum selected_player;
+};
+
+Int draw_menu(Font *menu_fonts, MenuInteraction *interaction, MenuLayout *menu_layout, Real alpha, Int window_width, Int window_height, VulkanBuffer *vertex_buffer)
+{
+    MenuDrawState draw_state = {};
+    draw_state.menu_vertex = (MenuVertex *)vertex_buffer->data;
+
+    Real select_line_width = 0.005;
 
     Str player = str("Player");
     Vec2 player_pos = Vec2{-0.8, -0.8};
-    draw_string(&menu_fonts[MENU_LARGE_FONT], menu_vertex, player, player_pos, alpha, MENU_LARGE_FONT, window_width, window_height);
-    menu_vertex += 6 * player.count;
-    total_character_count += player.count;
+    draw_string(&draw_state, player, player_pos, alpha, MENU_LARGE_FONT);
 
-    Str white = str("white");
-    Vec2 white_pos = Vec2{0.0, -0.78};
-    Vec2 white_end_pos = draw_string(&menu_fonts[MENU_MEDIUM_FONT], menu_vertex, white, white_pos, alpha, MENU_MEDIUM_FONT, window_width, window_height);
-    menu_vertex += 6 * white.count;
-    total_character_count += white.count;
+    Str player_option[2] = {str("white"), str("black")};
+    Vec2 player_option_pos[2] = {Vec2{0.0, -0.78}, Vec2{0.35, -0.78}};
+    for (GameSideEnum side = 0; side < GameSide::count; side++)
+    {
+        Vec2 start_pos = player_option_pos[side];
+        Vec2 end_pos = draw_string(&draw_state, player_option[side], start_pos, alpha, MENU_MEDIUM_FONT);
 
-    menu_layout.player_pos[GameSide::white] = white_pos;
-    menu_layout.player_end_pos[GameSide::white] = white_end_pos;
+        menu_layout->player_pos[side] = start_pos;
+        menu_layout->player_end_pos[side] = end_pos;
 
-    draw_underline(menu_vertex, Vec2{white_pos.x, white_end_pos.y}, white_end_pos.x - white_pos.x, 0.005, alpha, alpha);
-    menu_vertex += 6;
-    total_character_count++;
-
-    Str black = str("black");
-    Vec2 black_pos = Vec2{0.35, -0.78};
-    Vec2 black_end_pos = draw_string(&menu_fonts[MENU_MEDIUM_FONT], menu_vertex, black, black_pos, alpha, MENU_MEDIUM_FONT, window_width, window_height);
-    menu_vertex += 6 * black.count;
-    total_character_count += black.count;
-
-    menu_layout.player_pos[GameSide::black] = black_pos;
-    menu_layout.player_end_pos[GameSide::black] = black_end_pos;
+        if (interaction->selected_player == side)
+        {
+            draw_underline(&draw_state, Vec2{start_pos.x, end_pos.y}, end_pos.x - start_pos.x, select_line_width, alpha, alpha);
+        }
+        if (interaction->hovered_player == side)
+        {
+            draw_underline(&draw_state, Vec2{start_pos.x, end_pos.y}, end_pos.x - start_pos.x, select_line_width, alpha * 0.5, alpha * 0.5);
+        }
+    }
 
     Vec2 rule_pos[7] = {
         {-0.8, 0.5},
@@ -357,17 +372,12 @@ MenuLayout draw_menu(Font *menu_fonts, Real alpha, Int window_width, Int window_
     };
     for (Int rule_i = 0; rule_i < 7; rule_i++)
     {
-        Str rule = rules[rule_i];
-        draw_string(&menu_fonts[MENU_SMALL_FONT], menu_vertex, rule, rule_pos[rule_i], alpha, MENU_SMALL_FONT, window_width, window_height);
-        menu_vertex += 6 * rule.count;
-        total_character_count += rule.count;
+        draw_string(&draw_state, rules[rule_i], rule_pos[rule_i], alpha, MENU_SMALL_FONT);
     }
 
-    draw_underline(menu_vertex, Vec2{-0.8, 0.45}, 1.5, 0.0025, alpha, 0.1);
-    menu_vertex += 6;
-    total_character_count++;
+    draw_underline(&draw_state, Vec2{-0.8, 0.45}, 1.5, 0.0025, alpha, alpha * 0.1);
 
-    ASSERT(total_character_count * 6 == MENU_VERTEX_COUNT);
-
-    return menu_layout;
+    Int vertex_count = draw_state.menu_vertex - (MenuVertex *)vertex_buffer->data;
+    ASSERT(vertex_count <= MAX_MENU_VERTEX_COUNT);
+    return vertex_count;
 }
