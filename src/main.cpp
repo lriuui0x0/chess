@@ -1,7 +1,7 @@
 // TODO
 // Long thinking AI
-// UI
 // Sound
+// OpenGL
 
 #include "../lib/util.hpp"
 #include "../lib/vulkan.hpp"
@@ -771,8 +771,8 @@ struct State
     Square last_hover_square;
     StatePhaseEnum phase_before_menu;
     Int blur_times;
-    MenuLayout menu_layout;
     MenuState menu_state;
+    GameEndEnum menu_game_end;
 
     Bool show_debug;
     Bool moving_x_pos;
@@ -789,9 +789,22 @@ struct State
     Bool rotating_z_neg;
 };
 
-Void reset_state_phase(State *state, GameSideEnum player_side)
+Void reset_state(State *state, GameSideEnum player_side)
 {
     state->phase = player_side == GameSide::white ? StatePhase::select : StatePhase::ai_think;
+    state->menu_state.selected_player = player_side;
+    state->menu_state.hovered_player = GameSide::count;
+    state->menu_game_end = GameEnd::none;
+}
+
+Void check_end(State *state, GameState *game_state)
+{
+    GameEndEnum game_end = check_game_end(game_state);
+    if (game_end != GameEnd::none)
+    {
+        state->menu_game_end = game_end;
+        state->phase = StatePhase::menu_blur;
+    }
 }
 
 AssetStore asset_store;
@@ -902,9 +915,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     ASSERT(upload_buffer(&device, &debug_collision_vertex_buffer, &debug_collision_frame.vertex_buffer));
 
     State state = {};
-    state.menu_state.selected_player = game_state.player_side;
-    state.menu_state.hovered_player = GameSide::count;
-    reset_state_phase(&state, game_state.player_side);
+    reset_state(&state, game_state.player_side);
+
+    MenuLayout menu_layout = get_menu_layout(asset_store.menu_fonts, window_width, window_height);
 
     show_window(window);
 
@@ -1171,20 +1184,34 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             }
         }
 
+        BitBoard all_moves = 0;
+        Bool show_ghost_piece = false;
+
         if (input.keydown_esc)
         {
             switch (state.phase)
             {
             case StatePhase::menu:
-            case StatePhase::menu_blur:
             {
                 state.phase = StatePhase::menu_unblur;
             }
             break;
 
+            case StatePhase::menu_blur:
+            {
+                if (state.menu_game_end == GameEnd::none)
+                {
+                    state.phase = StatePhase::menu_unblur;
+                }
+            }
+            break;
+
             case StatePhase::menu_unblur:
             {
-                state.phase = StatePhase::menu_blur;
+                if (state.menu_game_end == GameEnd::none)
+                {
+                    state.phase = StatePhase::menu_blur;
+                }
             }
 
             default:
@@ -1195,9 +1222,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             break;
             }
         }
-
-        BitBoard all_moves = 0;
-        Bool show_ghost_piece = false;
 
         switch (state.phase)
         {
@@ -1370,11 +1394,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                     state.phase = StatePhase::ai_think;
                     state.selected_piece = null;
 
-                    GameEndEnum game_end = check_game_end(&game_state);
-                    if (game_end != GameEnd::none)
-                    {
-                        is_running = false;
-                    }
+                    check_end(&state, &game_state);
                 }
             }
         }
@@ -1402,11 +1422,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 state.phase = StatePhase::ai_think;
                 state.selected_piece = null;
 
-                GameEndEnum game_end = check_game_end(&game_state);
-                if (game_end != GameEnd::none)
-                {
-                    is_running = false;
-                }
+                check_end(&state, &game_state);
             }
             // NOTE: Change promotion
             else if (input.click_right)
@@ -1451,11 +1467,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 state.phase = StatePhase::select;
                 state.selected_piece = null;
 
-                GameEndEnum game_end = check_game_end(&game_state);
-                if (game_end != GameEnd::none)
-                {
-                    is_running = false;
-                }
+                check_end(&state, &game_state);
             }
         }
         break;
@@ -1475,13 +1487,25 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             state.blur_times = MAX(state.blur_times - 1, 0);
             if (state.blur_times == 0)
             {
-                state.phase = state.phase_before_menu;
-                if (state.menu_state.selected_player != game_state.player_side)
+                if (state.menu_game_end == GameEnd::none)
                 {
-                    game_state = get_initial_game_state(&asset_store.bit_board_table, state.menu_state.selected_player);
+                    if (state.menu_state.selected_player != game_state.player_side)
+                    {
+                        game_state = get_initial_game_state(&asset_store.bit_board_table, state.menu_state.selected_player);
+                        fill_piece_manager_initial_state(&piece_manager, &game_state);
+                        camera = get_scene_camera(game_state.player_side);
+                        reset_state(&state, game_state.player_side);
+                    }
+                    else
+                    {
+                        state.phase = state.phase_before_menu;
+                    }
+                }
+                else
+                {
+                    game_state = get_initial_game_state(&asset_store.bit_board_table, game_state.player_side);
                     fill_piece_manager_initial_state(&piece_manager, &game_state);
-                    camera = get_scene_camera(game_state.player_side);
-                    reset_state_phase(&state, game_state.player_side);
+                    reset_state(&state, game_state.player_side);
                 }
             }
         }
@@ -1489,19 +1513,22 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
         case StatePhase::menu:
         {
-            Vec2 mouse_pos = {(Real)state.mouse_x / window_width * 2 - 1, (Real)state.mouse_y / window_height * 2 - 1};
-            state.menu_state.hovered_player = GameSide::count;
-            for (GameSideEnum side = 0; side < GameSide::count; side++)
+            if (state.menu_game_end == GameEnd::none)
             {
-                Vec2 start_pos = state.menu_layout.player_pos[side];
-                Vec2 end_pos = state.menu_layout.player_end_pos[side];
-
-                if (mouse_pos.x > start_pos.x && mouse_pos.y > start_pos.y && mouse_pos.x < end_pos.x && mouse_pos.y < end_pos.y)
+                Vec2 mouse_pos = {(Real)state.mouse_x / window_width * 2 - 1, (Real)state.mouse_y / window_height * 2 - 1};
+                state.menu_state.hovered_player = GameSide::count;
+                for (GameSideEnum side = 0; side < GameSide::count; side++)
                 {
-                    state.menu_state.hovered_player = side;
-                    if (input.click_left)
+                    Vec2 start_pos = menu_layout.player_pos[side];
+                    Vec2 end_pos = menu_layout.player_end_pos[side];
+
+                    if (mouse_pos.x > start_pos.x && mouse_pos.y > start_pos.y && mouse_pos.x < end_pos.x && mouse_pos.y < end_pos.y)
                     {
-                        state.menu_state.selected_player = side;
+                        state.menu_state.hovered_player = side;
+                        if (input.click_left)
+                        {
+                            state.menu_state.selected_player = side;
+                        }
                     }
                 }
             }
@@ -1770,7 +1797,14 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
         Int menu_vertex_count = 0;
         if (in_menu(state.phase))
         {
-            menu_vertex_count = draw_menu(asset_store.menu_fonts, &state.menu_state, &state.menu_layout, (Real)state.blur_times / MAX_BLUR_TIMES, window_width, window_height, &menu_vertex_buffer);
+            if (state.menu_game_end == GameEnd::none)
+            {
+                menu_vertex_count = draw_menu(asset_store.menu_fonts, &state.menu_state, (Real)state.blur_times / MAX_BLUR_TIMES, window_width, window_height, &menu_vertex_buffer);
+            }
+            else
+            {
+                menu_vertex_count = draw_game_end(asset_store.menu_fonts, state.menu_game_end, (Real)state.blur_times / MAX_BLUR_TIMES, window_width, window_height, &menu_vertex_buffer);
+            }
         }
         else
         {

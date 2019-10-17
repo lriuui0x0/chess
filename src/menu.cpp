@@ -189,6 +189,27 @@ Bool create_menu_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFram
     return true;
 }
 
+struct MenuLayout
+{
+    Vec2 player_pos[GameSide::count];
+    Vec2 player_end_pos[GameSide::count];
+};
+
+Str player_option[GameSide::count] = {str("white"), str("black")};
+Vec2 player_option_pos[GameSide::count] = {Vec2{0.0, -0.78}, Vec2{0.35, -0.78}};
+MenuLayout get_menu_layout(Font *menu_fonts, Int window_width, Int window_height)
+{
+    MenuLayout menu_layout;
+    for (GameSideEnum side = 0; side < GameSide::count; side++)
+    {
+        menu_layout.player_pos[side] = player_option_pos[side];
+        Vec2 size = get_string_texture_size(&menu_fonts[MENU_MEDIUM_FONT], player_option[side], window_width, window_height);
+        menu_layout.player_end_pos[side].x = player_option_pos[side].x + size.x;
+        menu_layout.player_end_pos[side].y = player_option_pos[side].y + size.y;
+    }
+    return menu_layout;
+}
+
 struct MenuDrawState
 {
     Font *fonts;
@@ -245,40 +266,6 @@ Vec2 draw_string(MenuDrawState *draw_state, Str string, Vec2 pos, Real alpha, In
     return pos;
 }
 
-// MenuVertex *draw_selector(MenuVertex *menu_vertex, Vec2 pos, Real alpha)
-// {
-//     Real width = 0.015;
-//     Real height = 0.015;
-//     Real gap = 0.06;
-
-//     menu_vertex[0].pos = {pos.x - width, pos.y - gap - height};
-//     menu_vertex[0].color = Vec4{1, 1, 1, alpha};
-//     menu_vertex[0].font_type = -1;
-
-//     menu_vertex[1].pos = {pos.x + width, pos.y - gap - height};
-//     menu_vertex[1].color = Vec4{1, 1, 1, alpha};
-//     menu_vertex[1].font_type = -1;
-
-//     menu_vertex[2].pos = {pos.x, pos.y - gap};
-//     menu_vertex[2].color = Vec4{1, 1, 1, alpha};
-//     menu_vertex[2].font_type = -1;
-
-//     menu_vertex[3].pos = {pos.x - width, pos.y + gap + height};
-//     menu_vertex[3].color = Vec4{1, 1, 1, alpha};
-//     menu_vertex[3].font_type = -1;
-
-//     menu_vertex[4].pos = {pos.x + width, pos.y + gap + height};
-//     menu_vertex[4].color = Vec4{1, 1, 1, alpha};
-//     menu_vertex[4].font_type = -1;
-
-//     menu_vertex[5].pos = {pos.x, pos.y + gap};
-//     menu_vertex[5].color = Vec4{1, 1, 1, alpha};
-//     menu_vertex[5].font_type = -1;
-
-//     menu_vertex += 6;
-//     return menu_vertex;
-// }
-
 Void draw_underline(MenuDrawState *draw_state, Vec2 pos, Real width, Real height, Real alpha, Real alpha_right)
 {
     MenuVertex *menu_vertex = draw_state->menu_vertex;
@@ -309,19 +296,13 @@ Void draw_underline(MenuDrawState *draw_state, Vec2 pos, Real width, Real height
     draw_state->menu_vertex += 6;
 }
 
-struct MenuLayout
-{
-    Vec2 player_pos[GameSide::count];
-    Vec2 player_end_pos[GameSide::count];
-};
-
 struct MenuState
 {
     GameSideEnum hovered_player;
     GameSideEnum selected_player;
 };
 
-Int draw_menu(Font *menu_fonts, MenuState *state, MenuLayout *menu_layout, Real alpha, Int window_width, Int window_height, VulkanBuffer *vertex_buffer)
+Int draw_menu(Font *menu_fonts, MenuState *state, Real alpha, Int window_width, Int window_height, VulkanBuffer *vertex_buffer)
 {
     MenuDrawState draw_state = {};
     draw_state.menu_vertex = (MenuVertex *)vertex_buffer->data;
@@ -335,15 +316,10 @@ Int draw_menu(Font *menu_fonts, MenuState *state, MenuLayout *menu_layout, Real 
     Vec2 player_pos = Vec2{-0.8, -0.8};
     draw_string(&draw_state, player, player_pos, alpha, MENU_LARGE_FONT);
 
-    Str player_option[2] = {str("white"), str("black")};
-    Vec2 player_option_pos[2] = {Vec2{0.0, -0.78}, Vec2{0.35, -0.78}};
     for (GameSideEnum side = 0; side < GameSide::count; side++)
     {
         Vec2 start_pos = player_option_pos[side];
         Vec2 end_pos = draw_string(&draw_state, player_option[side], start_pos, alpha, MENU_MEDIUM_FONT);
-
-        menu_layout->player_pos[side] = start_pos;
-        menu_layout->player_end_pos[side] = end_pos;
 
         if (state->selected_player == side)
         {
@@ -379,6 +355,52 @@ Int draw_menu(Font *menu_fonts, MenuState *state, MenuLayout *menu_layout, Real 
     }
 
     draw_underline(&draw_state, Vec2{-0.8, 0.45}, 1.5, 0.0025, alpha, alpha * 0.1);
+
+    Int vertex_count = draw_state.menu_vertex - (MenuVertex *)vertex_buffer->data;
+    ASSERT(vertex_count <= MAX_MENU_VERTEX_COUNT);
+    return vertex_count;
+}
+
+Int draw_game_end(Font *menu_fonts, GameEndEnum game_end, Real alpha, Int window_width, Int window_height, VulkanBuffer *vertex_buffer)
+{
+    MenuDrawState draw_state = {};
+    draw_state.menu_vertex = (MenuVertex *)vertex_buffer->data;
+    draw_state.window_width = window_width;
+    draw_state.window_height = window_height;
+    draw_state.fonts = menu_fonts;
+
+    ASSERT(game_end != GameEnd::none);
+    Str title;
+    switch (game_end)
+    {
+    case GameEnd::win:
+    {
+        title = str("Win");
+    }
+    break;
+
+    case GameEnd::lose:
+    {
+        title = str("Lose");
+    }
+    break;
+
+    case GameEnd::draw:
+    {
+        title = str("Draw");
+    }
+    break;
+
+    default:
+    {
+        ASSERT(false);
+    }
+    break;
+    }
+
+    Vec2 size = get_string_texture_size(&menu_fonts[MENU_LARGE_FONT], title, window_width, window_height);
+    Vec2 pos = {0 - size.x / 2, 0 - size.y / 2};
+    draw_string(&draw_state, title, pos, alpha, MENU_LARGE_FONT);
 
     Int vertex_count = draw_state.menu_vertex - (MenuVertex *)vertex_buffer->data;
     ASSERT(vertex_count <= MAX_MENU_VERTEX_COUNT);

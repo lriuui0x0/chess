@@ -167,10 +167,10 @@ CharTextureInfo get_char_texture_info(Font *font, Int8 character, Int window_wid
     FontCharHeader *char_header = &font->pos[char_index];
 
     CharTextureInfo texture_info;
-    texture_info.width = (Real)char_header->width / window_width;
-    texture_info.height = (Real)font->height / window_height;
-    texture_info.left_bearing = (Real)char_header->left_bearing / window_width;
-    texture_info.advance = (Real)char_header->advance / window_width;
+    texture_info.width = (Real)char_header->width / window_width * 2;
+    texture_info.height = (Real)font->height / window_height * 2;
+    texture_info.left_bearing = (Real)char_header->left_bearing / window_width * 2;
+    texture_info.advance = (Real)char_header->advance / window_width * 2;
     texture_info.uv_x_min = (Real)char_header->offset / font->width;
     texture_info.uv_x_max = (Real)(char_header->offset + char_header->width) / font->width;
     return texture_info;
@@ -178,8 +178,21 @@ CharTextureInfo get_char_texture_info(Font *font, Int8 character, Int window_wid
 
 Real get_line_texture_info(Font *font, Int window_width, Int window_height)
 {
-    Real line_advance = (Real)font->line_advance / window_height;
+    Real line_advance = (Real)font->line_advance / window_height * 2;
     return line_advance;
+}
+
+Vec2 get_string_texture_size(Font *font, Str string, Int window_width, Int window_height)
+{
+    Vec2 size;
+    size.x = 0;
+    for (Int8 char_i = 0; char_i < string.count; char_i++)
+    {
+        CharTextureInfo texture_info = get_char_texture_info(font, string[char_i], window_width, window_height);
+        size.x += texture_info.advance;
+    }
+    size.y = get_line_texture_info(font, window_width, window_height);
+    return size;
 }
 
 struct Image
