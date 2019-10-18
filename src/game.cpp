@@ -3,30 +3,48 @@
 
 typedef UInt64 BitBoard;
 
-// NOTE: Square is encoded in 6 or 7 bits, depending on if the square can be invalid
+// NOTE: Square is encoded in 6 or 7 bits, depending on if the square can be invalid.
+// The reason for invalid square encoding is when en passant square is empty
 #define NO_SQUARE (0x7f)
 typedef Int8 Square;
 
-BitBoard bit_square(Square square)
+namespace Sq
+{
+enum
+{
+    a1, b1, c1, d1, e1, f1, g1, h1,
+    a2, b2, c2, d2, e2, f2, g2, h2,
+    a3, b3, c3, d3, e3, f3, g3, h3,
+    a4, b4, c4, d4, e4, f4, g4, h4,
+    a5, b5, c5, d5, e5, f5, g5, h5,
+    a6, b6, c6, d6, e6, f6, g6, h6,
+    a7, b7, c7, d7, e7, f7, g7, h7,
+    a8, b8, c8, d8, e8, f8, g8, h8,
+};
+}
+
+constexpr BitBoard bit_square(Square square)
 {
     ASSERT(square != NO_SQUARE);
     BitBoard result = 1llu << square;
     return result;
 }
 
-Square get_row(Square square)
+constexpr Square get_row(Square square)
 {
     ASSERT(square >= 0 && square < 64);
-    return square / 8;
+    Square row = square / 8;
+    return row;
 }
 
-Square get_column(Square square)
+constexpr Square get_column(Square square)
 {
     ASSERT(square >= 0 && square < 64);
-    return square % 8;
+    Square column = square % 8;
+    return column;
 }
 
-Square get_square(Square row, Square column)
+constexpr Square get_square(Square row, Square column)
 {
     ASSERT(row >= 0 && row < 8);
     ASSERT(column >= 0 && column < 8);
@@ -88,9 +106,34 @@ enum
 }
 typedef Int GameSideEnum;
 
-GameSideEnum oppose(GameSideEnum side)
+constexpr GameSideEnum oppose(GameSideEnum side)
 {
     return side ^ 1;
+}
+
+constexpr Square get_row_rel(Square square, GameSideEnum side)
+{
+    ASSERT(square >= 0 && square < 64);
+    Square row = square / 8;
+    row = side == GameSide::white ? row : 7 - row;
+    return row;
+}
+
+constexpr Square get_column_rel(Square square, GameSideEnum side)
+{
+    ASSERT(square >= 0 && square < 64);
+    Square column = square % 8;
+    column = side == GameSide::white ? column : 7 - column;
+    return column;
+}
+
+constexpr Square get_abs_square(Square square, GameSideEnum side)
+{
+    ASSERT(square >= 0 && square < 64);
+    Square row = get_row_rel(square, side);
+    Square column = get_column_rel(square, side);
+    Square result = get_square(row, column);
+    return result;
 }
 
 // NOTE: GamePiece is encoded with 4 bits
@@ -398,24 +441,25 @@ BitBoard down_left(BitBoard pawn_bit, GameSideEnum side)
     return result;
 }
 
-BitBoard row_mask(Square row)
+BitBoard get_row_mask(Square row)
 {
     ASSERT(row >= 0 && row < 8);
     BitBoard result = 0xff << row;
     return result;
 }
 
-BitBoard column_mask(Square column)
+BitBoard get_column_mask(Square column)
 {
     ASSERT(column >= 0 && column < 8);
     BitBoard result = LEFT_SIDE_MASK << column;
     return result;
 }
 
-BitBoard forward_mask(Int row, GameSideEnum side)
+BitBoard get_forward_mask(Square row, GameSideEnum side)
 {
     ASSERT(row >= 0 && row < 8);
-    BitBoard result = side == GameSide::white ? (BitBoard(-1)) << (8 * row) : (BitBoard(-1)) >> (8 * (7 - row));
+    BitBoard result = (BitBoard(-1)) << (8 * row);
+    result = side == GameSide::white ? result << 8 : ~result;
     return result;
 }
 
@@ -794,6 +838,13 @@ Void rollback_game_move(GameState *state, GameMove move)
     state->current_side = oppose(state->current_side);
 }
 
+Square get_king_square(GameState *state, GameSideEnum side)
+{
+    Square king_square = first_set(get_occupancy(state, side, GamePieceType::king));
+    ASSERT(king_square != -1);
+    return king_square;
+}
+
 Bool is_move_legal(GameState *state, GameMove move)
 {
     Square square_from = get_from(move);
@@ -818,8 +869,7 @@ Bool is_move_legal(GameState *state, GameMove move)
     else
     {
         record_game_move(state, move);
-        Square king_square = first_set(get_occupancy(state, side, GamePieceType::king));
-        ASSERT(king_square != NO_SQUARE);
+        Square king_square = get_king_square(state, side);
         BitBoard attack_by = check_attack_by(state, king_square, side);
         rollback_game_move(state, move);
         return !attack_by;
@@ -917,9 +967,7 @@ GameEndEnum check_game_end(GameState *state)
 
     if (moves.count == 0)
     {
-        Square king_square = first_set(get_occupancy(state, state->current_side, GamePieceType::king));
-        ASSERT(king_square != NO_SQUARE);
-
+        Square king_square = get_king_square(state, state->current_side);
         if (check_attack_by(state, king_square, state->current_side))
         {
             GameEndEnum result = state->current_side == state->player_side ? GameEnd::lose : GameEnd::win;
