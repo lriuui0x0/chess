@@ -2,20 +2,50 @@
 
 #include "game.cpp"
 
+struct ValuePair
+{
+    Int middle;
+    Int end;
+};
+
+ValuePair operator-(ValuePair x, ValuePair y)
+{
+    ValuePair result;
+    result.middle = x.middle - y.middle;
+    result.middle = x.end - y.end;
+    return result;
+}
+
 Int material_values[GamePieceType::count] = {100, 325, 335, 500, 975, 0};
 
-Int eval_material(GameState *state, GameSideEnum side)
+struct MaterialValue
 {
-    Int value = 0;
-    for (GamePieceTypeEnum piece_type = 0; piece_type < GamePieceType::king; piece_type++)
+    Int pawn;
+    Int non_pawn;
+    Int all;
+};
+
+MaterialValue eval_material(GameState *state, GameSideEnum side)
+{
+    MaterialValue value = {};
+    for (GamePieceTypeEnum piece_type = GamePieceType::pawn; piece_type < GamePieceType::king; piece_type++)
     {
         BitBoard occupancy = get_occupancy(state, side, piece_type);
         while (occupancy)
         {
             occupancy = occupancy & (occupancy - 1);
-            value += material_values[piece_type];
+
+            if (piece_type == GamePieceType::pawn)
+            {
+                value.pawn += material_values[piece_type];
+            }
+            else
+            {
+                value.non_pawn += material_values[piece_type];
+            }
         }
     }
+    value.all = value.pawn + value.non_pawn;
     return value;
 }
 
@@ -98,30 +128,33 @@ Int king_square_values_end[8][8] = {
     {-72, -48, -36, -24, -24, -36, -48, -72},
 };
 
-Int eval_square(GameState *state, GameSideEnum side, Bool middle)
+ValuePair eval_square(GameState *state, GameSideEnum side)
 {
-    Int value = 0;
+    ValuePair value = {0, 0};
     for (GamePieceTypeEnum piece_type = 0; piece_type < GamePieceType::count; piece_type++)
     {
         BitBoard occupancy = get_occupancy(state, side, piece_type);
         while (occupancy)
         {
-            BitBoard bit_square = occupancy & -occupancy;
-            occupancy -= bit_square;
-            Square square = first_set(bit_square);
+            BitBoard square_bit = occupancy & -occupancy;
+            occupancy -= square_bit;
+            Square square = first_set(square_bit);
             Square row_rel = get_row_rel(square, side);
             Square column_rel = get_column_rel(square, side);
 
             if (piece_type == GamePieceType::king)
             {
-                value += middle ? king_square_values_middle[row_rel][column_rel] : king_square_values_end[row_rel][column_rel];
+                value.middle += king_square_values_middle[row_rel][column_rel];
+                value.end += king_square_values_end[row_rel][column_rel];
             }
             else
             {
-                value += square_values[piece_type][row_rel][column_rel];
+                value.middle += square_values[piece_type][row_rel][column_rel];
+                value.end += square_values[piece_type][row_rel][column_rel];
             }
         }
     }
+    return value;
 }
 
 Int knight_pawn_adjust_values[9] = {-20, -16, -12, -8, -4, 0, 4, 8, 12};
@@ -212,7 +245,7 @@ Int eval_pawn_structure(GameState *state, GameSideEnum side)
         if (!non_passed_mask)
         {
             Int passed_value = passed_pawn_values[row_rel][column_rel];
-            BitBoard supported_mask = (left(pawn_bit, side) | right(pawn_bit, side) | down_left(pawn_bit, side) | down_right(pawn_bit, side)) & pawn_occupancy;
+            BitBoard supported_mask = left(pawn_occupancy, side) | right(pawn_occupancy, side) | down_left(pawn_occupancy, side) | down_right(pawn_occupancy, side);
             if (supported_mask)
             {
                 passed_value = passed_value * 10 / 8;
@@ -233,17 +266,194 @@ Int eval_pawn_structure(GameState *state, GameSideEnum side)
     return value;
 }
 
-Int eval_pieces(GameState *state, GameSideEnum side)
+ValuePair eval_mobility(GameState *state, GameSideEnum side)
 {
-    for (GamePieceTypeEnum piece_type = GamePieceType::knight; piece_type < GamePieceType::king; piece_type++)
+    ValuePair value = {};
+    GameSideEnum oppose_side = oppose(side);
+    BitBoard oppose_pawn_occupancy = get_occupancy(state, oppose_side, GamePieceType::pawn);
+    BitBoard oppose_pawn_control = up_left(oppose_pawn_occupancy, oppose_side) | up_right(oppose_pawn_occupancy, oppose_side);
+    for (GamePieceTypeEnum piece_type = GamePieceType::knight; piece_type <= GamePieceType::queen; piece_type++)
     {
+        BitBoard occupancy = get_occupancy(state, side, piece_type);
+        while (occupancy)
+        {
+            BitBoard square_bit = occupancy & -occupancy;
+            occupancy -= square_bit;
+            Square square = first_set(square_bit);
+            BitBoard move = 0;
+            switch (piece_type)
+            {
+            case GamePieceType::knight:
+            {
+                move = check_knight_move(state, square, side);
+            }
+            break;
+
+            case GamePieceType::bishop:
+            {
+                move = check_bishop_move(state, square, side);
+            }
+            break;
+
+            case GamePieceType::rook:
+            {
+                move = check_rook_move(state, square, side);
+            }
+            break;
+
+            case GamePieceType::queen:
+            {
+                move = check_queen_move(state, square, side);
+            }
+            break;
+            }
+            BitBoard mobility_mask = move & ~oppose_pawn_control;
+            Int mobility = bit_count(mobility_mask);
+
+            switch (piece_type)
+            {
+            case GamePieceType::knight:
+            {
+                value.middle += 4 * (mobility - 4);
+                value.end += 4 * (mobility - 4);
+            }
+            break;
+
+            case GamePieceType::bishop:
+            {
+                value.middle += 3 * (mobility - 7);
+                value.end += 3 * (mobility - 7);
+            }
+            break;
+
+            case GamePieceType::rook:
+            {
+                value.middle += 2 * (mobility - 7);
+                value.end += 4 * (mobility - 7);
+            }
+            break;
+
+            case GamePieceType::queen:
+            {
+                value.middle += 1 * (mobility - 14);
+                value.end += 2 * (mobility - 14);
+            }
+            break;
+            }
+        }
     }
+    return value;
+}
+
+ValuePair eval_theme(GameState *state, GameSideEnum side)
+{
+    ValuePair value = {};
+    // NOTE: Bishop support castled king
+    BitBoard bishop_occupancy = get_occupancy(state, side, GamePieceType::bishop);
+    BitBoard king_occupancy = get_occupancy(state, side, GamePieceType::king);
+    BitBoard bishop_support_mask[2] = {bit_square(get_abs_square(Sq::c1, side)), bit_square(get_abs_square(Sq::b1, side))};
+    BitBoard king_support_mask[2] = {bit_square(get_abs_square(Sq::f1, side)), bit_square(get_abs_square(Sq::g1, side))};
+    for (Int i = 0; i < 2; i++)
+    {
+        if ((bishop_support_mask[i] & bishop_occupancy) && (king_support_mask[i] & king_occupancy))
+        {
+            value.middle += 20;
+            value.end += 20;
+        }
+    }
+
+    // NOTE: Rook / Queen near enemy king line
+    GameSideEnum oppose_side = oppose(side);
+    Square oppose_king_square = first_set(get_occupancy(state, oppose_side, GamePieceType::king));
+    Square oppose_king_row_rel = get_row_rel(oppose_king_square, side);
+    BitBoard oppose_pawn_occupancy = get_occupancy(state, oppose_side, GamePieceType::pawn);
+    for (GamePieceTypeEnum piece_type = GamePieceType::rook; piece_type <= GamePieceType::queen; piece_type++)
+    {
+        BitBoard occupancy = get_occupancy(state, side, piece_type);
+        while (occupancy)
+        {
+            BitBoard square_bit = occupancy & -occupancy;
+            occupancy -= square_bit;
+            Square square = first_set(square_bit);
+            Square row = get_row(square);
+            Square row_rel = get_row_rel(square, side);
+            if (row_rel == 6 && (oppose_king_row_rel == 7 || (oppose_pawn_occupancy & get_row_mask(row))))
+            {
+                switch (piece_type)
+                {
+                case GamePieceType::rook:
+                {
+                    value.middle += 20;
+                    value.end += 30;
+                }
+                break;
+
+                case GamePieceType::queen:
+                {
+                    value.middle += 5;
+                    value.end += 10;
+                }
+                break;
+                }
+            }
+        }
+    }
+
+    // NOTE: Rook open columns
+    BitBoard rook_occupancy = get_occupancy(state, side, GamePieceType::rook);
+    BitBoard pawn_occupancy = get_occupancy(state, side, GamePieceType::pawn);
+    while (rook_occupancy)
+    {
+        BitBoard square_bit = rook_occupancy & -rook_occupancy;
+        rook_occupancy -= square_bit;
+        Square square = first_set(square_bit);
+        Square column = get_column(square);
+        BitBoard column_mask = get_column_mask(column);
+
+        if (!(pawn_occupancy & column_mask))
+        {
+            if (!(oppose_pawn_occupancy & column_mask))
+            {
+                value.middle += 10;
+                value.end += 10;
+            }
+            else
+            {
+                value.middle += 5;
+                value.end += 5;
+            }
+        }
+    }
+
+    // NOTE: Queen moves too early
+    BitBoard queen_occupancy = get_occupancy(state, side, GamePieceType::queen);
+    while (queen_occupancy)
+    {
+        BitBoard square_bit = queen_occupancy & -queen_occupancy;
+        queen_occupancy -= square_bit;
+        Square square = first_set(square_bit);
+        Square row_rel = get_row_rel(square, side);
+        if (row_rel > 1)
+        {
+            BitBoard knight_occupancy = get_occupancy(state, side, GamePieceType::knight);
+            BitBoard knight_initial_mask = bit_square(get_abs_square(Sq::b1, side)) | bit_square(get_abs_square(Sq::g1, side));
+            Int non_moved_knight_count = bit_count(knight_occupancy & knight_initial_mask);
+
+            BitBoard bishop_occupancy = get_occupancy(state, side, GamePieceType::bishop);
+            BitBoard bishop_initial_mask = bit_square(get_abs_square(Sq::c1, side)) | bit_square(get_abs_square(Sq::f1, side));
+            Int non_moved_bishop_count = bit_count(bishop_occupancy & bishop_initial_mask);
+
+            value.middle -= (non_moved_knight_count + non_moved_bishop_count) * 2;
+            value.middle -= (non_moved_knight_count + non_moved_bishop_count) * 2;
+        }
+    }
+
+    return value;
 }
 
 Int eval_blockage(GameState *state, GameSideEnum side)
 {
     Int value = 0;
-
     // NOTE: Central pawn block initial bishop
     BitBoard both_occupancy = get_occupancy(state);
     BitBoard pawn_occupancy = get_occupancy(state, side, GamePieceType::pawn);
@@ -320,11 +530,156 @@ Int eval_blockage(GameState *state, GameSideEnum side)
     return value;
 }
 
-Int eval_shield(GameState *state, GameSideEnum side)
+Int attack_values[100] = {0, 0, 1, 2, 3, 5, 7, 9, 12, 15,
+                          18, 22, 26, 30, 35, 39, 44, 50, 56, 62,
+                          68, 75, 82, 85, 89, 97, 105, 113, 122, 131,
+                          140, 150, 169, 180, 191, 202, 213, 225, 237, 248,
+                          260, 272, 283, 295, 307, 319, 330, 342, 354, 366,
+                          377, 389, 401, 412, 424, 436, 448, 459, 471, 483,
+                          494, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+                          500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+                          500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+                          500, 500, 500, 500, 500, 500, 500, 500, 500, 500};
+
+Int eval_attack(GameState *state, GameSideEnum side)
 {
-    Int value = 0;
-    Square king_square = get_king_square(state, side);
-    Square row = get_row(king_square);
+    Int count = 0;
+    Int weight = 0;
+    GameSideEnum oppose_side = oppose(side);
+    BitBoard king_bit = get_occupancy(state, oppose_side, GamePieceType::king);
+    Square king_square = first_set(king_bit);
+    BitBoard king_move = state->bit_board_table->king_table.move[king_square];
+    BitBoard near_king_mask = (king_move | up(king_move, oppose_side)) & ~king_bit;
+    for (GamePieceTypeEnum piece_type = GamePieceType::knight; piece_type <= GamePieceType::queen; piece_type++)
+    {
+        BitBoard occupancy = get_occupancy(state, side, piece_type);
+        while (occupancy)
+        {
+            BitBoard square_bit = occupancy & -occupancy;
+            occupancy -= square_bit;
+            Square square = first_set(square_bit);
+            BitBoard move = 0;
+            switch (piece_type)
+            {
+            case GamePieceType::knight:
+            {
+                move = check_knight_move(state, square, side);
+            }
+            break;
+
+            case GamePieceType::bishop:
+            {
+                move = check_bishop_move(state, square, side);
+            }
+            break;
+
+            case GamePieceType::rook:
+            {
+                move = check_rook_move(state, square, side);
+            }
+            break;
+
+            case GamePieceType::queen:
+            {
+                move = check_queen_move(state, square, side);
+            }
+            break;
+            }
+            BitBoard attack_mask = move & near_king_mask;
+            Int attack = bit_count(attack_mask);
+
+            count++;
+            switch (piece_type)
+            {
+            case GamePieceType::knight:
+            {
+                weight += 2 * attack;
+            }
+            break;
+
+            case GamePieceType::bishop:
+            {
+                weight += 2 * attack;
+            }
+            break;
+
+            case GamePieceType::rook:
+            {
+                weight += 3 * attack;
+            }
+            break;
+
+            case GamePieceType::queen:
+            {
+                weight += 4 * attack;
+            }
+            break;
+            }
+        }
+    }
+
+    BitBoard queen_occupancy = get_occupancy(state, side, GamePieceType::queen);
+    Int queen_count = bit_count(queen_occupancy);
+    if (count < 2 || queen_count == 0)
+    {
+        weight = 0;
+    }
+
+    Int value = attack_values[weight];
+    return value;
+}
+
+ValuePair eval_safety(GameState *state, GameSideEnum side)
+{
+    ValuePair value = {};
+    GameSideEnum oppose_side = oppose(side);
+    Square king_square = first_set(get_occupancy(state, side, GamePieceType::king));
+    for (GamePieceTypeEnum piece_type = GamePieceType::knight; piece_type <= GamePieceType::queen; piece_type++)
+    {
+        BitBoard occupancy = get_occupancy(state, oppose_side, piece_type);
+        while (occupancy)
+        {
+            BitBoard square_bit = occupancy & -occupancy;
+            occupancy -= square_bit;
+            Square square = first_set(square_bit);
+
+            Int distance = ABS(get_row(square) - get_row(king_square)) + ABS(get_column(square) - get_column(king_square));
+            Int safety = distance - 7;
+
+            switch (piece_type)
+            {
+            case GamePieceType::knight:
+            {
+                value.middle += 3 * safety;
+                value.end += 3 * safety;
+            }
+            break;
+
+            case GamePieceType::bishop:
+            {
+                value.middle += 2 * safety;
+                value.end += 1 * safety;
+            }
+            break;
+
+            case GamePieceType::rook:
+            {
+                value.middle += 2 * safety;
+                value.end += 1 * safety;
+            }
+            break;
+
+            case GamePieceType::queen:
+            {
+                value.middle += 2 * safety;
+                value.end += 4 * safety;
+            }
+            break;
+            }
+        }
+    }
+
+    // NOTE: Pawn shield
     Square column = get_column(king_square);
     Int row_rel = get_row_rel(king_square, side);
     if (row_rel == 0)
@@ -344,37 +699,113 @@ Int eval_shield(GameState *state, GameSideEnum side)
             BitBoard shield2 = pawn_occupancy & shield_mask2;
             if (shield)
             {
-                value += 10 * bit_count(shield);
+                value.middle += 10 * bit_count(shield);
             }
             else if (shield2)
             {
-                value += 5 * bit_count(shield2);
+                value.middle += 5 * bit_count(shield2);
             }
         }
     }
     return value;
 }
 
+Int phase_values[GamePieceType::count] = {0, 1, 1, 2, 4, 0};
+
 Int eval(GameState *state, GameSideEnum side)
 {
-    GameSideEnum oppose_side = oppose(side);
-    Int value_middle = 0;
-    Int value_end = 0;
+    Int middle = 0;
+    Int end = 0;
 
-    Int value_material = eval_material(state, side) - eval_material(state, oppose_side);
+    MaterialValue materials[2] = {eval_material(state, GameSide::white), eval_material(state, GameSide::black)};
+    Int material = materials[GameSide::white].all - materials[GameSide::black].all;
+    middle += material;
+    end += material;
 
-    Int value_material_adjust = eval_material_adjust(state, side) - eval_material_adjust(state, side);
+    Int material_adjust = eval_material_adjust(state, GameSide::white) - eval_material_adjust(state, GameSide::black);
+    middle += material_adjust;
+    end += material_adjust;
 
-    Int value_square_middle = eval_square(state, side, true) - eval_square(state, oppose_side, true);
-    Int value_square_end = eval_square(state, side, false) - eval_square(state, oppose_side, true);
+    ValuePair square = eval_square(state, GameSide::white) - eval_square(state, GameSide::black);
+    middle += square.middle;
+    end += square.end;
 
-    Int value_pawn_structure = eval_pawn_structure(state, side) - eval_pawn_structure(state, oppose_side);
+    Int pawn_structure = eval_pawn_structure(state, GameSide::white) - eval_pawn_structure(state, GameSide::black);
+    middle += pawn_structure;
+    end += pawn_structure;
 
-    Int value_blockage = eval_blockage(state, side) - eval_blockage(state, oppose_side);
+    ValuePair mobility = eval_mobility(state, GameSide::white) - eval_mobility(state, GameSide::black);
+    middle += mobility.middle;
+    end += mobility.end;
 
-    Int value_shield = eval_shield(state, side) - eval_shield(state, oppose_side);
+    ValuePair theme = eval_theme(state, GameSide::white) - eval_theme(state, GameSide::black);
+    middle += theme.middle;
+    end += theme.end;
 
-    Int value_tempo = state->current_side == side ? 10 : -10;
+    Int blockage = eval_blockage(state, GameSide::white) - eval_blockage(state, GameSide::black);
+    middle += blockage;
+    end += blockage;
+
+    Int attack = eval_attack(state, GameSide::white) - eval_attack(state, GameSide::black);
+    middle += attack;
+    end += attack;
+
+    ValuePair safety = eval_safety(state, GameSide::white) - eval_safety(state, GameSide::black);
+    middle += safety.middle;
+    end += safety.end;
+
+    Int tempo = state->current_side == GameSide::white ? 10 : -10;
+    middle += tempo;
+    end += tempo;
+
+    Int phase = 0;
+    for (GameSideEnum side = 0; side < GameSide::count; side++)
+    {
+        for (GamePieceTypeEnum piece_type = GamePieceType::knight; piece_type <= GamePieceType::queen; piece_type++)
+        {
+            BitBoard occupancy = get_occupancy(state, side, piece_type);
+            Int count = bit_count(occupancy);
+            phase += count * phase_values[piece_type];
+        }
+    }
+    phase = MIN(phase, 24);
+
+    Int value = (middle * phase + end * (24 - phase)) / 24;
+    GameSideEnum strong = value > 0 ? GameSide::white : GameSide::black;
+    GameSideEnum weak = oppose(strong);
+    if (materials[strong].pawn == 0)
+    {
+        if (materials[strong].non_pawn < 400)
+        {
+            value = 0;
+        }
+        else if (materials[weak].pawn == 0 && materials[strong].non_pawn == 2 * material_values[GamePieceType::knight])
+        {
+            value = 0;
+        }
+        else if (materials[strong].non_pawn == material_values[GamePieceType::rook] && materials[weak].non_pawn == material_values[GamePieceType::knight])
+        {
+            value /= 2;
+        }
+        else if (materials[strong].non_pawn == material_values[GamePieceType::rook] && materials[weak].non_pawn == material_values[GamePieceType::bishop])
+        {
+            value /= 2;
+        }
+        else if (materials[strong].non_pawn == material_values[GamePieceType::rook] + material_values[GamePieceType::knight] && materials[weak].non_pawn == material_values[GamePieceType::rook])
+        {
+            value /= 2;
+        }
+        else if (materials[strong].non_pawn == material_values[GamePieceType::rook] + material_values[GamePieceType::bishop] && materials[weak].non_pawn == material_values[GamePieceType::rook])
+        {
+            value /= 2;
+        }
+    }
+
+    if (side == GameSide::black)
+    {
+        value = -value;
+    }
+    return value;
 }
 
 struct ValuedMove

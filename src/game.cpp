@@ -275,16 +275,16 @@ struct GameState
     Int undo_count;
 };
 
-BitBoard get_occupancy(GameState *state, GameSideEnum side, GamePieceTypeEnum piece_type)
-{
-    BitBoard result = state->occupancy_side[side] & state->occupancy_piece_type[piece_type];
-    return result;
-}
-
 BitBoard get_occupancy(GameState *state)
 {
     BitBoard occupancy = state->occupancy_side[0] | state->occupancy_side[1];
     return occupancy;
+}
+
+BitBoard get_occupancy(GameState *state, GameSideEnum side, GamePieceTypeEnum piece_type)
+{
+    BitBoard result = state->occupancy_side[side] & state->occupancy_piece_type[piece_type];
+    return result;
 }
 
 Bool is_empty(GamePiece piece)
@@ -369,6 +369,24 @@ GameState get_initial_game_state(BitBoardTable *bit_board_table, GameSideEnum pl
     return state;
 }
 
+BitBoard check_simple_piece_move(GameState *state, Square square, GameSideEnum side, SimplePieceTable *simple_piece_table)
+{
+    BitBoard move = simple_piece_table->move[square] & ~state->occupancy_side[side];
+    return move;
+}
+
+BitBoard check_knight_move(GameState *state, Square square, GameSideEnum side)
+{
+    BitBoard move = check_simple_piece_move(state, square, side, &state->bit_board_table->knight_table);
+    return move;
+}
+
+BitBoard check_king_move(GameState *state, Square square, GameSideEnum side)
+{
+    BitBoard move = check_simple_piece_move(state, square, side, &state->bit_board_table->king_table);
+    return move;
+}
+
 BitBoard check_sliding_piece_move(GameState *state, Square square, GameSideEnum side, SlidingPieceTable *sliding_piece_table)
 {
     SlidingPieceTableSquare *table_square = &sliding_piece_table->board[square];
@@ -380,9 +398,22 @@ BitBoard check_sliding_piece_move(GameState *state, Square square, GameSideEnum 
     return move;
 }
 
-BitBoard check_simple_piece_move(GameState *state, Square square, GameSideEnum side, SimplePieceTable *simple_piece_table)
+BitBoard check_bishop_move(GameState *state, Square square, GameSideEnum side)
 {
-    BitBoard move = simple_piece_table->move[square] & ~state->occupancy_side[side];
+    BitBoard move = check_sliding_piece_move(state, square, side, &state->bit_board_table->bishop_table);
+    return move;
+}
+
+BitBoard check_rook_move(GameState *state, Square square, GameSideEnum side)
+{
+    BitBoard move = check_sliding_piece_move(state, square, side, &state->bit_board_table->rook_table);
+    return move;
+}
+
+BitBoard check_queen_move(GameState *state, Square square, GameSideEnum side)
+{
+    BitBoard move = check_sliding_piece_move(state, square, side, &state->bit_board_table->bishop_table);
+    move |= check_sliding_piece_move(state, square, side, &state->bit_board_table->rook_table);
     return move;
 }
 
@@ -391,7 +422,6 @@ BitBoard check_simple_piece_move(GameState *state, Square square, GameSideEnum s
 
 BitBoard left(BitBoard pawn_bit, GameSideEnum side)
 {
-    ASSERT(bit_count(pawn_bit) == 1);
     BitBoard result = side == GameSide::white ? ((pawn_bit << 1) & RIGHT_SIDE_MASK) : ((pawn_bit >> 1) & LEFT_SIDE_MASK);
     return result;
 }
@@ -404,7 +434,6 @@ BitBoard right(BitBoard pawn_bit, GameSideEnum side)
 
 BitBoard up(BitBoard pawn_bit, GameSideEnum side)
 {
-    ASSERT(bit_count(pawn_bit) == 1);
     BitBoard result = side == GameSide::white ? (pawn_bit << 8) : (pawn_bit >> 8);
     return result;
 }
@@ -417,7 +446,6 @@ BitBoard down(BitBoard pawn_bit, GameSideEnum side)
 
 BitBoard up_left(BitBoard pawn_bit, GameSideEnum side)
 {
-    ASSERT(bit_count(pawn_bit) == 1);
     BitBoard result = side == GameSide::white ? ((pawn_bit << 7) & RIGHT_SIDE_MASK) : ((pawn_bit >> 9) & LEFT_SIDE_MASK);
     return result;
 }
@@ -430,7 +458,6 @@ BitBoard down_right(BitBoard pawn_bit, GameSideEnum side)
 
 BitBoard up_right(BitBoard pawn_bit, GameSideEnum side)
 {
-    ASSERT(bit_count(pawn_bit) == 1);
     BitBoard result = side == GameSide::white ? ((pawn_bit << 9) & LEFT_SIDE_MASK) : ((pawn_bit >> 7) & RIGHT_SIDE_MASK);
     return result;
 }
@@ -543,37 +570,35 @@ BitBoard check_game_move(GameState *state, Square square)
 
     case GamePieceType::knight:
     {
-        BitBoard move = check_simple_piece_move(state, square, side, &state->bit_board_table->knight_table);
+        BitBoard move = check_knight_move(state, square, side);
         return move;
     }
     break;
 
     case GamePieceType::bishop:
     {
-        BitBoard move = check_sliding_piece_move(state, square, side, &state->bit_board_table->bishop_table);
+        BitBoard move = check_bishop_move(state, square, side);
         return move;
     }
     break;
 
     case GamePieceType::rook:
     {
-        BitBoard move = check_sliding_piece_move(state, square, side, &state->bit_board_table->rook_table);
+        BitBoard move = check_rook_move(state, square, side);
         return move;
     }
     break;
 
     case GamePieceType::queen:
     {
-        BitBoard bishop_move = check_sliding_piece_move(state, square, side, &state->bit_board_table->bishop_table);
-        BitBoard rook_move = check_sliding_piece_move(state, square, side, &state->bit_board_table->rook_table);
-        BitBoard move = bishop_move | rook_move;
+        BitBoard move = check_queen_move(state, square, side);
         return move;
     }
     break;
 
     case GamePieceType::king:
     {
-        BitBoard move = check_simple_piece_move(state, square, side, &state->bit_board_table->king_table);
+        BitBoard move = check_king_move(state, square, side);
         BitBoard castling_move = check_castling_move(state, side);
         move |= castling_move;
         return move;
@@ -838,13 +863,6 @@ Void rollback_game_move(GameState *state, GameMove move)
     state->current_side = oppose(state->current_side);
 }
 
-Square get_king_square(GameState *state, GameSideEnum side)
-{
-    Square king_square = first_set(get_occupancy(state, side, GamePieceType::king));
-    ASSERT(king_square != -1);
-    return king_square;
-}
-
 Bool is_move_legal(GameState *state, GameMove move)
 {
     Square square_from = get_from(move);
@@ -869,7 +887,7 @@ Bool is_move_legal(GameState *state, GameMove move)
     else
     {
         record_game_move(state, move);
-        Square king_square = get_king_square(state, side);
+        Square king_square = first_set(get_occupancy(state, side, GamePieceType::king));
         BitBoard attack_by = check_attack_by(state, king_square, side);
         rollback_game_move(state, move);
         return !attack_by;
@@ -967,7 +985,7 @@ GameEndEnum check_game_end(GameState *state)
 
     if (moves.count == 0)
     {
-        Square king_square = get_king_square(state, state->current_side);
+        Square king_square = first_set(get_occupancy(state, state->current_side, GamePieceType::king));
         if (check_attack_by(state, king_square, state->current_side))
         {
             GameEndEnum result = state->current_side == state->player_side ? GameEnd::lose : GameEnd::win;
