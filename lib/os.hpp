@@ -12,3 +12,9 @@ Real64 get_elapsed_time(UInt64 timestamp);
 
 Void sleep(Int milisecond);
 
+typedef Void (*ThreadFunc)(Void *data);
+Void *run_thread(Void func(Void *), Void *data);
+Void *create_semaphore(Int count);
+
+Bool down_semaphore(Void *semaphore);
+Bool up_semaphore(Void *semaphore, Int count);

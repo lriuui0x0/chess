@@ -72,3 +72,24 @@ Void sleep(Int milisecond)
 {
     Sleep(milisecond);
 }
+
+Void *run_thread(Void func(Void *data), Void *data)
+{
+    return CreateThread(null, 0, (LPTHREAD_START_ROUTINE)func, data, 0, null);
+}
+
+Void *create_semaphore(Int count)
+{
+    return CreateSemaphore(null, count, 0x7fffffff, null);
+}
+
+Bool down_semaphore(Void *semaphore)
+{
+    DWORD result = WaitForSingleObject(semaphore, INFINITE);
+    return result == WAIT_OBJECT_0;
+}
+
+Bool up_semaphore(Void *semaphore, Int count)
+{
+    return ReleaseSemaphore(semaphore, count, null);
+}

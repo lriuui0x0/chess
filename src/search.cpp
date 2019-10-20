@@ -31,18 +31,14 @@ MaterialValue eval_material(GameState *state, GameSideEnum side)
     for (GamePieceTypeEnum piece_type = GamePieceType::pawn; piece_type < GamePieceType::king; piece_type++)
     {
         BitBoard occupancy = get_occupancy(state, side, piece_type);
-        while (occupancy)
+        Int piece_count = bit_count(occupancy);
+        if (piece_type == GamePieceType::pawn)
         {
-            occupancy = occupancy & (occupancy - 1);
-
-            if (piece_type == GamePieceType::pawn)
-            {
-                value.pawn += material_values[piece_type];
-            }
-            else
-            {
-                value.non_pawn += material_values[piece_type];
-            }
+            value.pawn += piece_count * material_values[piece_type];
+        }
+        else
+        {
+            value.non_pawn += piece_count * material_values[piece_type];
         }
     }
     value.all = value.pawn + value.non_pawn;
@@ -53,6 +49,7 @@ Int square_values[GamePieceType::count][8][8] = {
     // NOTE: Pawn
     {
         {0, 0, 0, 0, 0, 0, 0, 0},
+        {-6, -4, 1, -24, -24, 1, -4, -6},
         {-4, -4, 1, 5, 5, 1, -4, -4},
         {-6, -4, 5, 10, 10, 5, -4, -6},
         {-6, -4, 2, 8, 8, 2, -4, -6},
@@ -130,7 +127,7 @@ Int king_square_values_end[8][8] = {
 
 ValuePair eval_square(GameState *state, GameSideEnum side)
 {
-    ValuePair value = {0, 0};
+    ValuePair value = {};
     for (GamePieceTypeEnum piece_type = 0; piece_type < GamePieceType::count; piece_type++)
     {
         BitBoard occupancy = get_occupancy(state, side, piece_type);
@@ -245,7 +242,7 @@ Int eval_pawn_structure(GameState *state, GameSideEnum side)
         if (!non_passed_mask)
         {
             Int passed_value = passed_pawn_values[row_rel][column_rel];
-            BitBoard supported_mask = left(pawn_occupancy, side) | right(pawn_occupancy, side) | down_left(pawn_occupancy, side) | down_right(pawn_occupancy, side);
+            BitBoard supported_mask = (left(pawn_bit, side) | right(pawn_bit, side) | down_left(pawn_bit, side) | down_right(pawn_bit, side)) & pawn_occupancy;
             if (supported_mask)
             {
                 passed_value = passed_value * 10 / 8;
@@ -351,8 +348,8 @@ ValuePair eval_theme(GameState *state, GameSideEnum side)
     // NOTE: Bishop support castled king
     BitBoard bishop_occupancy = get_occupancy(state, side, GamePieceType::bishop);
     BitBoard king_occupancy = get_occupancy(state, side, GamePieceType::king);
-    BitBoard bishop_support_mask[2] = {bit_square(get_abs_square(Sq::c1, side)), bit_square(get_abs_square(Sq::b1, side))};
-    BitBoard king_support_mask[2] = {bit_square(get_abs_square(Sq::f1, side)), bit_square(get_abs_square(Sq::g1, side))};
+    BitBoard bishop_support_mask[2] = {bit_square(get_abs_square(Sq::c1, side)), bit_square(get_abs_square(Sq::f1, side))};
+    BitBoard king_support_mask[2] = {bit_square(get_abs_square(Sq::b1, side)), bit_square(get_abs_square(Sq::g1, side))};
     for (Int i = 0; i < 2; i++)
     {
         if ((bishop_support_mask[i] & bishop_occupancy) && (king_support_mask[i] & king_occupancy))
@@ -444,7 +441,7 @@ ValuePair eval_theme(GameState *state, GameSideEnum side)
             Int non_moved_bishop_count = bit_count(bishop_occupancy & bishop_initial_mask);
 
             value.middle -= (non_moved_knight_count + non_moved_bishop_count) * 2;
-            value.middle -= (non_moved_knight_count + non_moved_bishop_count) * 2;
+            value.end -= (non_moved_knight_count + non_moved_bishop_count) * 2;
         }
     }
 
@@ -491,8 +488,8 @@ Int eval_blockage(GameState *state, GameSideEnum side)
     // NOTE: Trapped bishop at oppose corner
     BitBoard trapped_bishop_mask[4] = {bit_square(get_abs_square(Sq::a7, side)), bit_square(get_abs_square(Sq::h7, side)), bit_square(get_abs_square(Sq::b8, side)), bit_square(get_abs_square(Sq::g8, side))};
     BitBoard bishop_blocking_pawn_mask[4] = {bit_square(get_abs_square(Sq::b6, side)), bit_square(get_abs_square(Sq::g6, side)), bit_square(get_abs_square(Sq::c7, side)), bit_square(get_abs_square(Sq::f7, side))};
-    BitBoard trapped_bishop_mask2[2] = {bit_square(get_abs_square(Sq::a6, side)), bit_square(get_abs_square(Sq::b5, side))};
-    BitBoard bishop_blocking_pawn_mask2[2] = {bit_square(get_abs_square(Sq::h6, side)), bit_square(get_abs_square(Sq::g5, side))};
+    BitBoard trapped_bishop_mask2[2] = {bit_square(get_abs_square(Sq::a6, side)), bit_square(get_abs_square(Sq::h6, side))};
+    BitBoard bishop_blocking_pawn_mask2[2] = {bit_square(get_abs_square(Sq::b5, side)), bit_square(get_abs_square(Sq::g5, side))};
     for (Int i = 0; i < 2; i++)
     {
         if ((trapped_bishop_mask[i] & bishop_occupancy) && (bishop_blocking_pawn_mask[i] & oppose_pawn_occupancy))
@@ -684,7 +681,15 @@ ValuePair eval_safety(GameState *state, GameSideEnum side)
     Int row_rel = get_row_rel(king_square, side);
     if (row_rel == 0)
     {
-        BitBoard shield_mask = column < 3 ? 0x700 : column > 4 ? 0xe000 : 0;
+        BitBoard shield_mask = 0;
+        if (column < 3)
+        {
+            shield_mask = bit_square(Sq::a2) | bit_square(Sq::b2) | bit_square(Sq::c2);
+        }
+        else if (column > 4)
+        {
+            shield_mask = bit_square(Sq::f2) | bit_square(Sq::g2) | bit_square(Sq::h2);
+        }
         if (shield_mask)
         {
             BitBoard shield_mask2 = shield_mask << 8;
@@ -717,7 +722,9 @@ Int eval(GameState *state, GameSideEnum side)
     Int middle = 0;
     Int end = 0;
 
-    MaterialValue materials[2] = {eval_material(state, GameSide::white), eval_material(state, GameSide::black)};
+    MaterialValue materials[2];
+    materials[GameSide::white] = eval_material(state, GameSide::white);
+    materials[GameSide::black] = eval_material(state, GameSide::black);
     Int material = materials[GameSide::white].all - materials[GameSide::black].all;
     middle += material;
     end += material;
@@ -779,23 +786,27 @@ Int eval(GameState *state, GameSideEnum side)
         {
             value = 0;
         }
-        else if (materials[weak].pawn == 0 && materials[strong].non_pawn == 2 * material_values[GamePieceType::knight])
+        else if (materials[strong].non_pawn == 2 * material_values[GamePieceType::knight] && materials[weak].pawn == 0)
         {
             value = 0;
         }
-        else if (materials[strong].non_pawn == material_values[GamePieceType::rook] && materials[weak].non_pawn == material_values[GamePieceType::knight])
+        else if (materials[strong].non_pawn == material_values[GamePieceType::rook] &&
+                 materials[weak].non_pawn == material_values[GamePieceType::knight])
         {
             value /= 2;
         }
-        else if (materials[strong].non_pawn == material_values[GamePieceType::rook] && materials[weak].non_pawn == material_values[GamePieceType::bishop])
+        else if (materials[strong].non_pawn == material_values[GamePieceType::rook] &&
+                 materials[weak].non_pawn == material_values[GamePieceType::bishop])
         {
             value /= 2;
         }
-        else if (materials[strong].non_pawn == material_values[GamePieceType::rook] + material_values[GamePieceType::knight] && materials[weak].non_pawn == material_values[GamePieceType::rook])
+        else if (materials[strong].non_pawn == material_values[GamePieceType::rook] + material_values[GamePieceType::knight] &&
+                 materials[weak].non_pawn == material_values[GamePieceType::rook])
         {
             value /= 2;
         }
-        else if (materials[strong].non_pawn == material_values[GamePieceType::rook] + material_values[GamePieceType::bishop] && materials[weak].non_pawn == material_values[GamePieceType::rook])
+        else if (materials[strong].non_pawn == material_values[GamePieceType::rook] + material_values[GamePieceType::bishop] &&
+                 materials[weak].non_pawn == material_values[GamePieceType::rook])
         {
             value /= 2;
         }
@@ -814,31 +825,79 @@ struct ValuedMove
     Int value;
 };
 
-#define VALUE_INF (1000000000)
-
-ValuedMove negamax(GameState *state, Int alpha, Int beta, Int depth)
+struct TableEntry
 {
-    if (depth >= 1)
+    UInt64 hash;
+    GameMove move;
+    Int16 value;
+    Int8 depth;
+};
+
+#define MAX_TABLE_MEMORY_SIZE (256ull * 1024ull * 1024ull)
+#define MAX_TABLE_SIZE (MAX_TABLE_MEMORY_SIZE / sizeof(TableEntry))
+
+namespace SearchState
+{
+enum
+{
+    idle,
+    working,
+    finished,
+};
+};
+typedef Int SearchStateEnum;
+
+struct Searcher
+{
+    SearchStateEnum search_state;
+    Void *semaphore;
+
+    GameMove best_move;
+
+    GameState *state;
+    Int depth_limit;
+    // TODO: Use transposition table
+    TableEntry *table;
+};
+
+Bool initialize_searcher(Searcher *searcher, GameState *state)
+{
+    searcher->search_state = SearchState::idle;
+    searcher->semaphore = create_semaphore(0);
+    searcher->state = state;
+    return true;
+}
+
+#define VALUE_INF (32767)
+
+ValuedMove search_ab(Searcher *searcher, Int alpha, Int beta, Int depth)
+{
+    GameState *state = searcher->state;
+    GameMove moves_data[256];
+    Buffer<GameMove> moves;
+    moves.count = 0;
+    moves.data = moves_data;
+    generate_all_moves(searcher->state, &moves);
+    if (!moves.count)
+    {
+        ValuedMove valued_move;
+        valued_move.value = in_check(state, state->current_side) ? -VALUE_INF : 0;
+        return valued_move;
+    }
+    if (depth >= searcher->depth_limit)
     {
         ValuedMove valued_move;
         valued_move.value = eval(state, state->current_side);
         return valued_move;
     }
 
-    GameMove moves_data[256];
-    Buffer<GameMove> moves;
-    moves.count = 0;
-    moves.data = moves_data;
-    generate_all_moves(state, &moves);
-
     ValuedMove best_move;
     best_move.value = -VALUE_INF;
     for (Int i = 0; i < moves.count; i++)
     {
         GameMove move = moves[i];
-
         record_game_move(state, move);
-        ValuedMove valued_move = negamax(state, -beta, -alpha, depth + 1);
+        ValuedMove valued_move = search_ab(searcher, -beta, -alpha, depth + 1);
         valued_move.value = -valued_move.value;
         rollback_game_move(state, move);
 
@@ -846,13 +905,35 @@ ValuedMove negamax(GameState *state, Int alpha, Int beta, Int depth)
         {
             best_move.value = valued_move.value;
             best_move.move = move;
-        }
 
-        alpha = MAX(alpha, best_move.value);
-        if (alpha >= beta)
-        {
-            break;
+            alpha = MAX(alpha, best_move.value);
+            if (alpha >= beta)
+            {
+                break;
+            }
         }
     }
     return best_move;
+}
+
+Void search(Searcher *searcher)
+{
+    while (true)
+    {
+        ASSERT(down_semaphore(searcher->semaphore));
+
+        ValuedMove best_move;
+        best_move.value = -VALUE_INF;
+        for (Int depth_limit = 1; depth_limit <= 4; depth_limit++)
+        {
+            searcher->depth_limit = depth_limit;
+            ValuedMove valued_move = search_ab(searcher, -VALUE_INF, VALUE_INF, 0);
+            if (valued_move.value > best_move.value)
+            {
+                best_move = valued_move;
+            }
+        }
+        searcher->best_move = best_move.move;
+        searcher->search_state = SearchState::finished;
+    }
 }

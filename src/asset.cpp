@@ -335,7 +335,7 @@ struct AssetStore
     Mesh piece_meshes[GameSide::count][GamePieceType::count];
     Image board_light_map;
     Image piece_light_maps[GamePieceType::count];
-    BitBoardTable bit_board_table;
+    BitBoardTable *bit_board_table;
     Font debug_font;
     Font menu_fonts[MENU_FONT_COUNT];
 };
@@ -427,7 +427,8 @@ Bool load_asset(AssetStore *asset_store)
 
     if (read_file("../asset/bitboard.asset", &file_contents))
     {
-        if (!deserialise_bit_board_table(file_contents, &asset_store->bit_board_table))
+        asset_store->bit_board_table = (BitBoardTable *)malloc(sizeof(BitBoardTable));
+        if (!asset_store->bit_board_table || !deserialise_bit_board_table(file_contents, asset_store->bit_board_table))
         {
             return false;
         }

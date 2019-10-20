@@ -12,14 +12,70 @@ namespace Sq
 {
 enum
 {
-    a1, b1, c1, d1, e1, f1, g1, h1,
-    a2, b2, c2, d2, e2, f2, g2, h2,
-    a3, b3, c3, d3, e3, f3, g3, h3,
-    a4, b4, c4, d4, e4, f4, g4, h4,
-    a5, b5, c5, d5, e5, f5, g5, h5,
-    a6, b6, c6, d6, e6, f6, g6, h6,
-    a7, b7, c7, d7, e7, f7, g7, h7,
-    a8, b8, c8, d8, e8, f8, g8, h8,
+    a1,
+    b1,
+    c1,
+    d1,
+    e1,
+    f1,
+    g1,
+    h1,
+    a2,
+    b2,
+    c2,
+    d2,
+    e2,
+    f2,
+    g2,
+    h2,
+    a3,
+    b3,
+    c3,
+    d3,
+    e3,
+    f3,
+    g3,
+    h3,
+    a4,
+    b4,
+    c4,
+    d4,
+    e4,
+    f4,
+    g4,
+    h4,
+    a5,
+    b5,
+    c5,
+    d5,
+    e5,
+    f5,
+    g5,
+    h5,
+    a6,
+    b6,
+    c6,
+    d6,
+    e6,
+    f6,
+    g6,
+    h6,
+    a7,
+    b7,
+    c7,
+    d7,
+    e7,
+    f7,
+    g7,
+    h7,
+    a8,
+    b8,
+    c8,
+    d8,
+    e8,
+    f8,
+    g8,
+    h8,
 };
 }
 
@@ -178,13 +234,14 @@ enum
     queen_side = 0x1,
     king_side = 0x2,
     both_side = 0x3,
+    initial = 0xf,
 };
 }
 typedef Int GameCastlingMaskEnum;
 
-GameCastling castling_for(GameCastling castling, GameSideEnum side, GameCastlingMaskEnum mask)
+GameCastling get_castling_mask(GameSideEnum side, GameCastlingMaskEnum mask)
 {
-    GameCastling result = castling & (mask << (side * 2));
+    GameCastling result = mask << (side * 2);
     return result;
 }
 
@@ -267,7 +324,9 @@ struct GameState
     BitBoard occupancy_piece_type[GamePieceType::count];
     GameSideEnum current_side;
     GameCastling castling;
+    // TODO: En passant only needs to be encoded with 4 bits?
     Square en_passant;
+    UInt64 zobrist;
 
     GameMove history[MAX_HISTORY_COUNT];
     Int history_count;
@@ -307,39 +366,93 @@ Bool is_foe(GameState *state, GamePiece piece)
     return result;
 }
 
+UInt64 zobrist_side[GameSide::count];
+UInt64 zobrist_square[GameSide::count][GamePieceType::count][64];
+UInt64 zobrist_castling[16];
+UInt64 zobrist_en_passant[128];
+
+Void initialize_zobrist_keys(RandomGenerator *random_generator)
+{
+    for (GameSideEnum side = 0; side < GameSide::count; side++)
+    {
+        zobrist_side[side] = get_random_number(random_generator);
+    }
+    for (GameSideEnum side = 0; side < GameSide::count; side++)
+    {
+        for (GamePieceTypeEnum piece_type = 0; piece_type < GamePieceType::count; piece_type++)
+        {
+            for (Square square = 0; square < 64; square++)
+            {
+                zobrist_square[side][piece_type][square] = get_random_number(random_generator);
+            }
+        }
+    }
+    for (GameCastling castling = 0; castling < 16; castling++)
+    {
+        zobrist_castling[castling] = get_random_number(random_generator);
+    }
+    for (Square square = 0; (UInt)square < 128; square++)
+    {
+        zobrist_en_passant[square] = get_random_number(random_generator);
+    }
+}
+
 Void add_game_piece(GameState *state, Square square, GamePiece piece)
 {
+    ASSERT(state->board[square] == NO_GAME_PIECE);
     GameSideEnum side = get_side(piece);
     GamePieceTypeEnum piece_type = get_piece_type(piece);
     state->board[square] = piece;
     state->occupancy_side[side] |= bit_square(square);
     state->occupancy_piece_type[piece_type] |= bit_square(square);
+    state->zobrist ^= zobrist_square[side][piece_type][square];
 }
 
-GamePiece remove_game_peice(GameState *state, Square square)
+GamePiece remove_game_piece(GameState *state, Square square)
 {
     GamePiece piece = state->board[square];
+    ASSERT(piece != NO_GAME_PIECE);
     GameSideEnum side = get_side(piece);
     GamePieceTypeEnum piece_type = get_piece_type(piece);
     state->board[square] = NO_GAME_PIECE;
     state->occupancy_side[side] &= ~bit_square(square);
     state->occupancy_piece_type[piece_type] &= ~bit_square(square);
+    state->zobrist ^= zobrist_square[side][piece_type][square];
     return piece;
+}
+
+Void update_current_side(GameState *state, GameSideEnum side)
+{
+    state->zobrist ^= zobrist_side[state->current_side];
+    state->current_side = side;
+    state->zobrist ^= zobrist_side[state->current_side];
+}
+
+Void update_castling(GameState *state, GameCastling castling)
+{
+    state->zobrist ^= zobrist_castling[state->castling];
+    state->castling = castling;
+    state->zobrist ^= zobrist_castling[state->castling];
+}
+
+Void update_en_passant(GameState *state, Square square)
+{
+    state->zobrist ^= zobrist_en_passant[state->en_passant];
+    state->en_passant = square;
+    state->zobrist ^= zobrist_en_passant[state->en_passant];
 }
 
 GameState get_initial_game_state(BitBoardTable *bit_board_table, GameSideEnum player_side)
 {
     GameState state = {};
     state.bit_board_table = bit_board_table;
-    memset(state.board, NO_GAME_PIECE, sizeof(state.board));
     state.player_side = player_side;
     state.current_side = GameSide::white;
-    state.castling = 0xf;
+    state.castling = GameCastlingMask::initial;
     state.en_passant = NO_SQUARE;
-    state.history_count = 0;
-    state.history_index = 0;
-    state.undo_count = 0;
+    state.zobrist = zobrist_side[state.current_side] ^ zobrist_side[state.castling] ^ zobrist_en_passant[state.en_passant];
 
+    memset(state.board, NO_GAME_PIECE, sizeof(state.board));
     add_game_piece(&state, get_square(0, 0), get_game_piece(GameSide::white, GamePieceType::rook));
     add_game_piece(&state, get_square(0, 1), get_game_piece(GameSide::white, GamePieceType::knight));
     add_game_piece(&state, get_square(0, 2), get_game_piece(GameSide::white, GamePieceType::bishop));
@@ -366,6 +479,9 @@ GameState get_initial_game_state(BitBoardTable *bit_board_table, GameSideEnum pl
         add_game_piece(&state, get_square(6, pawn_i), get_game_piece(GameSide::black, GamePieceType::pawn));
     }
 
+    state.history_count = 0;
+    state.history_index = 0;
+    state.undo_count = 0;
     return state;
 }
 
@@ -528,7 +644,7 @@ BitBoard check_castling_move(GameState *state, GameSideEnum side)
 {
     BitBoard occupancy = get_occupancy(state);
     BitBoard move = 0;
-    if (castling_for(state->castling, side, GameCastlingMask::queen_side))
+    if (state->castling & get_castling_mask(side, GameCastlingMask::queen_side))
     {
         BitBoard blocker_mask = side == GameSide::white ? 0xellu : 0xellu << 56;
         if (!(blocker_mask & occupancy))
@@ -538,7 +654,7 @@ BitBoard check_castling_move(GameState *state, GameSideEnum side)
         }
     }
 
-    if (castling_for(state->castling, side, GameCastlingMask::king_side))
+    if (state->castling & get_castling_mask(side, GameCastlingMask::king_side))
     {
         BitBoard blocker_mask = side == GameSide::white ? 0x60llu : 0x60llu << 56;
         if (!(blocker_mask & occupancy))
@@ -759,13 +875,13 @@ Void record_game_move(GameState *state, GameMove move)
     Square capture_square = get_capture_square(move);
     if (capture_square != NO_SQUARE)
     {
-        GamePiece captured_piece = remove_game_peice(state, capture_square);
+        GamePiece captured_piece = remove_game_piece(state, capture_square);
         ASSERT(!is_empty(captured_piece) && captured_piece == get_captured_piece(move));
     }
 
     Square square_from = get_from(move);
     Square square_to = get_to(move);
-    GamePiece piece = remove_game_peice(state, square_from);
+    GamePiece piece = remove_game_piece(state, square_from);
     GameSideEnum side = get_side(piece);
     GamePieceTypeEnum piece_type = get_piece_type(piece);
     add_game_piece(state, square_to, piece);
@@ -776,7 +892,7 @@ Void record_game_move(GameState *state, GameMove move)
         GameMove rook_move = get_castling_rook_move(move);
         Square rook_square_from = get_from(rook_move);
         Square rook_square_to = get_to(rook_move);
-        GamePiece rook_piece = remove_game_peice(state, rook_square_from);
+        GamePiece rook_piece = remove_game_piece(state, rook_square_from);
         ASSERT(get_piece_type(rook_piece) == GamePieceType::rook);
         add_game_piece(state, rook_square_to, rook_piece);
     }
@@ -786,35 +902,43 @@ Void record_game_move(GameState *state, GameMove move)
         ASSERT(piece_type == GamePieceType::pawn);
         GamePieceTypeEnum promotion_piece_type = promotion_list[get_promotion_index(move)];
         GamePiece promotion_piece = get_game_piece(side, promotion_piece_type);
+        remove_game_piece(state, square_to);
         add_game_piece(state, square_to, promotion_piece);
     }
 
-    Square king_square = side == GameSide::white ? 4 : 4 + 56;
-    Square rook_square_queen_side = side == GameSide::white ? 0 : 0 + 56;
-    Square rook_square_king_side = side == GameSide::white ? 7 : 7 + 56;
-    if (square_from == king_square || square_to == king_square)
+    GameCastling castling = state->castling;
+    Square king_square[2] = {4, 4 + 56};
+    Square rook_square_queen_side[2] = {0, 0 + 56};
+    Square rook_square_king_side[2] = {7, 7 + 56};
+    for (GameSideEnum side = 0; side < GameSide::count; side++)
     {
-        state->castling -= castling_for(state->castling, side, GameCastlingMask::both_side);
+        if (square_from == king_square[side] || square_to == king_square[side])
+        {
+            castling &= ~get_castling_mask(side, GameCastlingMask::both_side);
+        }
+        if (square_from == rook_square_queen_side[side] || square_to == rook_square_queen_side[side])
+        {
+            castling &= ~get_castling_mask(side, GameCastlingMask::queen_side);
+        }
+        if (square_from == rook_square_king_side[side] || square_to == rook_square_king_side[side])
+        {
+            castling &= ~get_castling_mask(side, GameCastlingMask::king_side);
+        }
     }
-    if (square_from == rook_square_queen_side || square_to == rook_square_queen_side)
-    {
-        state->castling -= castling_for(state->castling, side, GameCastlingMask::queen_side);
-    }
-    if (square_from == rook_square_king_side || square_to == rook_square_king_side)
-    {
-        state->castling -= castling_for(state->castling, side, GameCastlingMask::king_side);
-    }
+    update_castling(state, castling);
 
+    Square en_passant = state->en_passant;
     if (piece_type == GamePieceType::pawn && ABS(square_to - square_from) == 16)
     {
-        state->en_passant = (square_from + square_to) / 2;
+        en_passant = (square_from + square_to) / 2;
     }
     else
     {
-        state->en_passant = NO_SQUARE;
+        en_passant = NO_SQUARE;
     }
+    update_en_passant(state, en_passant);
 
-    state->current_side = oppose(state->current_side);
+    update_current_side(state, oppose(state->current_side));
 }
 
 Void record_game_move_with_history(GameState *state, GameMove move)
@@ -831,7 +955,7 @@ Void rollback_game_move(GameState *state, GameMove move)
     GamePiece piece = state->board[square_to];
     if (move_type == GameMoveType::promotion)
     {
-        remove_game_peice(state, square_to);
+        remove_game_piece(state, square_to);
         GameSideEnum side = get_side(move);
         GamePiece pawn_piece = get_game_piece(side, GamePieceType::pawn);
         add_game_piece(state, square_to, pawn_piece);
@@ -842,12 +966,12 @@ Void rollback_game_move(GameState *state, GameMove move)
         GameMove rook_move = get_castling_rook_move(move);
         Square rook_square_from = get_from(rook_move);
         Square rook_square_to = get_to(rook_move);
-        GamePiece rook_piece = remove_game_peice(state, rook_square_to);
+        GamePiece rook_piece = remove_game_piece(state, rook_square_to);
         ASSERT(get_piece_type(rook_piece) == GamePieceType::rook);
         add_game_piece(state, rook_square_from, rook_piece);
     }
 
-    piece = remove_game_peice(state, square_to);
+    piece = remove_game_piece(state, square_to);
     add_game_piece(state, square_from, piece);
 
     Square capture_square = get_capture_square(move);
@@ -857,41 +981,10 @@ Void rollback_game_move(GameState *state, GameMove move)
         add_game_piece(state, capture_square, captured_piece);
     }
 
-    state->castling = get_castling(move);
-    state->en_passant = get_en_passant(move);
+    update_castling(state, get_castling(move));
+    update_en_passant(state, get_en_passant(move));
 
-    state->current_side = oppose(state->current_side);
-}
-
-Bool is_move_legal(GameState *state, GameMove move)
-{
-    Square square_from = get_from(move);
-    Square square_to = get_to(move);
-    GameMoveTypeEnum move_type = get_move_type(move);
-
-    GamePiece piece = state->board[square_from];
-    GameSideEnum side = get_side(piece);
-    if (move_type == GameMoveType::castling)
-    {
-        Int step = square_to > square_from ? 1 : -1;
-        for (Square square = square_from; square <= square_to; square += step)
-        {
-            BitBoard attack_by = check_attack_by(state, square, side);
-            if (attack_by)
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-    else
-    {
-        record_game_move(state, move);
-        Square king_square = first_set(get_occupancy(state, side, GamePieceType::king));
-        BitBoard attack_by = check_attack_by(state, king_square, side);
-        rollback_game_move(state, move);
-        return !attack_by;
-    }
+    update_current_side(state, oppose(state->current_side));
 }
 
 Bool undo(GameState *state, GameMove *move)
@@ -925,6 +1018,42 @@ Bool redo(GameState *state, GameMove *move)
     else
     {
         return false;
+    }
+}
+
+Bool in_check(GameState *state, GameSideEnum side)
+{
+    Square king_square = first_set(get_occupancy(state, side, GamePieceType::king));
+    return check_attack_by(state, king_square, side);
+}
+
+Bool is_move_legal(GameState *state, GameMove move)
+{
+    Square square_from = get_from(move);
+    Square square_to = get_to(move);
+    GameMoveTypeEnum move_type = get_move_type(move);
+
+    GamePiece piece = state->board[square_from];
+    GameSideEnum side = get_side(piece);
+    if (move_type == GameMoveType::castling)
+    {
+        Int step = square_to > square_from ? 1 : -1;
+        for (Square square = square_from; square <= square_to; square += step)
+        {
+            BitBoard attack_by = check_attack_by(state, square, side);
+            if (attack_by)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+    else
+    {
+        record_game_move(state, move);
+        Bool check = in_check(state, side);
+        rollback_game_move(state, move);
+        return !check;
     }
 }
 
@@ -985,8 +1114,7 @@ GameEndEnum check_game_end(GameState *state)
 
     if (moves.count == 0)
     {
-        Square king_square = first_set(get_occupancy(state, state->current_side, GamePieceType::king));
-        if (check_attack_by(state, king_square, state->current_side))
+        if (in_check(state, state->current_side))
         {
             GameEndEnum result = state->current_side == state->player_side ? GameEnd::lose : GameEnd::win;
             return result;

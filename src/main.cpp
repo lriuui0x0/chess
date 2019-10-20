@@ -1,8 +1,3 @@
-// TODO
-// Long thinking AI
-// Sound
-// OpenGL
-
 #include "../lib/util.hpp"
 #include "../lib/vulkan.hpp"
 #include "../lib/os.hpp"
@@ -807,17 +802,21 @@ Void check_end(State *state, GameState *game_state)
     }
 }
 
-AssetStore asset_store;
-
 int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int show_code)
 {
-    RandomGenerator random_generator;
-    random_generator.seed = get_current_timestamp();
-
+    AssetStore asset_store;
     ASSERT(load_asset(&asset_store));
 
+    RandomGenerator random_generator;
+    random_generator.seed = get_current_timestamp();
+    initialize_zobrist_keys(&random_generator);
+
     GameSideEnum initial_player_side = GameSide::white;
-    GameState game_state = get_initial_game_state(&asset_store.bit_board_table, initial_player_side);
+    GameState game_state = get_initial_game_state(asset_store.bit_board_table, initial_player_side);
+
+    Searcher searcher;
+    ASSERT(initialize_searcher(&searcher, &game_state));
+    ASSERT(run_thread((ThreadFunc)search, &searcher));
 
     Board board;
     fill_board_initial_state(&board, &asset_store.board_mesh, &asset_store.board_light_map);
@@ -1433,16 +1432,26 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 set_piece_mesh(&piece_manager, state.selected_piece, promoted_piece);
             }
         }
+        break;
 
         case StatePhase::ai_think:
         {
-            ValuedMove best_move = negamax(&game_state, -VALUE_INF, VALUE_INF, 0);
-            Square square_from = get_from(best_move.move);
-            state.selected_piece = piece_manager.piece_mapping[square_from];
-            ASSERT(state.selected_piece);
-            start_animation(&piece_manager, state.selected_piece, &game_state, best_move.move);
-            state.phase = StatePhase::ai_animate;
-            state.executing_move = best_move.move;
+            if (searcher.search_state == SearchState::idle)
+            {
+                searcher.search_state = SearchState::working;
+                ASSERT(up_semaphore(searcher.semaphore, 1));
+            }
+            else if (searcher.search_state == SearchState::finished)
+            {
+                searcher.search_state = SearchState::idle;
+                GameMove best_move = searcher.best_move;
+                Square square_from = get_from(best_move);
+                state.selected_piece = piece_manager.piece_mapping[square_from];
+                ASSERT(state.selected_piece);
+                start_animation(&piece_manager, state.selected_piece, &game_state, best_move);
+                state.phase = StatePhase::ai_animate;
+                state.executing_move = best_move;
+            }
         }
         break;
 
@@ -1491,7 +1500,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 {
                     if (state.menu_state.selected_player != game_state.player_side)
                     {
-                        game_state = get_initial_game_state(&asset_store.bit_board_table, state.menu_state.selected_player);
+                        game_state = get_initial_game_state(asset_store.bit_board_table, state.menu_state.selected_player);
                         fill_piece_manager_initial_state(&piece_manager, &game_state);
                         camera = get_scene_camera(game_state.player_side);
                         reset_state(&state, game_state.player_side);
@@ -1503,7 +1512,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 }
                 else
                 {
-                    game_state = get_initial_game_state(&asset_store.bit_board_table, game_state.player_side);
+                    game_state = get_initial_game_state(asset_store.bit_board_table, game_state.player_side);
                     fill_piece_manager_initial_state(&piece_manager, &game_state);
                     reset_state(&state, game_state.player_side);
                 }
@@ -1770,6 +1779,16 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
             debug_ui_draw_str(&debug_ui_draw_state, str("current side: "));
             debug_ui_draw_str(&debug_ui_draw_state, game_state.current_side == GameSide::white ? str("white") : str("black"));
             debug_ui_draw_newline(&debug_ui_draw_state);
+
+            debug_ui_draw_str(&debug_ui_draw_state, str("castling white: "));
+            debug_ui_draw_str(&debug_ui_draw_state, game_state.castling & get_castling_mask(GameSide::white, GameCastlingMask::queen_side) ? str("ooo") : str(""));
+            debug_ui_draw_str(&debug_ui_draw_state, str(" "));
+            debug_ui_draw_str(&debug_ui_draw_state, game_state.castling & get_castling_mask(GameSide::white, GameCastlingMask::king_side) ? str("oo") : str(""));
+            debug_ui_draw_newline(&debug_ui_draw_state);
+            debug_ui_draw_str(&debug_ui_draw_state, str("castling black: "));
+            debug_ui_draw_str(&debug_ui_draw_state, game_state.castling & get_castling_mask(GameSide::black, GameCastlingMask::queen_side) ? str("ooo") : str(""));
+            debug_ui_draw_str(&debug_ui_draw_state, str(" "));
+            debug_ui_draw_str(&debug_ui_draw_state, game_state.castling & get_castling_mask(GameSide::black, GameCastlingMask::king_side) ? str("oo") : str(""));
 
             // NOTE: Debug move
             if (state.phase == StatePhase::execute)
