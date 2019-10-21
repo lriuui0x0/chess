@@ -95,6 +95,11 @@ Bool deserialise_mesh(Str buffer, Mesh *mesh)
     return true;
 }
 
+#define MENU_LARGE_FONT (0)
+#define MENU_MEDIUM_FONT (1)
+#define MENU_SMALL_FONT (2)
+#define MENU_FONT_COUNT (3)
+
 struct FontCharHeader
 {
     Int32 offset;
@@ -229,6 +234,39 @@ Bool deserialise_image(Str buffer, Image *image)
     return true;
 }
 
+struct Sound
+{
+    Int32 sample_count;
+    Int32 channel_count;
+    Int32 sample_byte_count;
+    UInt8 *data;
+};
+
+Bool deserialise_sound(Str buffer, Sound *sound)
+{
+    if (buffer.count < 12)
+    {
+        return false;
+    }
+
+    Int pos = 0;
+    sound->sample_count = *(Int32 *)(buffer.data + pos);
+    pos += 4;
+    sound->channel_count = *(Int32 *)(buffer.data + pos);
+    pos += 4;
+    sound->sample_byte_count = *(Int *)(buffer.data + pos);
+    pos += 4;
+
+    Int sound_data_length = sound->sample_count * sound->channel_count * sound->sample_byte_count * sizeof(UInt8);
+    if (buffer.count != pos + sound_data_length)
+    {
+        return false;
+    }
+    sound->data = (UInt8 *)malloc(sound_data_length);
+    memcpy(sound->data, buffer.data + pos, sound_data_length);
+    return true;
+}
+
 Bool deserialise_bit_board_table(Str buffer, BitBoardTable *table)
 {
     Int move_data_length;
@@ -324,20 +362,19 @@ Bool deserialise_bit_board_table(Str buffer, BitBoardTable *table)
     return true;
 }
 
-#define MENU_LARGE_FONT (0)
-#define MENU_MEDIUM_FONT (1)
-#define MENU_SMALL_FONT (2)
-#define MENU_FONT_COUNT (3)
-
 struct AssetStore
 {
     Mesh board_mesh;
     Mesh piece_meshes[GameSide::count][GamePieceType::count];
     Image board_light_map;
     Image piece_light_maps[GamePieceType::count];
-    BitBoardTable *bit_board_table;
     Font debug_font;
     Font menu_fonts[MENU_FONT_COUNT];
+    Sound sound_click_high;
+    Sound sound_click_low;
+    Sound sound_move;
+    Sound sound_error;
+    BitBoardTable *bit_board_table;
 };
 
 Bool load_asset(AssetStore *asset_store)
@@ -425,17 +462,21 @@ Bool load_asset(AssetStore *asset_store)
         }
     }
 
-    if (read_file("../asset/bitboard.asset", &file_contents))
+    CStr sound_files[4] = {"../asset/sound_click_high.asset", "../asset/sound_click_low.asset", "../asset/sound_move.asset", "../asset/sound_error.asset"};
+    Sound *sounds[4] = {&asset_store->sound_click_high, &asset_store->sound_click_low, &asset_store->sound_move, &asset_store->sound_error};
+    for (Int i = 0; i < 4; i++)
     {
-        asset_store->bit_board_table = (BitBoardTable *)malloc(sizeof(BitBoardTable));
-        if (!asset_store->bit_board_table || !deserialise_bit_board_table(file_contents, asset_store->bit_board_table))
+        if (read_file(sound_files[i], &file_contents))
+        {
+            if (!deserialise_sound(file_contents, sounds[i]))
+            {
+                return false;
+            }
+        }
+        else
         {
             return false;
         }
-    }
-    else
-    {
-        return false;
     }
 
     if (read_file("../asset/debug_font.asset", &file_contents))
@@ -464,6 +505,19 @@ Bool load_asset(AssetStore *asset_store)
         {
             return false;
         }
+    }
+
+    if (read_file("../asset/bitboard.asset", &file_contents))
+    {
+        asset_store->bit_board_table = (BitBoardTable *)malloc(sizeof(BitBoardTable));
+        if (!asset_store->bit_board_table || !deserialise_bit_board_table(file_contents, asset_store->bit_board_table))
+        {
+            return false;
+        }
+    }
+    else
+    {
+        return false;
     }
 
     return true;
