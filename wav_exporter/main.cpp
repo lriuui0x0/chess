@@ -46,27 +46,28 @@ Int main(Int argc, CStr *argv)
     ASSERT(read16(&reader) == 1);
     Int channel_count = read16(&reader);
     ASSERT(channel_count == 2);
-    Int sample_rate = read32(&reader);
+    Int frame_rate = read32(&reader);
     Int byte_rate = read32(&reader);
     Int block_align = read16(&reader);
     Int bits_per_sample = read16(&reader);
     ASSERT(bits_per_sample % 8 == 0);
     Int sample_byte_count = bits_per_sample / 8;
     ASSERT(bits_per_sample == 16);
-    ASSERT(byte_rate == sample_rate * channel_count * sample_byte_count);
+    ASSERT(byte_rate == frame_rate * channel_count * sample_byte_count);
     ASSERT(block_align == channel_count * sample_byte_count);
 
     ASSERT(read32(&reader) == get_name((Int8 *)"data"));
     Int data_size = read32(&reader);
     ASSERT(chunk_size == (data_size + 8) + (16 + 8) + 4);
-    Int sample_count = data_size / sample_byte_count / channel_count;
+    Int frame_count = data_size / sample_byte_count / channel_count;
 
     FILE *file_handle = fopen((CStr)output_filename, "wb");
     ASSERT(file_handle);
-    fwrite(&sample_count, sizeof(Int32), 1, file_handle);
+    fwrite(&frame_count, sizeof(Int32), 1, file_handle);
+    fwrite(&frame_rate, sizeof(Int32), 1, file_handle);
     fwrite(&channel_count, sizeof(Int32), 1, file_handle);
     fwrite(&sample_byte_count, sizeof(Int32), 1, file_handle);
-    fwrite(reader.buffer.data + reader.pos, sizeof(Int8), sample_count * channel_count * sample_byte_count, file_handle);
+    fwrite(reader.buffer.data + reader.pos, sizeof(Int8), frame_count * channel_count * sample_byte_count, file_handle);
 }
 
 #include "../lib/util.cpp"

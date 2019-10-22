@@ -95,7 +95,7 @@ struct DebugUIFrame
     VkDescriptorSet font_texture_descriptor_set;
 };
 
-Bool create_debug_ui_frame(VulkanDevice *device, VulkanPipeline *pipeline, Font *debug_font, SceneFrame *scene_frame, DebugUIFrame *frame, VulkanBuffer *host_vertex_buffer)
+Bool create_debug_ui_frame(VulkanDevice *device, VulkanPipeline *pipeline, BitmapFont *debug_font, SceneFrame *scene_frame, DebugUIFrame *frame, VulkanBuffer *host_vertex_buffer)
 {
     VkResult result_code;
 
@@ -175,7 +175,7 @@ Bool create_debug_ui_frame(VulkanDevice *device, VulkanPipeline *pipeline, Font 
 
 struct DebugUIDrawState
 {
-    Font *font;
+    BitmapFont *font;
     Int window_width;
     Int window_height;
     VulkanBuffer *vertex_buffer;
@@ -186,7 +186,7 @@ struct DebugUIDrawState
     Int indent;
 };
 
-DebugUIDrawState create_debug_ui_draw_state(Font *font, Int window_width, Int window_height, VulkanBuffer *vertex_buffer, Vec2 initial_pos)
+DebugUIDrawState create_debug_ui_draw_state(BitmapFont *font, Int window_width, Int window_height, VulkanBuffer *vertex_buffer, Vec2 initial_pos)
 {
     DebugUIDrawState result;
     result.font = font;

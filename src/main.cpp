@@ -1,3 +1,6 @@
+#include "comdef.h"
+#include "mmdeviceapi.h"
+#include "audioclient.h"
 #include "../lib/util.hpp"
 #include "../lib/vulkan.hpp"
 #include "../lib/os.hpp"
@@ -802,6 +805,55 @@ Void check_end(State *state, GameState *game_state)
     }
 }
 
+struct SoundRenderer
+{
+    IAudioClient *audio_client;
+    IAudioRenderClient *audio_render_client;
+    Sound *sound;
+    Int frame_pos;
+};
+
+SoundRenderer create_sound_renderer()
+{
+    // TODO: Sound error proof
+    HRESULT result = CoInitialize(null);
+    IMMDeviceEnumerator *audio_device_enumerator;
+    result = CoCreateInstance(__uuidof(MMDeviceEnumerator), null, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), (void **)&audio_device_enumerator);
+    ASSERT(SUCCEEDED(result));
+    IMMDevice *audio_device;
+    result = audio_device_enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &audio_device);
+    ASSERT(SUCCEEDED(result));
+    IAudioClient *audio_client;
+    result = audio_device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, null, (void **)&audio_client);
+    ASSERT(SUCCEEDED(result));
+    WAVEFORMATEX *audio_format;
+    result = audio_client->GetMixFormat(&audio_format);
+    ASSERT(SUCCEEDED(result));
+    result = audio_client->Initialize(AUDCLNT_SHAREMODE_SHARED, 0, 1 * 1000 * 1000 * 10, 0, audio_format, null);
+    ASSERT(SUCCEEDED(result));
+    UInt audio_buffer_size;
+    result = audio_client->GetBufferSize(&audio_buffer_size);
+    ASSERT(SUCCEEDED(result));
+    IAudioRenderClient *audio_render_client;
+    result = audio_client->GetService(__uuidof(IAudioRenderClient), (void **)&audio_render_client);
+
+    SoundRenderer sound_renderer = {};
+    sound_renderer.audio_client = audio_client;
+    sound_renderer.audio_render_client = audio_render_client;
+    return sound_renderer;
+}
+
+Void start_sound(SoundRenderer *sound_renderer, Sound *sound)
+{
+    if (sound_renderer->sound)
+    {
+        sound_renderer->audio_client->Stop();
+        sound_renderer->audio_client->Reset();
+    }
+    sound_renderer->sound = sound;
+    sound_renderer->frame_pos = 0;
+}
+
 int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int show_code)
 {
     AssetStore asset_store;
@@ -917,6 +969,8 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
     reset_state(&state, game_state.player_side);
 
     MenuLayout menu_layout = get_menu_layout(asset_store.menu_fonts, window_width, window_height);
+
+    SoundRenderer sound_renderer = create_sound_renderer();
 
     show_window(window);
 
@@ -1357,6 +1411,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                         if (!HAS_FLAG(all_moves, bit_square(hover_square)) || illegal_move)
                         {
                             start_illegal_flash_animation(&ghost_piece);
+                            start_sound(&sound_renderer, &asset_store.sound_error);
                         }
                     }
                     // NOTE: Clear ghost piece illegal move feedback
@@ -1852,6 +1907,46 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                                    &debug_collision_pipeline, &debug_collision_frame, &debug_collision_vertex_buffer,
                                    &debug_move_pipeline, &debug_move_frame, &debug_move_vertex_buffer, debug_move_draw_state.count,
                                    &blur_pipeline, &blur_frame, state.blur_times, &menu_pipeline, &menu_frame, &menu_vertex_buffer, menu_vertex_count));
+
+        if (sound_renderer.sound)
+        {
+            Sound *sound = sound_renderer.sound;
+            Int output_frame_count = frame_time * sound->frame_rate * 2;
+            Int available_frame_count = MIN(output_frame_count, sound->frame_count - sound_renderer.frame_pos);
+            UInt8 *audio_buffer;
+            HRESULT result = sound_renderer.audio_render_client->GetBuffer(available_frame_count, &audio_buffer);
+            ASSERT(SUCCEEDED(result));
+
+            UInt8 *audio_data = asset_store.sound_error.data + sound_renderer.frame_pos * sound->channel_count * sound->sample_byte_count;
+            for (Int frame_i = 0; frame_i < available_frame_count; frame_i++)
+            {
+                Real32 sample = (Real) * (Int16 *)audio_data / 0x7fff;
+                *(Real32 *)audio_buffer = sample;
+                audio_buffer += 4;
+                audio_data += 2;
+
+                sample = (Real) * (Int16 *)audio_data / 0x7fff;
+                *(UInt32 *)audio_buffer = sample;
+                audio_buffer += 4;
+                audio_data += 2;
+            }
+
+            result = sound_renderer.audio_render_client->ReleaseBuffer(available_frame_count, 0);
+            ASSERT(SUCCEEDED(result));
+
+            if (!sound_renderer.frame_pos)
+            {
+                result = sound_renderer.audio_client->Start();
+                ASSERT(SUCCEEDED(result));
+            }
+            sound_renderer.frame_pos += available_frame_count;
+            if (sound_renderer.frame_pos == sound->frame_count)
+            {
+                sound_renderer.sound = null;
+                sound_renderer.audio_client->Stop();
+                sound_renderer.audio_client->Reset();
+            }
+        }
 
         UInt64 current_timestamp = get_current_timestamp();
         Real64 elapsed_time = get_elapsed_time(current_timestamp - last_timestamp);

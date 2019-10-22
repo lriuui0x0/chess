@@ -107,7 +107,7 @@ struct MenuFrame
 
 #define MAX_MENU_VERTEX_COUNT (300 * 6)
 
-Bool create_menu_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFrame *scene_frame, MenuFrame *frame, Font *menu_fonts, VulkanBuffer *host_vertex_buffer)
+Bool create_menu_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFrame *scene_frame, MenuFrame *frame, BitmapFont *menu_fonts, VulkanBuffer *host_vertex_buffer)
 {
     VkResult result_code;
 
@@ -145,7 +145,7 @@ Bool create_menu_frame(VulkanDevice *device, VulkanPipeline *pipeline, SceneFram
     VkImageView *font_texture_views = (VkImageView *)ALLOCA(sizeof(VkImageView) * MENU_FONT_COUNT);
     for (Int font_i = 0; font_i < MENU_FONT_COUNT; font_i++)
     {
-        Font *font = &menu_fonts[font_i];
+        BitmapFont *font = &menu_fonts[font_i];
 
         if (!create_image(device, font->width, font->height,
                           device->swapchain.format, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -197,7 +197,7 @@ struct MenuLayout
 
 Str player_option[GameSide::count] = {str("white"), str("black")};
 Vec2 player_option_pos[GameSide::count] = {Vec2{0.0, -0.78}, Vec2{0.35, -0.78}};
-MenuLayout get_menu_layout(Font *menu_fonts, Int window_width, Int window_height)
+MenuLayout get_menu_layout(BitmapFont *menu_fonts, Int window_width, Int window_height)
 {
     MenuLayout menu_layout;
     for (GameSideEnum side = 0; side < GameSide::count; side++)
@@ -212,7 +212,7 @@ MenuLayout get_menu_layout(Font *menu_fonts, Int window_width, Int window_height
 
 struct MenuDrawState
 {
-    Font *fonts;
+    BitmapFont *fonts;
     Int window_width;
     Int window_height;
     MenuVertex *menu_vertex;
@@ -254,7 +254,7 @@ Void draw_char(CharTextureInfo *texture_info, MenuVertex *menu_vertex, Vec2 pos,
 
 Vec2 draw_string(MenuDrawState *draw_state, Str string, Vec2 pos, Real alpha, Int font_type)
 {
-    Font *font = &draw_state->fonts[font_type];
+    BitmapFont *font = &draw_state->fonts[font_type];
     for (Int8 char_i = 0; char_i < string.count; char_i++)
     {
         CharTextureInfo texture_info = get_char_texture_info(font, string[char_i], draw_state->window_width, draw_state->window_height);
@@ -302,7 +302,7 @@ struct MenuState
     GameSideEnum selected_player;
 };
 
-Int draw_menu(Font *menu_fonts, MenuState *state, Real alpha, Int window_width, Int window_height, VulkanBuffer *vertex_buffer)
+Int draw_menu(BitmapFont *menu_fonts, MenuState *state, Real alpha, Int window_width, Int window_height, VulkanBuffer *vertex_buffer)
 {
     MenuDrawState draw_state = {};
     draw_state.menu_vertex = (MenuVertex *)vertex_buffer->data;
@@ -361,7 +361,7 @@ Int draw_menu(Font *menu_fonts, MenuState *state, Real alpha, Int window_width, 
     return vertex_count;
 }
 
-Int draw_game_end(Font *menu_fonts, GameEndEnum game_end, Real alpha, Int window_width, Int window_height, VulkanBuffer *vertex_buffer)
+Int draw_game_end(BitmapFont *menu_fonts, GameEndEnum game_end, Real alpha, Int window_width, Int window_height, VulkanBuffer *vertex_buffer)
 {
     MenuDrawState draw_state = {};
     draw_state.menu_vertex = (MenuVertex *)vertex_buffer->data;

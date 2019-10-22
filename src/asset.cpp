@@ -108,7 +108,7 @@ struct FontCharHeader
     Int32 left_bearing;
 };
 
-struct Font
+struct BitmapFont
 {
     Int32 start_char;
     Int32 num_char;
@@ -119,7 +119,7 @@ struct Font
     UInt32 *data;
 };
 
-Bool deserialise_font(Str buffer, Font *font)
+Bool deserialise_font(Str buffer, BitmapFont *font)
 {
     if (buffer.count < 10)
     {
@@ -165,7 +165,7 @@ struct CharTextureInfo
     Real uv_x_max;
 };
 
-CharTextureInfo get_char_texture_info(Font *font, Int8 character, Int window_width, Int window_height)
+CharTextureInfo get_char_texture_info(BitmapFont *font, Int8 character, Int window_width, Int window_height)
 {
     ASSERT(character >= font->start_char && character < font->start_char + font->num_char);
     Int8 char_index = character - font->start_char;
@@ -181,13 +181,13 @@ CharTextureInfo get_char_texture_info(Font *font, Int8 character, Int window_wid
     return texture_info;
 }
 
-Real get_line_texture_info(Font *font, Int window_width, Int window_height)
+Real get_line_texture_info(BitmapFont *font, Int window_width, Int window_height)
 {
     Real line_advance = (Real)font->line_advance / window_height * 2;
     return line_advance;
 }
 
-Vec2 get_string_texture_size(Font *font, Str string, Int window_width, Int window_height)
+Vec2 get_string_texture_size(BitmapFont *font, Str string, Int window_width, Int window_height)
 {
     Vec2 size;
     size.x = 0;
@@ -236,7 +236,8 @@ Bool deserialise_image(Str buffer, Image *image)
 
 struct Sound
 {
-    Int32 sample_count;
+    Int32 frame_count;
+    Int32 frame_rate;
     Int32 channel_count;
     Int32 sample_byte_count;
     UInt8 *data;
@@ -244,20 +245,22 @@ struct Sound
 
 Bool deserialise_sound(Str buffer, Sound *sound)
 {
-    if (buffer.count < 12)
+    if (buffer.count < 16)
     {
         return false;
     }
 
     Int pos = 0;
-    sound->sample_count = *(Int32 *)(buffer.data + pos);
+    sound->frame_count = *(Int32 *)(buffer.data + pos);
+    pos += 4;
+    sound->frame_rate = *(Int32 *)(buffer.data + pos);
     pos += 4;
     sound->channel_count = *(Int32 *)(buffer.data + pos);
     pos += 4;
     sound->sample_byte_count = *(Int *)(buffer.data + pos);
     pos += 4;
 
-    Int sound_data_length = sound->sample_count * sound->channel_count * sound->sample_byte_count * sizeof(UInt8);
+    Int sound_data_length = sound->frame_count * sound->channel_count * sound->sample_byte_count * sizeof(UInt8);
     if (buffer.count != pos + sound_data_length)
     {
         return false;
@@ -368,11 +371,8 @@ struct AssetStore
     Mesh piece_meshes[GameSide::count][GamePieceType::count];
     Image board_light_map;
     Image piece_light_maps[GamePieceType::count];
-    Font debug_font;
-    Font menu_fonts[MENU_FONT_COUNT];
-    Sound sound_click_high;
-    Sound sound_click_low;
-    Sound sound_move;
+    BitmapFont debug_font;
+    BitmapFont menu_fonts[MENU_FONT_COUNT];
     Sound sound_error;
     BitBoardTable *bit_board_table;
 };
@@ -462,9 +462,9 @@ Bool load_asset(AssetStore *asset_store)
         }
     }
 
-    CStr sound_files[4] = {"../asset/sound_click_high.asset", "../asset/sound_click_low.asset", "../asset/sound_move.asset", "../asset/sound_error.asset"};
-    Sound *sounds[4] = {&asset_store->sound_click_high, &asset_store->sound_click_low, &asset_store->sound_move, &asset_store->sound_error};
-    for (Int i = 0; i < 4; i++)
+    CStr sound_files[1] = {"../asset/sound_error.asset"};
+    Sound *sounds[1] = {   &asset_store->sound_error};
+    for (Int i = 0; i < 1; i++)
     {
         if (read_file(sound_files[i], &file_contents))
         {
