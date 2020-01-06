@@ -789,7 +789,7 @@ struct State
 
 Void reset_state(State *state, GameSideEnum player_side)
 {
-    state->phase = player_side == GameSide::white ? StatePhase::select : StatePhase::ai_think;
+    state->phase = StatePhase::select;
     state->menu_state.selected_player = player_side;
     state->menu_state.hovered_player = GameSide::count;
     state->menu_game_end = GameEnd::none;
@@ -1445,7 +1445,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
                 {
                     record_game_move_with_history(&game_state, state.executing_move);
                     record_move(&piece_manager, state.executing_move);
-                    state.phase = StatePhase::ai_think;
+                    state.phase = StatePhase::select;
                     state.selected_piece = null;
 
                     check_end(&state, &game_state);
