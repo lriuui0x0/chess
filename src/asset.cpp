@@ -380,7 +380,7 @@ struct AssetStore
 Bool load_asset(AssetStore *asset_store)
 {
     Str file_contents;
-    if (read_file("../asset/board.asset", &file_contents))
+    if (read_file("asset/board.asset", &file_contents))
     {
         if (!deserialise_mesh(file_contents, &asset_store->board_mesh))
         {
@@ -394,20 +394,20 @@ Bool load_asset(AssetStore *asset_store)
 
     CStr piece_meshes_paths[GameSide::count][GamePieceType::count] = {
         {
-            "../asset/pawn_white.asset",
-            "../asset/knight_white.asset",
-            "../asset/bishop_white.asset",
-            "../asset/rook_white.asset",
-            "../asset/queen_white.asset",
-            "../asset/king_white.asset",
+            "asset/pawn_white.asset",
+            "asset/knight_white.asset",
+            "asset/bishop_white.asset",
+            "asset/rook_white.asset",
+            "asset/queen_white.asset",
+            "asset/king_white.asset",
         },
         {
-            "../asset/pawn_black.asset",
-            "../asset/knight_black.asset",
-            "../asset/bishop_black.asset",
-            "../asset/rook_black.asset",
-            "../asset/queen_black.asset",
-            "../asset/king_black.asset",
+            "asset/pawn_black.asset",
+            "asset/knight_black.asset",
+            "asset/bishop_black.asset",
+            "asset/rook_black.asset",
+            "asset/queen_black.asset",
+            "asset/king_black.asset",
         }};
     for (GameSideEnum side = 0; side < GameSide::count; side++)
     {
@@ -427,7 +427,7 @@ Bool load_asset(AssetStore *asset_store)
         }
     }
 
-    if (read_file("../asset/board_lightmap.asset", &file_contents))
+    if (read_file("asset/board_lightmap.asset", &file_contents))
     {
         if (!deserialise_image(file_contents, &asset_store->board_light_map))
         {
@@ -440,12 +440,12 @@ Bool load_asset(AssetStore *asset_store)
     }
 
     CStr piece_light_maps_paths[GamePieceType::count] = {
-        "../asset/pawn_lightmap.asset",
-        "../asset/knight_lightmap.asset",
-        "../asset/bishop_lightmap.asset",
-        "../asset/rook_lightmap.asset",
-        "../asset/queen_lightmap.asset",
-        "../asset/king_lightmap.asset",
+        "asset/pawn_lightmap.asset",
+        "asset/knight_lightmap.asset",
+        "asset/bishop_lightmap.asset",
+        "asset/rook_lightmap.asset",
+        "asset/queen_lightmap.asset",
+        "asset/king_lightmap.asset",
     };
     for (GamePieceTypeEnum piece_type = 0; piece_type < GamePieceType::count; piece_type++)
     {
@@ -462,7 +462,7 @@ Bool load_asset(AssetStore *asset_store)
         }
     }
 
-    CStr sound_files[1] = {"../asset/sound_error.asset"};
+    CStr sound_files[1] = {"asset/sound_error.asset"};
     Sound *sounds[1] = {   &asset_store->sound_error};
     for (Int i = 0; i < 1; i++)
     {
@@ -479,7 +479,7 @@ Bool load_asset(AssetStore *asset_store)
         }
     }
 
-    if (read_file("../asset/debug_font.asset", &file_contents))
+    if (read_file("asset/debug_font.asset", &file_contents))
     {
         if (!deserialise_font(file_contents, &asset_store->debug_font))
         {
@@ -491,7 +491,7 @@ Bool load_asset(AssetStore *asset_store)
         return false;
     }
 
-    CStr menu_font_files[MENU_FONT_COUNT] = {"../asset/menu_large_font.asset", "../asset/menu_medium_font.asset", "../asset/menu_small_font.asset"};
+    CStr menu_font_files[MENU_FONT_COUNT] = {"asset/menu_large_font.asset", "asset/menu_medium_font.asset", "asset/menu_small_font.asset"};
     for (Int font_i = 0; font_i < MENU_FONT_COUNT; font_i++)
     {
         if (read_file(menu_font_files[font_i], &file_contents))
@@ -507,7 +507,7 @@ Bool load_asset(AssetStore *asset_store)
         }
     }
 
-    if (read_file("../asset/bitboard.asset", &file_contents))
+    if (read_file("asset/bitboard.asset", &file_contents))
     {
         asset_store->bit_board_table = (BitBoardTable *)malloc(sizeof(BitBoardTable));
         if (!asset_store->bit_board_table || !deserialise_bit_board_table(file_contents, asset_store->bit_board_table))

@@ -882,7 +882,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int
 
     Int window_width = 800;
     Int window_height = 600;
-    Window window = create_window(str("Chess"), window_width, window_height, 50, 50);
+    Window window = create_window(str("Chess"), window_width, window_height, 50, 50, false);
     ASSERT(window);
 
     VulkanDevice device;

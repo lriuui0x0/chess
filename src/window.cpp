@@ -50,7 +50,7 @@ Void track_mouse_enter_leave_event(HWND window_handle, DWORD event)
     }
 }
 
-Window create_window(Str title, Int client_width, Int client_height, Int window_x, Int window_y)
+Window create_window(Str title, Int client_width, Int client_height, Int window_x, Int window_y, Bool resizable)
 {
     HINSTANCE module_handle = GetModuleHandleA(NULL);
 
@@ -72,7 +72,7 @@ Window create_window(Str title, Int client_width, Int client_height, Int window_
         Int window_width = rect.right - rect.left;
         Int window_height = rect.bottom - rect.top;
 
-        HWND window_handle = CreateWindowExA(0, (LPCSTR)title.data, (LPCSTR)title.data, WS_OVERLAPPEDWINDOW,
+        HWND window_handle = CreateWindowExA(0, (LPCSTR)title.data, (LPCSTR)title.data, WS_OVERLAPPEDWINDOW & ~(resizable ? 0 : WS_THICKFRAME | WS_MAXIMIZEBOX),
                                              window_x, window_y, window_width, window_height,
                                              NULL, NULL, module_handle, NULL);
 
